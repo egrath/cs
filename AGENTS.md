@@ -145,6 +145,10 @@ Batch workflow (do all steps before reporting done):
 3. Interactive pty check of the affected UI paths with an `expect` script.
 4. The cs1.txt idle diff (see recipe in `.opencode/opencode.txt`).
 5. Update `.opencode/opencode.txt`.
+6. **Commit the finished work to git with a meaningful message**
+   (batch-level: what changed and why), **then push to `master`**.
+   Check `git status --short` first so only intended files land in the
+   commit; scratch fixtures (t_*.csd, pty files) must never be committed.
 
 ## expect/pty harness quirks (learned the hard way)
 
@@ -157,8 +161,12 @@ Batch workflow (do all steps before reporting done):
   default 80x24).
 - Tcl pitfalls: `\\?` sends a literal backslash (the comment function!);
   sending `" "` naked starts a TEXT entry that swallows following keys;
-  `;S` needs three answers (name, password CR, `A` in P(artial or A(ll)).
-- Save dialog: name → password (CR for none) → `P(artial or A(ll)`.
+  `;S` needs three answers (name, password CR, `A` in `P)artial or A)all`).
+- Save dialog: name → password (CR for none) → `P)artial or A)all`. The
+  P/A question must be answered: any other key re-prompts, ESC cancels.
+  File names: bare name → lowercase `.csd` appended; a typed `.csd`
+  tail of any case is kept as entered, never doubled (`cs_savename`,
+  shared by save/load/merge/password-probe).
 
 ## Things deliberately assumed (flag, don't silently change)
 

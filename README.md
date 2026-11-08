@@ -107,7 +107,8 @@ division) and every system function work on digits:
 make            # cc -std=c89 -pedantic -Wall ... -lcurses -lm
 make test       # evaluator + save/load self test (./calcstar --test)
 ./calcstar
-./calcstar NAME       load NAME.CSD at startup (also accepts NAME.CSD)
+./calcstar NAME       load NAME.csd at startup (also accepts NAME.csd /
+                      NAME.CSD typed with an extension)
 ```
 
 `--test` runs the self-test suite (manual examples: `140%E4`, `120%18.53333`,
@@ -116,7 +117,15 @@ division-by-zero `?n?`, display truncation, file round-trip) and exits with a
 nonzero status on any failure. An interactive session needs a real terminal;
 launch it under a tty (or drive it with a pty driver such as `expect`).
 If the file given on the command line does not exist, the usual
-`write error NAME.CSD not found` message appears on the status row.
+`write error NAME.csd not found` message appears on the status row.
+
+Save-file naming: a bare name gets the lowercase `.csd` appended
+(`pt01 -> pt01.csd`); a typed `.csd`/`.CSD`/`.Csd` tail is kept exactly as
+entered and never doubled (`pt02.csd` saves `pt02.csd`, not
+`pt02.csd.csd`). Load, Merge and the existing-file password probe use the
+same rule. In the `;S` dialog the `P)artial or A)all` question must be
+answered: any other key re-prompts (originally - pressing RETURN does
+nothing), ESC cancels.
 
 ## Screen layout (verbatim clone of a genuine 80x24 CalcStar screen)
 

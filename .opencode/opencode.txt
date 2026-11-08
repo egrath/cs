@@ -149,7 +149,7 @@ PREVIOUS BATCH #2 (2 items, all pty-verified):
    on failure the "write error NAME.CSD not found" msg stays visible on the status row.
    Read-write cycle verified: create 42/hello -> ;S save T1 -> quit -> relaunch with T1:
    A1=42.00, "hello" at C2, [T1] in filename box. NOTE the Save dialog flow needs 3 keys:
-   "NAME\r" -> Password prompt "\r" (none) -> "P(artial or A(ll" -> A.
+   "NAME\r" -> Password prompt "\r" (none) -> "P)artial or A)all" -> A.
 2. Bigger terminals use full space for the worksheet:
    - cs_scrw() = COLS (was min(COLS,80); the old clamp removed as requested).
    - cs_win_rows(): LINES>24 -> LINES-14 rows normal, LINES-9 extended; otherwise 10/15.
