@@ -70,13 +70,33 @@ static int rd_num(FILE *f, Csn *v)
     return 1;
 }
 
+/* user-facing file-name rule: a typed ".Csd"/".csd"/".CSD" tail is kept
+ * exactly as entered (never doubled on save), anything else gets the
+ * lowercase ".csd" appended.  Used by save, load, merge and the
+ * password probe so every path spells the same file. */
+static void cs_savename(const char *name, char *out, int outn)
+{
+    size_t n = strlen(name);
+    if (n >= 4) {
+        const char *e = name + n - 4;
+        if (e[0] == '.' &&
+            toupper((unsigned char) e[1]) == 'C' &&
+            toupper((unsigned char) e[2]) == 'S' &&
+            toupper((unsigned char) e[3]) == 'D') {
+            snprintf(out, (size_t) outn, "%s", name);
+            return;
+        }
+    }
+    snprintf(out, (size_t) outn, "%.100s.csd", name);
+}
+
 int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
 {
     char path[128];
     FILE *f;
     int r, c, count = 0;
 
-    sprintf(path, "%s.CSD", name);
+    cs_savename(name, path, (int) sizeof(path));
     for (r = r1; r <= r2; r++)
         for (c = c1; c <= c2; c++)
             if (cells[r][c].type != CE_EMPTY) count++;
@@ -128,7 +148,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
     int c, count, pwlen, i;
     char magic[4];
 
-    sprintf(path, "%s.CSD", name);
+    cs_savename(name, path, (int) sizeof(path));
     f = fopen(path, "rb");
     if (!f) { cs_msg("write error %s not found", path); return 0; }
     if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD3", 4) != 0) {
@@ -227,7 +247,7 @@ int cs_file_password(const char *name, char *pw, int max)
     FILE *f;
     char magic[4];
     int c, pwlen, i;
-    sprintf(path, "%s.CSD", name);
+    cs_savename(name, path, (int) sizeof(path));
     f = fopen(path, "rb");
     if (!f) { pw[0] = '\0'; return 0; }
     pw[0] = '\0';
@@ -287,7 +307,7 @@ int cs_save_dialog(void)
     if (!name[0]) return 0;
 
     filex = 0;
-    sprintf(pwbuf, "%s.CSD", name);
+    cs_savename(name, pwbuf, (int) sizeof(pwbuf));
     probe = fopen(pwbuf, "rb");
     if (probe) { fclose(probe); filex = 1; }
 
@@ -311,8 +331,11 @@ int cs_save_dialog(void)
         if (cs_prompt_hidden("Again:", pw2, 40) < 0) return 0;
         if (strcmp(pwbuf, pw2) != 0) { cs_msg("write error, not the same"); return 0; }
     }
-    {
-        int pc = cs_prompt_char("P(artial or A(ll");
+    /* the question must be answered (original CalcStar): anything but
+     * P/A re-prompts; ESC cancels the dialog.  The loop EXITS after a
+     * successful save (a broken loop would re-ask forever). */
+    for (;;) {
+        int pc = cs_prompt_char("P)artial or A)all");
         cs_draw();
         if (pc == 27) return 0;
         if (pc == 'P' || pc == 'p') {
@@ -333,10 +356,15 @@ int cs_save_dialog(void)
             if (c2 >= CS_MAXCOL || r2 >= CS_MAXROW) {
                 cs_msg("write error bad coord"); return 0;
             }
-            cs_save(name, c1, r1, c2, r2, pwbuf);
+            if (!cs_save(name, c1, r1, c2, r2, pwbuf)) return 0;
+            break;
         } else if (pc == 'A' || pc == 'a') {
             if (!cs_save(name, 0, 0, CS_MAXCOL - 1, CS_MAXROW - 1, pwbuf)) return 0;
-        } else return 0;
+            break;
+        }
+        /* any other answer (e.g. bare RETURN) loops back to the prompt:
+         * the question must be answered; it must never silently drop
+         * the save */
     }
     strcpy(fname, name);
     sprintf(promptbuf, "SAVED");

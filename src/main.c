@@ -753,18 +753,35 @@ static void run_tests(void)
                         printf("ok   save number\n");
                     else { printf("FAIL save number\n"); fails++; }
                 }
-                remove("t_rt.CSD");
+                remove("t_rt.csd");
             } else { printf("FAIL load\n"); fails++; }
         } else { printf("FAIL save\n"); fails++; }
     }
     /* old CSD1 files are refused */
     {
-        FILE *f = fopen("t_old.CSD", "wb");
+        FILE *f = fopen("t_old.csd", "wb");   /* loader's lowercase name */
         if (f) { fwrite("CSD1junk", 1, 8, f); fclose(f); }
         if (cs_load("t_old", 0, 0, 0))
             { printf("FAIL old file accepted\n"); fails++; }
         else printf("ok   old CSD1 refused\n");
-        remove("t_old.CSD");
+        remove("t_old.csd");
+    }
+    /* save-name rule: bare name -> lowercase .csd; typed .CSD kept as-is */
+    {
+        FILE *f;
+        cs_save("tlow", 0, 0, 0, 0, "");
+        f = fopen("tlow.csd", "rb");
+        if (!f) { printf("FAIL bare name file\n"); fails++; }
+        else printf("ok   bare name saves tlow.csd\n");
+        if (f) { fclose(f); remove("tlow.csd"); }
+        cs_save("tup.CSD", 0, 0, 0, 0, "");
+        f = fopen("tup.CSD", "rb");
+        if (!f) { printf("FAIL typed-CSD file\n"); fails++; }
+        else printf("ok   typed .CSD kept (no doubling)\n");
+        if (f) { fclose(f); remove("tup.CSD"); }
+        f = fopen("tup.CSD.csd", "rb");
+        if (f) { fclose(f); remove("tup.CSD.csd");
+                 printf("FAIL doubled extension\n"); fails++; }
     }
     /* form mode (manual 11.3): flag survives commits and save/load */
     {
@@ -785,7 +802,7 @@ static void run_tests(void)
             if (!l->formf)
                 { printf("FAIL form flag lost in save/load\n"); fails++; }
             else printf("ok   form flag survives save/load\n");
-            remove("t_fm.CSD");
+            remove("t_fm.csd");
         } else { printf("FAIL form save/load\n"); fails++; }
     }
     cs_clear_all();
@@ -813,19 +830,13 @@ int main(int argc, char **argv)
         cs_headless = 1;
         run_tests();
     }
-    /* optional file argument: load NAME.CSD at startup.  Accept both
-     * "NAME" and "NAME.CSD" (the .CSD suffix is stripped so that the
-     * in-program Save/Load dialog refers to the same file). */
+    /* optional file argument: load at startup.  The name is used as
+     * typed - cs_load's own name rule appends ".csd" only when no .csd
+     * extension (any case) is already present, so both "NAME" and
+     * "NAME.csd"/"NAME.CSD" spell the same file. */
     if (argc > 1) {
         const char *a = argv[1];
         int n = (int) strlen(a);
-        if (n > 4) {
-            const char *e = a + n - 4;
-            if (e[0] == '.' &&
-                (e[1] == 'C' || e[1] == 'c') &&
-                (e[2] == 'S' || e[2] == 's') &&
-                (e[3] == 'D' || e[3] == 'd')) n -= 4;
-        }
         if (n > 0 && n < (int) sizeof(cs_cmdfile)) {
             memcpy(cs_cmdfile, a, (size_t) n);
             cs_cmdfile[n] = '\0';
