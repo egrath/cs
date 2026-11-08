@@ -1,0 +1,219 @@
+# CalcStar clone — session notes / pick-up point
+# (written and maintained by the agent; read this first after a session loss)
+
+## Project
+Faithful console clone of MicroPro/Sorcim CalcStar (1981) spreadsheet.
+- Language/build: pure C89 (-std=c89 -pedantic -Wall), ncurses (-lcurses -lm), plain Makefile in project root. Build target: ./calcstar. `./calcstar --test` = headless regression suite.
+- Authoritative screen reference: /Users/egon/tmp/cs1.txt (80x24 genuine capture; B3 = 33 shown as "33.00").
+- No git repo. Files under src/: main.c screen.c command.c cells.c eval.c parser.c fileio.c print.c help.c cs.h + Makefile + README.md.
+
+NEWEST BATCH (agent onboarding): created AGENTS.md at the project root -
+official guidance for future AI agents: identity + hard invariants (BCD only,
+cs1.txt fidelity, manual-only recalc, backs lash comments, CSD3, message-string
+preservation list), coding style (C89, canon-string test convention, the
+finish() baseExp hand-alignment contract), build/test batch workflow, the
+expect/pty harness gotchas, the deliberately-assumed choices (degrees, 12-dec
+calculator display, Prec 0-12), and a csrc source map. It also states the
+batch rule: append summaries to .opencode/opencode.txt (THIS file). AGENTS.md
+was typo-fixed after creation (cke helper, correct pager strings).
+
+NEWEST BATCH (PI() function): +PI() returns pi at the maximum 22-digit
+internal precision - csn_pi() wraps the static PI constant; the literal was
+extended to 40 digits "3.1415926535897932384626433832795028841971" so
+finish() keeps all 22 mantissa digits. Parser: FN_PI, SLOPE()-style no-arg
+handling (missing ')' -> Error 6, same as all functions; leading +/- text
+rule applies). ENGIN FIXES ALONG THE WAY: CSN_PARSE_MAX 40 -> 48 (the 41-
+digit pi literal overflowed and left r CORRUPTED - ndig garbage crashed
+csn_canon via d3[]); csn_parse now mkzero(r) FIRST so ANY error return
+(syntax/overflow) always yields defined zero in the caller. Tests: --test
+plus PI battery (PI(), PI()/2, PI()**2, PI()/180, PI no-parens; canon
+traps: display 6.2831853071795 for 2*pi - truncation, not the rounded 796).
+Verified: make warning-free, --test all pass (69+ ok lines), all batteries,
+cs1.txt idle EXACT, interactive +PI() at B7 shows 3.14 in the cell with
+"contents: +PI()".
+
+## STATUS: all requested work DONE + VERIFIED (this file's last update covers)
+NEWEST BATCH (backslash comments, manual II.18, verified):
+- '\' at the end of a numeric entry starts a NON-evaluative comment:
+  "+SUM(A1>A5) \This is a comment". Implemented in cs_eval_formula (cuts the
+  prefix at an unquoted backslash; "..." strings keep their backslashes).
+  cont stays as typed (contents line shows expr+comment; window shows value;
+  print shows value). classics: "+1/0 \why" -> Error 0; "+5 x" (junk without
+  \) still err 7.
+- REF SCANNERS made comment-aware: cs_scan_refs returns early at an unquoted
+  '\'; cs_adjust_refs/cs_shift_refs copy the rest verbatim; dep_check
+  (command.c, delete-row/col dependency check) also stops at unquoted '\'.
+- LATENT BUG FOUND AND FIXED by the first copy test: all FOUR scanners built
+  their coordinate word from LETTERS ONLY (st + i < nd/de where nd pointed
+  before the digits) -> cs_parse_coord("A") always failed -> relative copy
+  NEVER rewrote refs and dep_check never fired. Fixed to st + i < p (after
+  digits) in cs_scan_refs / cs_adjust_refs / cs_shift_refs / dep_check.
+- Verified: pty comm5: C1=+0.5 \see A1 note shows 0.50 with NO dependency
+  from the comment; B2=+A1 \the dep formula evaluates 10.00 and `;D R` at A1
+  yields "ERROR: would delete ref(s) at B2" (refs found despite comment).
+  Copy adjust: "+A1+B2 \note B3 text" +dr -> "+B1+C2 \note B3 text". String
+  "a\b" evals fine (no comment cut). --test all pass; BCD battery ok;
+  80x24 cs1 diff EXACT.
+- HARNESS traps to remember: expect `\\\\` in scripts yields TWO literal
+  backslashes; a bare `" "` before moving the cursor starts a TEXT entry
+  that swallows subsequent keys (do not send space to clear a non-error);
+  text cells are skipped by dep_check by design.
+
+## BATCH 8 (previous): contents: field shows formulas, not their result:
+- USER REPORT: entering +SUM (A1>A5) shows the RESULT in the bottom
+  "contents:" field; it must show the FORMULA (worksheet cell keeps the
+  result - that part was already correct).
+- FIX: screen.c draw_typecont() now has cont_is_number(s) - a typed contents
+  that is a pure optional-sign digits/dot literal keeps the formatted value
+  display ("33.00"); ANY other numeric cell (formulas like +SUM (A1>A5),
+  input formulas !...!, error cells) shows c->cont verbatim in the
+  contents field. Verified in pty: A6=+SUM (A1>A5) -> sheet 150.00 +
+  "contents: +SUM (A1>A5)"; 33 -> "contents: 33.00"; error +A1 ->
+  "contents: +A1". cs1.txt idle diff EXACT; --test and the BCD battery pass.
+
+## BATCH 7 (previous): BCD engine replaces floating point; files list now also has num.c/num.h:
+- num.c/num.h: value = 0.d1..dn * 10^exp, CSN_DIGS=18 (14 calc + 4 guard),
+  CSN_EMAX=999. finish() canonicalizes (leading-zero skip, trailing-zero
+  strip, mantissa cut, range check; E>999 -> overflow, E<-999 -> zero).
+- mag_add: digits over window lo..hi+1 with carry (NO lo extension below the
+  window - operand digits always fit [hi-17..hi]; extending overflowed the
+  stack -> SIGABRT). mag_sub models below-window borrows with borrow0 flag.
+- mul: LSB-first digit arrays res[i+j] + carry pass; E_out = Ea+Eb-na-nb.
+  div: streaming long division (rem < 10^(nb+1)); quotient digit j at place
+  (na-j) of ma_int/mb_int; value factor 10^(Ea-Eb-ndig_a+ndig_b); the
+  rem>=den compare must return TRUE on equality (caused q=1.9999 bug).
+- sqrt: Newton + snap to the largest 15-digit y with y*y <= x.
+  exp: reduce by whole ln10 (subtract while x > ln10/2), Taylor series;
+  term-stop must compare |term| (signed compare broke EXP(-20) at 1e-8).
+  ln: m = x*10^(1-E) in [1,10); one sqrt(10) half-step adds only LN10H
+  (k+=1 bug doubled ln(9.99)). log10 DIRECT = (E-1) + log10(m) -> powers
+  of ten exact (LOG(0.001) = -3).
+- csn_parse returns CSN_OK(0)/CSN_ER_SYNTAX(4)/CSN_ER_OVERFLOW(1) (syntax
+  used to collide with OK=0 -> parser err 8 everywhere).
+- csn_fmt_sci: displayed exponent = exp10-1 (manual's 7.35E-6 example).
+  cs_fmt_num(const Csn*, ...) fixed->sci->"*" overflow fallback.
+- Cell.val Csn; parser Val.num Csn; cs_eval_formula(s, Csn*, char**); 
+  g_reg_* Csn + cs_reg_reset(); cs_set_num takes const Csn*; print/screen
+  format call sites pass &c->val.
+- Save format CSD2: BCD record = sign byte, exp10 LE i16, ndig byte, 18
+  digit bytes; CSD1 refused with "READ ERROR" (verified interactively).
+- main.c --test: exact decimal strings via canon form; save/load + old-file
+  refusal checks; cs_headless guards cs_msg under --test (no curses).
+- Differential battery vs python-decimal at 14 digits: SQRT/EXP(-20)/LN/LOG
+  incl. LN(9.99), EXP(0.001), LOG(0.123) all match; --test + cs1.txt idle
+  EXACT; build warning-free with NO math.h/double/float anywhere in code.
+- HARNESS: canon string convention is digits-as-0.d1d2.. * 10^E (E printed
+  as given); note the sci display form uses exp10-1. Bugs historically came
+  from mixing those two conventions when writing test wants.
+
+## BATCH 6 (previous): self-reference "hang":
+- USER REPORT: entering +B2 while on B2 "hangs". Root cause found: the commit
+  shows `Error 0-> +B2  hit space` and the OLD errpend handler in main.c was
+  MODAL — only Space was accepted, every other key swallowed forever. That is
+  exactly "app hangs" from the user's seat. The eval itself is fine: cellnum()
+  (parser.c) reads the referenced cell's current value, no recursion, no
+  convergence loop; empty B2 -> ?n?/Error 0; B2 with old value -> commits that.
+- FIX: in the main loop, ANY key now clears the error (cs_prompt_hide + redraw);
+  Space just returns to the idle edit line, any other key falls through and is
+  processed normally right after. No more trap.
+- Verified /tmp/self3b.exp: after `+B2` error, RIGHT ARROW cleared it AND moved
+  (cursor: C2 matched fresh frame); typing `5` immediately started `edit: 5`;
+  second error line also non-trapping. 80x24 cs1 diff EXACT, --test passed.
+- Emergency facts: SPACE in idle state starts a TEXT entry in the current cell
+  (faithful to CalcStar) — beware in scripts, stray keys then append into it.
+  Also: expect "Error 0" may match a STALE earlier error in the raw stream while
+  log_user tricks are in play — design fresh-frame matches (`cursor:` changes).
+- HARNESS gotcha re-confirmed: expect log truncated mid-doupdate -> broken last
+  frame; always drain with TWO `expect timeout` after the final keystroke.
+NEWEST BATCH (terminal resize at runtime, pty-verified):
+- ncurses delivers KEY_RESIZE on the pty SIGWINCH; every getch() site now
+  handles it via a shared helper `cs_was_resize(int ch)` (screen.c, proto in
+  cs.h): repaints everything at the new size (cs_draw()), and inside prompt
+  dialogs it re-feeds the bottom prompt line. Call sites patched:
+  main key loop, cs_prompt_char (refactored to a redraw loop), cs_prompt_str,
+  cs_prompt_hidden (fileio.c), Auto entry loop (command.c),
+  help pagers (redraw the help page itself), print wait_space pager.
+- Verified via expect resizing the pty mid-run (exec stty cols N rows M <
+  $spawn_out(slave,name)): 80x24 -> 100x35 repaint (21 rows / A..H), down
+  100x35 -> 80x24 works, mid-entry resize keeps typed text and commits,
+  Goto> prompt resize redraw then C9 input ok. 80x24 cs1.txt diff unchanged
+  EXACT; make warning-free; --test passed.
+- HARNESS NOTE: an expect log truncated mid-doupdate renders as a broken last
+  frame (`edit:` missing) — always drain with TWO `expect timeout` after the
+  final keystroke before `log_file`. Also /tmp/render.py [WxH] handles big replay.
+
+PREVIOUS BATCH #2 (2 items, all pty-verified):
+1. CLI file loading: `./calcstar NAME` (or `NAME.CSD`; suffix stripped case-insensitively).
+   main.c main() fills cs_cmdfile[40] (cells.c global, cs.h); run_session() calls
+   cs_load(cs_cmdfile,0,0,0) right after the first redraw(); on success redraw() again,
+   on failure the "write error NAME.CSD not found" msg stays visible on the status row.
+   Read-write cycle verified: create 42/hello -> ;S save T1 -> quit -> relaunch with T1:
+   A1=42.00, "hello" at C2, [T1] in filename box. NOTE the Save dialog flow needs 3 keys:
+   "NAME\r" -> Password prompt "\r" (none) -> "P(artial or A(ll" -> A.
+2. Bigger terminals use full space for the worksheet:
+   - cs_scrw() = COLS (was min(COLS,80); the old clamp removed as requested).
+   - cs_win_rows(): LINES>24 -> LINES-14 rows normal, LINES-9 extended; otherwise 10/15.
+     Chrome is fixed: normal 7 top rows (menu+Col>+Row+) + 7 bottom (border,cursor,blank,
+     type,cont,edit,prompt); extended 2 top + 7 bottom.
+   - Verified 100x35: 21 rows + cols A..H; 132x40: 26 rows + A..K; extended grew too.
+   - 80x24 still byte-exact vs cs1.txt.
+   - BUGS FIXED along the way: (a) Goto never scrolled winRow DOWN -> cursor could be off
+     window; (b) `;*` toggle didn't re-anchor when switching row counts. Both now call
+     NEW exported cs_stay_visible() (main.c, wraps scroll_v; prototype in cs.h).
+   - draw_rows guards row >= CS_MAXROW (reachable on tall terminals).
+
+PREVIOUS BATCH (5 items, verified):
+1. Cursor stays in entry cell after commit (CR moves right only when edit buffer empty).
+2. `@` inserts the live cell-cursor reference (arrows excluded via is_arrow_key());
+   committed "+E3" shows ?n? while E3 empty (faithful manual semantics), then 7.00 after
+   E3=7 + `;R A`.
+3. Status/message row cleared by any key; sticky `Error 0` redraws after repaint; Space clears.
+4. Last-row prompts/messages start at x0 (row 24 / 0-based 23).
+5. Locked rows show `*` in row label (lockRows = curRow + 1; cs_lock_cmd in command.c);
+   column locking untouched (lockCols = curCol, user-approved); Lock B toggles off.
+
+## Key implementation facts (useful when editing)
+- screen.c: cs_compute_layout() geometry; `edit: ` at x16/EDITTEXT_X=22 on 0-based row 22,
+  prompt row = line_prompt (last). place_cursor() rests at bottom; cs_msg() draws x0 on the
+  last row, transient (next clear()-repaint wipes). Row labels %3d + '|'/'*' (locked).
+- main.c: key loop; atpend/errpend; @ resolves on any non-movement key; cs_stay_visible().
+- Menu5[] rows are verbatim cs1.txt at small size (cputn pads to full width).
+- Horizontal scrolled columns: cell_x() with fc=winCol; draw loops rely on overwrite order
+  (later full column draws at same x overwrite ghosts) — verified visually, leave as is.
+- Evaluator errors: `?n?` shows for empty-cell refs at entry time; `;R A` fixes after
+  values exist. Preserved message strings: `?n?`, `Room for %d entries`,
+  `ERROR: would delete ref(s) at %s`, `bad coord`, `Width must be 3 - 63`,
+  `Prec. must be 0 - 10`, `MEMORY IS TOO LOW`, `Lock: R)ow C)ol B)oth`, `Goto>`,
+  `Command > `, `Recalculate - A)ll or E)ntry`, `verify Y/N`, `SAVED`,
+  `Error 0-> %s  hit space`, `-** Hit space to continue`, `-** End of report`.
+
+## Verification harness (expect + render) — quirks already debugged
+- /tmp/render.py [WxH] <rawfile> — NOW SUPPORTS a size arg (e.g. `python3 /tmp/render.py
+  100x35 file`) for wider/taller replays; default remains 80x24.
+- expect scripts: set stty_init "cols 80 rows 24" (or bigger); log_file -noappend; spawn
+  from project dir; one send per expect-match; `expect timeout` to drain (sleep blocks Tcl);
+  strip with `grep -av "^expect:" raw > clean`. Keep final `expect timeout` before log_file.
+- Save flow must answer THREE dialogs: name, password (CR), P/A.
+- Verify every change with: make clean/build, --test, relevant expect script, and the
+  cs1.txt idle exact-match diff (tab-expand + trailing-strip; compare vs render output).
+
+## Nothing pending — next directions
+- Potential next: the user drives fidelity from captures (cs1.txt-style); keep verifying
+  each item with pty frames + the 80x24 idle diff before reporting done. Remember to
+  append notes here after each batch.
+
+## File map (quick)
+- src/screen.c  layout/prompt row/place_cursor/cs_msg/row-label `*`/cs_scrw/cs_win_rows
+- src/main.c    key loop, @ resolution, commit-stays-cursor, errpend, cs_stay_visible,
+               CLI file name parsing (argv -> cs_cmdfile), run_session startup load
+- src/command.c `Command > `, lock cmd, extended toggles + cs_stay_visible re-anchor, goto
+- src/cs.h      shared globals/prototypes (cs_cmdfile, cs_stay_visible, cs_scrw decl)
+- src/cells.c   cell store, cs_parse_coord, cs_cmdfile global
+- src/eval.c    cs_commit_entry / cs_recalc_all (manual recalc)
+- src/fileio.c  CSD1 save/load (`cs_load` used for CLI load), dialogs (name->password->P/A),
+               cs_prompt_hidden resize handling
+- src/print.c   Print/pager; src/help.c two help pages
+- README.md     user-facing keys/commands/layout docs (kept in sync)
+- /tmp/rsz.exp  resize-up mid-run; /tmp/rsz2.exp (mid-entry + prompt resize sequence);
+  /tmp/load.exp (save+relaunch CLI load), /tmp/big{,2,3}.exp (row/col scroll + toggles),
+  /tmp/wide.exp (132x40), /tmp/step.exp (idle cs1 capture) — all working.
