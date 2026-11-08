@@ -1,0 +1,13 @@
+# scratch fixtures created by tests / pty runs (never commit these)
+/t_*.csd
+/t_*.CSD
+/tlow*
+/tup*
+/pt*
+/clitest*
+/tbatch*
+/t_rt*
+/t_old*
+/t_fm*
+/*.PRN
+CALCSTAR.PRN
