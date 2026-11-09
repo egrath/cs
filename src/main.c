@@ -358,10 +358,12 @@ void run_session(void)
             break;
         case '@':                       /* "@ Curs Pos": insert the coordinate
                                            OF the cell the cursor is on
-                                           right now; the cell cursor stays */
-            if (g_editstate == EDIT_EDITING)
-                at_resolve();
-            else
+                                           right now; the cell cursor stays.
+                                           repaint NOW - the user sees the
+                                           reference the moment it lands */
+            if (g_editstate == EDIT_EDITING) {
+                if (at_resolve()) redraw();
+            } else
                 entry_begin_ref();
             break;
         default:
