@@ -81,6 +81,20 @@ static void print_render(int col, int row, char *out, int width)
     }
 }
 
+/* the manual's printout filename rule (14-14): a text file gets ".TXT"
+ * automatically IF NO OTHER EXTENSION is assigned by the user; the data
+ * file gets the same treatment with ".DTA".  A typed extension (any
+ * tail with a dot) is kept exactly as entered. */
+static void print_name(const char *name, const char *ext, char *out, int outn)
+{
+    const char *dot = strrchr(name, '.');
+    if (dot && dot != name && dot[1] != '\0') {
+        snprintf(out, (size_t) outn, "%s", name);
+        return;
+    }
+    snprintf(out, (size_t) outn, "%s%s", name, ext);
+}
+
 void cs_print_cmd(void)
 {
     char dest[64], tl[40], br[40], tmp[40];
@@ -90,7 +104,7 @@ void cs_print_cmd(void)
     FILE *f = NULL;
     int console, delimited;
     int segStart[64], segEnd[64], nseg, seg;
-    int col, row, i;
+    int col, row;
 
     if (cs_prompt_str("To which file?", "PRINTER :", dest, (int) sizeof(dest)) < 0)
         return;
@@ -100,28 +114,54 @@ void cs_print_cmd(void)
     if (console) {
         ;
     } else if (delimited) {
-        f = fopen(dest + 1, "w");
+        /* data file export: "manual: a .DTA extension [is assigned]
+         * automatically if no other extension is assigned" */
+        char path[64];
+        print_name(dest + 1, ".DTA", path, (int) sizeof(path));
+        f = fopen(path, "w");
         if (!f) { cs_msg("can't open"); return; }
     } else if (strcmp(dest, "PRINTER") == 0) {
         f = fopen("CALCSTAR.PRN", "w");
         if (!f) { cs_msg("can't open"); return; }
     } else {
-        char base[48], path[64];
-        strncpy(base, dest, 47);
-        base[47] = '\0';
-        for (i = (int) strlen(base) - 1; i >= 0; i--)
-            if (base[i] == '.') { base[i] = '\0'; break; }
-        sprintf(path, "%s.PRN", base);
+        char path[64];
+        print_name(dest, ".TXT", path, (int) sizeof(path));
         f = fopen(path, "w");
         if (!f) { cs_msg("can't open file"); return; }
     }
 
-    if (cs_prompt_str("top left corner : A1", "", tl, (int) sizeof(tl)) < 0)
+    if (cs_prompt_str("top left corner :", "A1", tl, (int) sizeof(tl)) < 0)
         goto fail;
     if (!cs_parse_coord(tl, &c1, &r1)) { cs_msg("bad coord"); goto fail; }
-    if (cs_prompt_str("bottom right corner:  Hit RETURN for bottom right of array",
-                      "", br, (int) sizeof(br)) < 0)
-        goto fail;
+    {
+        /* the manual (14-12): the coordinate of the farthest right-hand
+         * cell in the lowest row containing data is DISPLAYED as the
+         * bottom right default */
+        char cn[4];
+        int d2r = r1, d2c = c1, rr, cc;
+        /* bottom-most row containing data */
+        for (rr = CS_MAXROW - 1; rr >= r1; rr--) {
+            for (cc = c1; cc < CS_MAXCOL; cc++)
+                if (cs_cell(cc, rr)->type != CE_EMPTY) { d2r = rr; goto gothr; }
+        }
+gothr:
+        /* right-most column containing data */
+        for (cc = CS_MAXCOL - 1; cc >= c1; cc--) {
+            for (rr = r1; rr < CS_MAXROW; rr++)
+                if (cs_cell(cc, rr)->type != CE_EMPTY) { d2c = cc; goto gotc2; }
+        }
+gotc2:
+        cs_col_name(d2c, cn);
+        sprintf(br, "%s%d", cn, d2r + 1);
+    }
+    /* a SEPARATE default buffer: cs_prompt_str copies default -> output
+     * (aliasing them is UB) */
+    {
+        char dbr[24];
+        strcpy(dbr, br);
+        if (cs_prompt_str("bottom right corner :", dbr, br, (int) sizeof(br)) < 0)
+            goto fail;
+    }
     if (!br[0]) {
         c2 = c1; r2 = r1;
         for (r2 = CS_MAXROW - 1; r2 >= r1; r2--) {
@@ -158,24 +198,25 @@ gotcol:
     stopp = cs_prompt_yn("Stop on each page (y,n)?");
     cs_draw();
     if (stopp < 0) goto fail;
-    if (cs_prompt_str("Printer width:", "132", tmp, (int) sizeof(tmp)) < 0)
+    if (cs_prompt_str("Printer width : ", "132", tmp, (int) sizeof(tmp)) < 0)
         goto fail;
     pw = atoi(tmp);
     if (pw < 10) pw = 132;
-    fix = cs_prompt_yn("Fix ordinates (y,n)?");
-    cs_draw();
-    if (fix < 0) goto fail;
+    /* manual 14-13: the prompt appears when A1 was NOT chosen as the
+     * top left corner; otherwise the array prints as shown */
+    fix = 1;
+    if (c1 != 0 || r1 != 0) {
+        fix = cs_prompt_yn("Fix ordinates (y,n)?");
+        cs_draw();
+        if (fix < 0) goto fail;
+    }
 
     /* titles */
     for (;;) {
-        if (ntitle < 5) {
-            if (cs_prompt_str("Title:", "", titles[ntitle], 62) < 0) break;
-            if (!titles[ntitle][0]) break;
-            ntitle++;
-            i = cs_prompt_yn("Additional titles (y,n)?");
-            cs_draw();
-            if (i != 1) break;
-        } else break;
+        if (ntitle >= 5) break;
+        if (cs_prompt_str("Title > ", "", titles[ntitle], 62) < 0) break;
+        if (!titles[ntitle][0]) break;
+        ntitle++;       /* printing starts on an empty RETURN */
     }
     cs_draw();
     if (f != NULL && !delimited && strcmp(dest, "PRINTER") == 0) {
@@ -332,6 +373,13 @@ gotcol:
     if (console) {
         cs_msg("-** Hit space to continue");
         cs_draw();
+        wait_space();
+    } else {
+        /* manual 7.7: after the document is printed the prompt ends the
+         * flow (single-row screen: the report text carries the full
+         * ending) */
+        cs_draw();
+        cs_msg("-** End of report");
         wait_space();
     }
     cs_msg("");

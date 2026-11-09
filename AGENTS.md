@@ -211,6 +211,6 @@ Batch workflow (do all steps before reporting done):
 | `src/screen.c` | layout, menu/status rows, `place_cursor`, prompts/messages |
 | `src/command.c` | `;`-commands,	goto, format (0..12), delete dependency check |
 | `src/fileio.c` | CSD3 save/load/merge, password dialogs |
-| `src/print.c` | reports to .PRN / PRINTER / display, page breaks |
+| `src/print.c` | reports to .TXT (typed name, or `.TXT` auto-extension), PRINTER = `CALCSTAR.PRN` spool, `>name` = `.DTA` records, display; page breaks |
 | `src/help.c` | help pages |
 | `src/main.c` | key loop (arrows, `@` refs, errpend), CLI arg load, `--test` |

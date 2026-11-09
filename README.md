@@ -291,7 +291,19 @@ Password: stored as typed and prompted for on load.
 ## Deviations from the original
 
 - Print to a real printer is not attached to a device; `PRINTER` writes
-  `CALCSTAR.PRN` for spooling.
+  `CALCSTAR.PRN` for spooling. All print output is pure ASCII (identical
+  to valid UTF-8: the entry path admits printable ASCII only) — files
+  only, no transcoding path.
+- `;P` file destinations follow the manual's extension rule (14-14):
+  a typed name keeps its extension; a bare name gets `.TXT` (text
+  report) or `.DTA` (`>name` data records) appended. Prompt literals are
+  the manual's (`top left corner :`, `bottom right corner :` with the
+  engine-displayed farthest bottom-right default, `Form length :
+  CONTINUOUS`, `Stop on each page (y,n)?`, `Printer width : 132`,
+  repeating `Title > `, printing starts on an empty title). `Fix
+  ordinates (y,n)?` is asked only when A1 was not the origin. After the
+  report the flow ends with `-** End of report` + space (the single-row
+  screen shows the ending that a physical printer prints on paper).
 - File format is the documented "CSD1" above, not a byte-identical clone of
   the original binary format.
 - `^B` implements the manual's data toggle as formula/value view.
