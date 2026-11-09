@@ -1073,15 +1073,28 @@ int csn_asin(Csn *r, const Csn *x)
 
 int csn_acos(Csn *r, const Csn *x)
 {
-    Csn as, m90;
+    Csn one, two, omx, ax, y, as;
     int err;
 
     ensure_trig_set();
-    csn_from_int(&m90, 90);
-    err = csn_asin(&as, x);
+    csn_from_int(&one, 1);
+    csn_from_int(&two, 2);
+    csn_abs(&ax, x);
+    if (csn_cmp(&ax, &one) > 0) return CSN_ER_DOMAIN;
+    /* acos(x) = 2*asin(sqrt((1-x)/2))  (exact identity, x in [-1,1]).
+     * Theatan form "90 - asin(x)" subtracts two nearly equal 14-digit
+     * values for x near 1 and loses the resolution of the small
+     * remainder (the +ASIN(ACOS(ASIN(TAN...))) round-trip chain lost 2
+     * digits there).  The half-angle form keeps (1-x)'s digits. */
+    err = csn_sub(&omx, &one, x);
     if (err != CSN_OK) return err;
-    csn_neg(&as, &as);
-    err = csn_add(r, &m90, &as);
+    err = csn_div(&omx, &omx, &two);
+    if (err != CSN_OK) return err;
+    err = csn_sqrt(&y, &omx);
+    if (err != CSN_OK) return err;
+    err = csn_asin(&as, &y);
+    if (err != CSN_OK) return err;
+    err = csn_add(r, &as, &as);
     if (err != CSN_OK) return err;
     round15(r);
     return CSN_OK;
@@ -1097,19 +1110,27 @@ int csn_atan(Csn *r, const Csn *x)
     csn_copy(&t, x);
     /* range reduction via the identity
      *    atan(x) = 2*atan(x/(1+sqrt(1+x^2)))
-     * halve while |t| >= 1 so the series always converges fast */
-    for (n = 0; n < 8 && cmp_abs(&t, &one) >= 0; n++) {
-        Csn d, t2, sq;
-        err = csn_mul(&t2, &t, &t);
-        if (err != CSN_OK) return err;
-        err = csn_add(&sq, &one, &t2);
-        if (err != CSN_OK) return err;
-        err = csn_sqrt(&d, &sq);
-        if (err != CSN_OK) return err;
-        err = csn_add(&d, &d, &one);
-        if (err != CSN_OK) return err;
-        err = csn_div(&t, &t, &d);
-        if (err != CSN_OK) return err;
+     * halve while |t| >= 0.5 so the series always converges FAST:
+     * stopping only below 1 (Possible with |t| ~ 0.997) leaves terms
+     * contracting by t^2 ~ 0.995 -> 200 terms are NOT enough and the
+     * result drifts (the +ASIN(ACOS(ACOS)) accuracy bug).  Each halving
+     * is an exact identity, so repeating it is harmless precision-wise */
+    {
+        Csn half;
+        csn_parse("0.5", &half);
+        for (n = 0; n < 16 && cmp_abs(&t, &half) >= 0; n++) {
+            Csn d, t2, sq;
+            err = csn_mul(&t2, &t, &t);
+            if (err != CSN_OK) return err;
+            err = csn_add(&sq, &one, &t2);
+            if (err != CSN_OK) return err;
+            err = csn_sqrt(&d, &sq);
+            if (err != CSN_OK) return err;
+            err = csn_add(&d, &d, &one);
+            if (err != CSN_OK) return err;
+            err = csn_div(&t, &t, &d);
+            if (err != CSN_OK) return err;
+        }
     }
     /* atan(t) = t - t^3/3 + t^5/5 - ...  (|t| <= 1) */
     err = csn_mul(&sq, &t, &t);

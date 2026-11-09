@@ -565,6 +565,34 @@ static void run_tests(void)
     ckc("ACOS(0.5)", "ACOS(0.5)", "+6.0000000000000E+2");
     ckc("ATAN(1)", "ATAN(1)", "+4.5000000000000E+2");
     ckc("ASIN(1)", "ASIN(1)", "+9.0000000000000E+2");
+    /* inverse-trig accuracy: the atan-halving reduction and the acos
+     * half-angle identity keep the 14-digit floor (round-trip chains
+     * produce 9.000000003..., NOT 6.25 as before the fix) */
+    ckc("ACOS(-0.5)", "ACOS(-0.5)", "+1.2000000000000E+3");   /* 120 */
+    ckc("ACOS(-1)", "ACOS(-1)", "+1.8000000000000E+3");       /* 180 */
+    ckc("ACOS(0)", "ACOS(0)", "+9.0000000000000E+2");         /* 90 */
+    ckc("ACOS(1)", "ACOS(1)", "0");
+    ckc("ACOS(-0.9999)", "ACOS(-0.9999)", "+1.7918970856293E+3");
+    ckc("ACOS(0.9999)", "ACOS(0.9999)", "+8.1029143706570E+0");
+    ckc("ACOS(0.9999976)", "ACOS(0.9999976)",
+        "+1.2552878866239E+0");
+    {
+        Csn r;
+        char g[48];
+        char *s2 = NULL;
+        int e = cs_eval_formula(
+            "+ASIN(ACOS(ATAN(TAN(COS(SIN(9))))))", &r, &s2);
+        if (s2) free(s2);
+        csn_canon(&r, g, (int) sizeof(g));
+        if (e != 0 || strcmp(g, "+9.0000000036813E+1")) {
+            /* the round-trip chain lands on 9 within the 14-digit
+             * conditioning floor (it printed 6.25 before the atan
+             * reduction + acos identity fixes); the trailing digits are
+             * the engine's deterministic precision floor */
+            printf("FAIL trig round-trip chain e=%d got %s\n", e, g);
+            fails++;
+        } else printf("ok   trig round-trip chain -> 9.0000000036813\n");
+    }
 
     /* PI() at maximum internal precision (deg-mode trig companion) */
     ckc("PI()", "PI()", "+3.1415926535897E+1");
