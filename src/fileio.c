@@ -173,7 +173,10 @@ int cs_load(const char *name, int c0, int r0, int merge)
     if (count < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
     for (i = 0; i < count; i++) {
         int cc, rr, ty, just, prc, frm, len;
-        Cell *cl;
+        static int bascc, basrr, have_base;
+        if (i == 0) { bascc = 0; basrr = 0; have_base = 0; }
+        int dr, dc, drop;
+        Cell *cl, scratch;
         cc = fgetc(f);
         rr = rd16(f);
         ty = fgetc(f);
@@ -181,7 +184,24 @@ int cs_load(const char *name, int c0, int r0, int merge)
         prc = fgetc(f) - 1;
         frm = fgetc(f);
         if (cc == EOF || rr < 0 || cc >= CS_MAXCOL || rr >= CS_MAXROW) break;
-        cl = &cells[rr][cc];
+        /* Load position (manual 14-14: "If the upper left corner is to
+         * be positioned at another location, enter the coordinates of
+         * that location"): the file's own top-left cell goes at the
+         * requested corner; cells running off the sheet edge are parsed
+         * and DROPPED so the file stream stays exactly in sync.  The
+         * base is the first stored cell's coordinates. */
+        dr = r0 + rr;
+        dc = c0 + cc;
+        if (!have_base) { bascc = cc; basrr = rr; have_base = 1; }
+        dc = c0 + cc - bascc;
+        dr = r0 + rr - basrr;
+        drop = (dc >= CS_MAXCOL || dr >= CS_MAXROW || dc < 0 || dr < 0);
+        memset(&scratch, 0, sizeof(scratch));
+        cl = drop ? &scratch : &cells[dr][dc];
+        /* merge overlays: release the destination cell's old content
+         * first (bookkeeping stays exact) */
+        if (!drop && cl->type != CE_EMPTY)
+            cs_free_cell(cl);
         if (ty == 2) {
             len = rd16(f);
             cl->cont = (char *) malloc((size_t) len + 1);
@@ -195,7 +215,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->iserr = 0;
             cl->strres = NULL;
             cl->rep = NULL;
-            entriesUsed++;
+            if (!drop) entriesUsed++;
             len = rd16(f);
             if (len > 0) {
                 cl->rep = (char *) malloc((size_t) len + 1);
@@ -230,7 +250,13 @@ int cs_load(const char *name, int c0, int r0, int merge)
                 if (fread(cl->rep, 1, (size_t) len, f) != (size_t) len) len = 0;
                 cl->rep[len] = '\0';
             }
-            entriesUsed++;
+            if (!drop) entriesUsed++;
+        }
+        if (drop) {
+            /* beyond the edge: release the parsed strings */
+            free(scratch.cont);
+            free(scratch.strres);
+            free(scratch.rep);
         }
     }
     fclose(f);
@@ -379,7 +405,7 @@ int cs_load_dialog(int merge)
     if (cs_prompt_str(merge ? "File name :" : "File name : (make sure file is saved)",
                       "", name, (int) sizeof(name)) < 0) return 0;
     if (!name[0]) return 0;
-    if (cs_prompt_str(merge ? "Load position : A1" : "Load position : A1", "A1", b, (int) sizeof(b)) < 0)
+    if (cs_prompt_str(merge ? "Load position:" : "Load position:", "A1", b, (int) sizeof(b)) < 0)
         return 0;
     if (!cs_parse_coord(b, &c0, &r0)) { cs_msg("bad coord"); return 0; }
     cs_msg("...");

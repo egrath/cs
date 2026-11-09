@@ -848,6 +848,63 @@ static void run_tests(void)
             } else { printf("FAIL load\n"); fails++; }
         } else { printf("FAIL save\n"); fails++; }
     }
+    /* Load/Merge position (manual 14-14): cells land at the requested
+     * corner; cells running past the sheet edge are parsed and dropped
+     * while the file stream stays in sync */
+    {
+        char g[48];
+        Csn v;
+        {
+            Cell *cc1 = cs_cell(0, 20);
+            Cell *cc2 = cs_cell(1, 20);
+            csn_parse("11", &v); cs_set_num(cc1, "11", &v, 0, NULL); /* A21 */
+            csn_parse("22", &v); cs_set_num(cc2, "22", &v, 0, NULL); /* B21 */
+            {
+                Cell *cc3 = cs_cell(0, 21);
+                csn_parse("33", &v); cs_set_num(cc3, "33", &v, 0, NULL); /* A22 */
+            }
+        }
+        cs_save("t_of", 0, 19, 2, 22, "");
+        cs_clear_all();
+        /* merge the 3-cell block at E10 */
+        if (cs_load("t_of", 4, 9, 1)) {
+            char ok1 = 0, ok2 = 0, ok3 = 0;
+            {
+                char buf[8];
+                csn_canon(&cs_cell(4, 9)->val, g, (int) sizeof(g));
+                ok1 = (cs_cell(4, 9)->type == CE_NUM &&
+                       !strcmp(g, "+1.1000000000000E+2"));
+                csn_canon(&cs_cell(5, 9)->val, buf, (int) sizeof(buf));
+                ok2 = (cs_cell(5, 9)->type == CE_NUM);
+                ok3 = (cs_cell(4, 10)->type == CE_NUM);
+            }
+            if (!ok1 || !ok2 || !ok3)
+                { printf("FAIL load-offset cells\n"); fails++; }
+            else printf("ok   load position offsets cells (E10/F10/E11)\n");
+            if (cs_cell(0, 0)->type != CE_EMPTY || cs_cell(0, 20)->type != CE_EMPTY)
+                { printf("FAIL offset leak to origin\n"); fails++; }
+            else printf("ok   no cells at original coordinates\n");
+            /* edge drop: hold the same file near the corner DW/at255 */
+            cs_clear_all();
+            if (cs_load("t_of", CS_MAXCOL - 1, CS_MAXROW - 1, 1)) {
+                /* B21/B22/A22 land outside; the stream must stay in sync
+                 * - reload the same file at A1 afterwards and see ALL
+                 * three cells */
+                cs_clear_all();
+                if (cs_load("t_of", 0, 0, 1) &&
+                    cs_cell(0, 0)->type == CE_NUM &&
+                    cs_cell(1, 0)->type == CE_NUM &&
+                    cs_cell(0, 1)->type == CE_NUM) {
+                    csn_canon(&cs_cell(0, 0)->val, g, (int) sizeof(g));
+                    if (strcmp(g, "+1.1000000000000E+2"))
+                        { printf("FAIL edge-drop desync\n"); fails++; }
+                    else printf("ok   edge drop keeps stream in sync\n");
+                } else { printf("FAIL reload after edge drop\n"); fails++; }
+            } else { printf("FAIL edge-drop load\n"); fails++; }
+        } else { printf("FAIL offset load\n"); fails++; }
+        cs_clear_all();
+        remove("t_of.csd");
+    }
     /* user batch: Evaluate-key formatting, @-reference entries, sticky
      * error text with the cell coordinate */
     {
