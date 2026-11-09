@@ -105,9 +105,11 @@ division) and every system function work on digits:
 
 ```
 make            # cc -std=c89 -pedantic -Wall ... -lcurses -lm
-make test       # evaluator + save/load self test (./calcstar --test)
-./calcstar
-./calcstar NAME       load NAME.csd at startup (also accepts NAME.csd /
+                # -> per-file objects and the executable land in build/
+make clean      # removes build/
+make test       # evaluator + save/load self test (./build/calcstar --test)
+./build/calcstar
+./build/calcstar NAME load NAME.csd at startup (also accepts NAME.csd /
                       NAME.CSD typed with an extension)
 ```
 

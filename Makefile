@@ -2,16 +2,21 @@ CC      = cc
 CFLAGS  = -std=c89 -pedantic -Wall
 LDLIBS  = -lcurses -lm
 
-SRC = src/cs.h src/cells.c src/parser.c src/eval.c src/screen.c \
-      src/command.c src/help.c src/fileio.c src/print.c src/main.c
+OBJS = build/num.o build/cells.o build/parser.o build/eval.o build/screen.o \
+      build/command.o build/help.o build/fileio.o build/print.o \
+      build/main.o
 
-calcstar: $(SRC)
-	$(CC) $(CFLAGS) src/*.c -o calcstar $(LDLIBS)
+build/calcstar: $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
-test: calcstar
-	./calcstar --test
+build/%.o: src/%.c src/cs.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+test: build/calcstar
+	./build/calcstar --test
 
 clean:
-	rm -f calcstar *.o src/*.o
+	rm -rf build
 
 .PHONY: test clean

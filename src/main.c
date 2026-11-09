@@ -154,12 +154,12 @@ static void eval_pending(void)
         return;
     }
     if (str) {
-        cs_msg("%s", str);
+        cs_msg_plain("%s", str);
         free(str);
         return;
     }
     csn_fmt_fixed(&val, 12, num, (int) sizeof(num));
-    cs_msg("=%24s", num);
+    cs_msg_plain("=%24s", num);   /* the answer paints non-inverse */
 }
 
 /* commit pending entry; the cursor STAYS in the entry cell, matching

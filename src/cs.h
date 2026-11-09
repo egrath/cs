@@ -104,6 +104,7 @@ int    cs_cell_x(int col);
 int    cs_win_rows(void);
 void   cs_draw(void);
 void   cs_draw_prompt_text(const char *txt, const char *dots);
+void   cs_msg_plain(const char *fmt, ...);
 void   cs_msg(const char *fmt, ...);
 int    cs_get_key(void);
 int    cs_was_resize(int ch);           /* KEY_RESIZE -> full repaint */

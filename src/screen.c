@@ -480,6 +480,8 @@ void cs_draw(void)
     refresh();
 }
 
+static void cs_msg_text(const char *s, chtype attr);
+
 void cs_msg(const char *fmt, ...)
 {
     va_list ap;
@@ -488,16 +490,31 @@ void cs_msg(const char *fmt, ...)
     vsprintf(lastmsg, fmt, ap);
     va_end(ap);
     lastmsg[75] = '\0';
+    cs_msg_text(lastmsg, A_REVERSE);
+}
+
+void cs_msg_plain(const char *fmt, ...)
+{
+    va_list ap;
+    promptvis = 0;
+    va_start(ap, fmt);
+    vsprintf(lastmsg, fmt, ap);
+    va_end(ap);
+    lastmsg[75] = '\0';
+    cs_msg_text(lastmsg, A_NORMAL);
+}
+
+/* shared paint: system messages are inverse (CalcStar behavior),
+ * Evaluate answers are NOT: CalcStar shows the result plainly. The
+ * terminal cursor never rests in the status bar: it belongs on the
+ * edit line (idle position, or after typed text while entering) */
+static void cs_msg_text(const char *s, chtype attr)
+{
     if (cs_headless) return;   /* --test mode: no screen */
     cs_compute_layout();
     move(line_prompt, 0);
     clrtoeol();
-    /* original CalcStar shows system messages inverse-video: errors,
-     * Form Control Mode / Auto complete, SAVED, ... Input prompts (drawn
-     * by the cs_prompt_* functions) stay non-inverse. */
-    cputa(line_prompt, 0, lastmsg, A_REVERSE);
-    /* the terminal cursor never rests in the status bar: it belongs on
-     * the edit line (idle position, or after typed text while entering) */
+    cputa(line_prompt, 0, s, attr);
     place_cursor();
     refresh();
 }

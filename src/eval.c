@@ -121,14 +121,14 @@ int cs_commit_entry(int col, int rw, const char *entry)
         err = cs_eval_formula(tmp, &val, &str);
         if (err) cs_msg("Error %d-> %s", err <= 0 ? 0 : err, tmp);
         else if (str) {
-            cs_msg("%s", str);
+            cs_msg_plain("%s", str);
             free(str);
         } else {
             /* format with up to 10 decimals, then strip trailing zeros
                for the calculator display (string work only) */
             /* manual 4.1/4.2: every answer contains 12 decimal places */
             csn_fmt_fixed(&val, 12, out, (int) sizeof(out));
-            cs_msg("%s", out);
+            cs_msg_plain("=%24s", out);   /* answers are non-inverse */
         }
         return err;
     }

@@ -152,9 +152,9 @@ follow the original. Read this file before changing anything.
 ## Building & testing
 
 ```
-make clean && make        # warning-free under -std=c89 -pedantic -Wall
-./calcstar --test         # evaluator + save/load + engine battery
-./calcstar [FILE.CSD]     # interactive; loads FILE at startup
+make clean && make        # per-file objects + binary in build/ (-std=c89 -pedantic -Wall, zero warnings)
+./build/calcstar --test   # evaluator + save/load + engine battery
+./build/calcstar [FILE]   # interactive; loads FILE at startup
 ```
 
 Batch workflow (do all steps before reporting done):
