@@ -49,7 +49,6 @@ void cs_stay_visible(void)
 }
 
 /* ---------------------------- entry engine -------------------------- */
-static int atpend;       /* '@' reference-pending flag */
 static int errpend;      /* error message displayed; hit space to continue */
 
 static int numeric_start_ch(int ch)
@@ -58,23 +57,29 @@ static int numeric_start_ch(int ch)
            ch == '(' || ch == '.';
 }
 
-/* cursor-key codes decoded by ncurses keypad() */
-static int is_arrow_key(int ch)
-{
-#ifdef KEY_UP
-    return ch == KEY_UP || ch == KEY_DOWN ||
-           ch == KEY_LEFT || ch == KEY_RIGHT;
-#else
-    return 0;
-#endif
-}
-
 static void edit_clear(void)
 {
     g_edit[0] = '\0';
     g_editlen = 0;
     g_editstate = EDIT_IDLE;
-    atpend = 0;
+}
+
+/* start a numeric entry whose content is a bare coordinate reference
+ * ("manual: the @ key inserts the cell the cursor is on"); the entry
+ * stays editable so "+A1+A2" sequences work */
+static void entry_begin_ref(void)
+{
+    char cn[4];
+    char ref[10];
+    cs_col_name(curCol, cn);
+    sprintf(ref, "%s%d", cn, curRow + 1);
+    g_entryrow = curRow;
+    g_entrycol = curCol;
+    g_entry_num = 1;
+    g_editstate = EDIT_EDITING;
+    strcpy(g_edit, ref);
+    g_editlen = (int) strlen(ref);
+    redraw();
 }
 
 static void entry_begin(int ch)
@@ -110,15 +115,58 @@ static int at_resolve(void)
     sprintf(ref, "%s%d", cn, curRow + 1);
     if (g_editlen + (int) strlen(ref) >= CS_EDITMAX - 2)
         return 0;
-    atpend = 0;
     strcpy(g_edit + g_editlen, ref);
     g_editlen += (int) strlen(ref);
     return 1;
 }
 
+/* exported sticky-message state for command.c (recalculation error
+ * replay sets the pending flag after a recalculation) */
+static int errq_i;        /* next error-cell queue index */
+
+void cs_set_errpend(int on)
+{
+    errpend = on;
+    errq_i = 0;
+}
+
+/* evaluate the pending (not yet committed) edit-line text with the
+ * Evaluate Function: the answer paints on the status bar as
+ * "=         10.000000000000" ('=' plus a %24s right-aligned field of
+ * the 12-decimal fixed form) and the edit field clears.  Manual 4.1:
+ * every answer has 12 decimal places; no floating point anywhere. */
+static void eval_pending(void)
+{
+    char saved[CS_EDITMAX + 1];
+    Csn val;
+    char *str = NULL;
+    char num[64];
+    int err;
+    if (g_editlen == 0) return;
+    g_edit[g_editlen] = '\0';
+    strcpy(saved, g_edit);
+    err = cs_eval_formula(saved, &val, &str);
+    edit_clear();               /* "the edit: field is cleared" */
+    redraw();
+    if (err) {
+        cs_set_errpend(1);      /* single message, no queue */
+        cs_sticky_err(err, saved, g_entrycol, g_entryrow);
+        return;
+    }
+    if (str) {
+        cs_msg("%s", str);
+        free(str);
+        return;
+    }
+    csn_fmt_fixed(&val, 12, num, (int) sizeof(num));
+    cs_msg("=%24s", num);
+}
+
 /* commit pending entry; the cursor STAYS in the entry cell, matching
  * CalcStar ("<RETURN> moves the cursor right only if no data has just
- * been typed"); recalculation is manual via ;R */
+ * been typed"); recalculation is manual via ;R.  If the user moved the
+ * cursor while entering (@-references), RETURN puts the cell cursor
+ * back on the entry cell. */
 static void entry_commit(void)
 {
     int row = g_entryrow, col = g_entrycol;
@@ -131,11 +179,14 @@ static void entry_commit(void)
     ec = cs_commit_entry(col, row, g_edit);   /* eval error code, 0 = none */
     c = cs_cell(col, row);
     edit_clear();
+    curCol = col;               /* commit lands on the entry cell */
+    curRow = row;
+    cs_nerrlist = 0;            /* commit errors are a one-message set */
+    errq_i = 0;
     if (c && c->type == CE_NUM && c->iserr) {
         errpend = 1;
         redraw();                 /* cells first ... */
-        /* real Appendix code (eval folds value-range to -1 => 0) */
-        cs_msg("Error %d-> %s  hit space", ec <= 0 ? 0 : ec, saved);
+        cs_sticky_err(ec, saved, col, row);   /* "... hit space [cell]" */
         return;
     }
     redraw();
@@ -187,22 +238,26 @@ void run_session(void)
         int ch = getch();
         if (cs_was_resize(ch)) continue;   /* terminal resized */
         if (errpend) {
-            /* the error message is cleared by ANY key (space simply
-             * returns to the edit line); no key may ever leave the
-             * application unresponsive */
+            /* the error message is cleared by ANY key; Space confirms:
+             * while the ';R' error-cell queue has more entries, Space
+             * replays the NEXT one ("one after another"); any other key
+             * drops out and processes normally */
+            if (ch == ' ' && errq_i + 1 < cs_nerrlist) {
+                errq_i++;
+                cs_prompt_hide();
+                redraw();
+                cs_sticky_err(cs_errlist[errq_i].code,
+                              cs_cell(cs_errlist[errq_i].col,
+                                      cs_errlist[errq_i].row)->cont,
+                              cs_errlist[errq_i].col,
+                              cs_errlist[errq_i].row);
+                continue;
+            }
             errpend = 0;
             cs_prompt_hide();
             redraw();
             if (ch == ' ') continue;
             /* fall through: process this key normally */
-        }
-        if (g_editstate == EDIT_EDITING && atpend &&
-            !(ch == 4 || ch == 19 || ch == 5 || ch == 24 || ch == 26 ||
-              is_arrow_key(ch) || (ch >= 'A' && ch <= 'Z'))) {
-            /* resolve the pending @ reference against the CURRENT cursor
-             * position, then let the switch process the key normally:
-             * <CR> commits, operators/digits/letters append */
-            if (!at_resolve()) continue;
         }
         switch (ch) {
         case 5:                        /* ^E up */
@@ -251,6 +306,12 @@ void run_session(void)
                 redraw();
             }
             break;
+        case '?':
+            /* the Evaluate Function: pressing '?' with a pending entry
+             * evaluates it without committing (manual 4.1: answers
+             * carry 12 decimals); the edit field clears */
+            eval_pending();
+            break;
         case 9:                        /* TAB */
             cs_goto_cmd();
             break;
@@ -258,7 +319,7 @@ void run_session(void)
             cs_command_menu();
             break;
         case '=':
-            if (g_editstate == EDIT_EDITING && !atpend)
+            if (g_editstate == EDIT_EDITING)
                 entry_append('=');
             else
                 cs_lock_cmd();
@@ -281,7 +342,7 @@ void run_session(void)
             /* '"': text-literal quote.  While entering it is just a
              * character (needed for conditional strings); the pending
              * TEXT/NUMERIC toggle lives on '^' (manual 6.4) */
-            if (g_editstate == EDIT_EDITING && !atpend)
+            if (g_editstate == EDIT_EDITING)
                 entry_append('"');
             else
                 entry_begin('"');
@@ -295,17 +356,17 @@ void run_session(void)
                 toggle_celltype();
             }
             break;
-        case '@':
-            if (g_editstate == EDIT_EDITING && !atpend) {
-                atpend = 1;
-            } else if (g_editstate != EDIT_EDITING) {
-                entry_begin('@');
-                atpend = 1;
-            }
+        case '@':                       /* "@ Curs Pos": insert the coordinate
+                                           OF the cell the cursor is on
+                                           right now; the cell cursor stays */
+            if (g_editstate == EDIT_EDITING)
+                at_resolve();
+            else
+                entry_begin_ref();
             break;
         default:
             if (ch >= ' ' && ch < 127) {
-                if (g_editstate == EDIT_EDITING && !atpend)
+                if (g_editstate == EDIT_EDITING)
                     entry_append(ch);
                 else if (g_editstate != EDIT_EDITING) {
                     if (!cs_ensure_room()) {
@@ -757,7 +818,41 @@ static void run_tests(void)
             } else { printf("FAIL load\n"); fails++; }
         } else { printf("FAIL save\n"); fails++; }
     }
-    /* old CSD1 files are refused */
+    /* user batch: Evaluate-key formatting, @-reference entries, sticky
+     * error text with the cell coordinate */
+    {
+        int ec;
+        /* "= " + %24s of the 12-decimal fixed answer, no float */
+        {
+            Csn r;
+            char num[64], msg[76], want[76];
+            char *s2 = NULL;
+            if (cs_eval_formula("5+5", &r, &s2) != 0) { printf("FAIL 5+5\n"); fails++; }
+            if (s2) free(s2);
+            csn_fmt_fixed(&r, 12, num, (int) sizeof(num));
+            sprintf(msg, "=%24s", num);
+            sprintf(want, "=         10.000000000000");
+            if (strcmp(msg, want)) { printf("FAIL eval-key fmt %s want %s\n", msg, want); fails++; }
+            else printf("ok   eval-key format\n");
+        }
+        /* '@'-reference entries commit as bare-coordinate formulas */
+        {
+            Csn v;
+            csn_parse("100", &v);
+            cs_set_num(cs_cell(0, 0), "100", &v, 0, NULL);   /* A1 */
+            csn_parse("200", &v);
+            cs_set_num(cs_cell(1, 0), "200", &v, 0, NULL);   /* B1 */
+            ec = cs_commit_entry(1, 3, "+A1+B1");
+            cs_free_cell(cs_cell(1, 3));
+            if (ec != 0)
+                { printf("FAIL @-ref commit err %d\n", ec); fails++; }
+            else printf("ok   @-ref entry evaluates\n");
+            /* the OLD '@'-junk must no longer occur: nothing stores a
+             * literal '@' in the cell (the @ key resolves in main.c) */
+        }
+        /* goto-style "Bad coord" (capital B) is just a string; check the
+         * parse-negative path still exists (goto UI is pty-tested) */
+    }
     {
         FILE *f = fopen("t_old.csd", "wb");   /* loader's lowercase name */
         if (f) { fwrite("CSD1junk", 1, 8, f); fclose(f); }

@@ -25,7 +25,7 @@ void cs_goto_cmd(void)
     char buf[32];
     int c, r;
     if (cs_prompt_str("Goto>", "A1", buf, (int) sizeof(buf)) < 0) return;
-    if (!cs_parse_coord(buf, &c, &r)) return;
+    if (!cs_parse_coord(buf, &c, &r)) { cs_msg("Bad coord"); return; }
     curCol = c; curRow = r;
     if (curCol >= lockCols && curCol < winCol) winCol = curCol;
     if (curRow >= lockRows && curRow < winRow) winRow = curRow;
@@ -308,7 +308,7 @@ static void delete_cmd(void)
             cs_msg("ERROR: would delete ref(s) at %s", list);
             return;
         }
-        ch = cs_prompt_yn("verify Y/N");
+        ch = cs_prompt_yn("verify Y/N - ");
         redraw();
         if (ch != 1) return;
         shift_all_refs(0, curRow, 0);
@@ -322,7 +322,7 @@ static void delete_cmd(void)
             cs_msg("ERROR: would delete ref(s) at %s", list);
             return;
         }
-        ch = cs_prompt_yn("verify Y/N");
+        ch = cs_prompt_yn("verify Y/N - ");
         redraw();
         if (ch != 1) return;
         shift_all_refs(1, curCol, 0);
@@ -332,7 +332,7 @@ static void delete_cmd(void)
         for (r = 0; r < CS_MAXROW; r++)
             cs_free_cell(&cells[r][CS_MAXCOL - 1]);
     } else if (ch == 'A' || ch == 'a') {
-        ch = cs_prompt_yn("verify Y/N");
+        ch = cs_prompt_yn("verify Y/N - ");
         redraw();
         if (ch != 1) return;
         cs_clear_all();
@@ -422,10 +422,20 @@ static void recalc_cmd(void)
     if (ch == 27) return;
     if (ch == 'A' || ch == 'a')
         cs_recalc_all();
-    else if (ch == 'E' || ch == 'e')
+    else if (ch == 'E' || ch == 'e') {
+        cs_nerrlist = 0;              /* single-cell run: fresh queue */
         cs_recalc_entry(curCol, curRow);
+    }
     else return;
     redraw();
+    if (cs_nerrlist) {
+        /* the manual's error replay: the ?n? cells report one after
+         * another, confirmed with Space (see main.c walker) */
+        cs_sticky_err(cs_errlist[0].code,
+                      cs_cell(cs_errlist[0].col, cs_errlist[0].row)->cont,
+                      cs_errlist[0].col, cs_errlist[0].row);
+        cs_set_errpend(1);
+    }
 }
 
 /* ======================= What / Lock / misc ======================== */
@@ -547,7 +557,7 @@ static void auto_cmd(void)
 /* ========================== Quit / menu ============================ */
 static void quit_cmd(void)
 {
-    int ch = cs_prompt_yn("verify Y/N");
+    int ch = cs_prompt_yn("verify Y/N - ");
     if (ch == 1) {
         endwin();
         exit(0);

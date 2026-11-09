@@ -56,6 +56,21 @@ follow the original. Read this file before changing anything.
   (`Error 0-> ...`, `Form Control Mode`, `Auto complete`, `SAVED`, ...) are
   painted **inverse** (`cputa` + `A_REVERSE`); input prompts stay
   non-inverse.
+- The cell-cursor marks `>` `<` paint INVERTED (`cchra` + `A_REVERSE`).
+- TAB / `;G` with a bad target answers `Bad coord` (capital B, user
+  instruction; copy/print keep the manuals' lowercase `bad coord`).
+- The verify prompts are `verify Y/N - ` (trailing " - ").
+- `?` while entering evaluates the pending text WITHOUT committing:
+  the status bar shows `=` plus a `%24s` field of the 12-decimal fixed
+  answer (`"=%24s"`, no floating point) and the edit field clears.
+  The manual's trailing-`?`-then-RETURN calculator stays for the `;A`
+  course (cs_commit_entry, same format).
+- `@` resolves IMMEDIATELY the cell the cursor is on: the coordinate
+  text is appended to the entry, the cell cursor stays; a bare idle `@`
+  starts an entry with the current coordinate (`entry_begin_ref`).
+  RETURN commits at the ENTRY cell and the cursor returns there. No
+  two-press "atpend" pending mode exists anymore - drops the old bug
+  where `@E3` was stored as literal junk text.
 - Recalculation is **manual**: `;R` prompts `Recalculate - A)ll or E)ntry`.
   Committing an entry only evaluates that entry.
 - After a data entry commit the cell cursor **stays**; RETURN moves right
@@ -73,6 +88,13 @@ follow the original. Read this file before changing anything.
   code from the manuals' error Appendix (`cs_commit_entry` returns it);
   values <= 0 fold to 0 (value range: overflow / divide-by-zero /
   function-can't-evaluate).
+  Format (user-verified against the original): code 0 paints
+  `Value range ERROR 0-> <expr>? hit space [<coord>]`, other codes
+  `Error <n>-> <expr>? hit space [<coord>]` (`cs_sticky_err` in eval.c);
+  the 1981 manual shows the [cell] suffix (`Error 7-> ... [B4]`).
+  The `;R` Recalculate fills a queue (`cs_errlist`/`cs_nerrlist`, in
+  recalc order) and Space replays the ?n? cells ONE AFTER ANOTHER;
+  a commit error is a one-message set (no queue).
   Inside the `;A` course there is no hit-space confirm (Space is data).
   Evaluation codes are 0..9, 12, 255 (255 = illegal value in REGR).
 - Directional cursor semantics (manual 14.3): idle RETURN moves right, or

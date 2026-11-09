@@ -191,7 +191,7 @@ column/row headers move up and the whole layout still fits 24 lines.
 | `^B`       | Data toggle (formula/value view)                  |
 | ESC        | cancel entry / hide prompts                       |
 | `"`        | toggle text/numeric entry mode                    |
-| `@`        | enter a cell reference by moving the cursor       |
+| `@`        | insert the coordinate of the cell the cursor is on |
 | digits `0-9` `+` `-` `(` `.` | start a numeric entry (formula) |
 | letters    | text entry: `/R` `/C` `/L` justify, `/=_` repeat, `/page` |
 | `!expr!`   | input formula (shows `In!` until values exist)    |

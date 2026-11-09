@@ -74,9 +74,19 @@ void   cs_clear_all(void);
 int    cs_scan_refs(const char *s, void (*cb)(int col, int row, void *), void *ctx);
 char  *cs_adjust_refs(const char *s, int dc, int dr);
 char  *cs_shift_refs(const char *s, int iscol, int at, int insert);
-void   cs_recalc_entry(int col, int rw);
-void   cs_reg_reset(void);   /* zero the REGR() state */
+int    cs_recalc_entry(int col, int rw);   /* returns eval error code */
 void   cs_recalc_all(void);
+
+/* error-cell queue (filled by the last Recalculate, in recalc order):
+ * main.c replays the sticky "Error ... hit space [coord]" messages one
+ * after another, confirmed with Space */
+struct CsErrRec { int col, row, code; };
+extern struct CsErrRec cs_errlist[256];
+extern int cs_nerrlist;
+void   cs_sticky_err(int code, const char *expr, int col, int rw);
+void   cs_set_errpend(int on);             /* main.c: sticky-message walker */
+
+void   cs_reg_reset(void);   /* zero the REGR() state */
 int    cs_commit_entry(int col, int rw, const char *entry);
 void   cs_fmt_num(const Csn *v, int width, int prec, int iserr, char *buf, int bufn);
 int    cs_ensure_room(void);

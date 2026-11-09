@@ -91,10 +91,16 @@ void cs_compute_layout(void)
     line_prompt = line_edit + 1;   /* very last row of the screen */
 }
 
-static void cchr(int y, int x, char ch)
+/* attribute-capable single character (the inverted cell-cursor marks) */
+static void cchra(int y, int x, char ch, chtype attr)
 {
     if (y >= 0 && y < LINES && x >= 0 && x < cs_scrw())
-        mvaddch(y, x, (chtype) (unsigned char) ch);
+        mvaddch(y, x, (chtype) (unsigned char) ch | attr);
+}
+
+static void cchr(int y, int x, char ch)
+{
+    cchra(y, x, ch, A_NORMAL);
 }
 
 static void cputa(int y, int x, const char *s, chtype attr)
@@ -287,11 +293,12 @@ static void draw_rows(void)
             cputn(y, x, rend, wd);
             if (x + colw[c] >= w) break;
         }
-        /* current-cell markers on the separator positions */
+        /* current-cell markers on the separator positions; the original
+         * paints them INVERTED so they stay visible over cell contents */
         if (row == curRow) {
             int cx = cell_x(curCol);
-            if (cx - 1 >= 4 && cx - 1 < w) cchr(y, cx - 1, '>');
-            if (cx + colw[curCol] < w) cchr(y, cx + colw[curCol], '<');
+            if (cx - 1 >= 4 && cx - 1 < w) cchra(y, cx - 1, '>', A_REVERSE);
+            if (cx + colw[curCol] < w) cchra(y, cx + colw[curCol], '<', A_REVERSE);
         }
     }
 }
