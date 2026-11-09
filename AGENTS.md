@@ -71,6 +71,14 @@ follow the original. Read this file before changing anything.
   RETURN commits at the ENTRY cell and the cursor returns there. No
   two-press "atpend" pending mode exists anymore - drops the old bug
   where `@E3` was stored as literal junk text.
+- The "@" reference works in ALL coordinate prompts (user requirement):
+  `cs_prompt_coord(pr, default, out, n, setmode)` in screen.c - @
+  inserts the CURRENT cell-cursor coordinate (instantly repainted) and
+  the arrows move the sheet cursor while the prompt is up (via the
+  exported cs_move_cursor). setmode=1 for single-coordinate fields
+  (Goto>, print corners, Load position - @ REPLACES the input),
+  setmode=0 to APPEND for range fields (;C From/To coord so "B3>" +
+  @ forms "B3>A5"). Name fields keep literal @ text (flagged choice).
 - Recalculation is **manual**: `;R` prompts `Recalculate - A)ll or E)ntry`.
   Committing an entry only evaluates that entry.
 - After a data entry commit the cell cursor **stays**; RETURN moves right

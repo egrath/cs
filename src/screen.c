@@ -608,6 +608,90 @@ int cs_prompt_str(const char *pr, const char *dflt, char *out, int maxlen)
     }
 }
 
+/* helper to paint the prompt cursor position (shared by the coord and
+ * plain prompt editors) */
+static void prompt_edit_paint(const char *pr, const char *shown)
+{
+    char line[100];
+    sprintf(line, "%s %s", pr, shown);
+    cs_draw_prompt_text(line, "");
+}
+
+/* coordinate prompt with the "@" reference: "@" inserts the CURRENT
+ * cell-cursor coordinate (the metric the referenced cell-cursor keeps
+ * its place), and the cursor KEYS move the sheet cursor while the
+ * prompt is up.  setmode: 1 = the field holds ONE coordinate (@
+ * replaces the input), 0 = append it (range fields: "B3" then ">" then
+ * @).  Everything else behaves exactly like cs_prompt_str. */
+int cs_prompt_coord(const char *pr, const char *dflt, char *out,
+                    int maxlen, int setmode)
+{
+    char buf[80];
+    int n, ch;
+    n = 0;
+    buf[0] = '\0';
+    for (;;) {
+        ch = -1;
+        if (n)
+            prompt_edit_paint(pr, buf);
+        else
+            prompt_edit_paint(pr, dflt ? dflt : "");
+        ch = getch();
+        if (cs_was_resize(ch)) continue;
+        if (ch == 27) { promptvis = 0; return -1; }
+        if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
+            promptvis = 0;
+            if (n == 0 && dflt && dflt[0]) {
+                strncpy(out, dflt, maxlen - 1);
+                out[maxlen - 1] = '\0';
+                return (int) strlen(out);
+            }
+            strncpy(out, buf, maxlen - 1);
+            out[maxlen - 1] = '\0';
+            return (int) strlen(out);
+        }
+        if (ch == '@') {
+            /* insert the current cursor coordinate; the cell cursor
+             * stays where it is */
+            char cn[4];
+            char coord[10];
+            cs_col_name(curCol, cn);
+            sprintf(coord, "%s%d", cn, curRow + 1);
+            if (setmode) { buf[0] = '\0'; n = 0; }
+            {
+                int i;
+                for (i = 0; coord[i]; i++)
+                    if (n < (int) sizeof(buf) - 2) buf[n++] = coord[i];
+                buf[n] = '\0';
+            }
+            continue;
+        }
+#ifdef KEY_UP
+        if (ch == KEY_UP || ch == KEY_DOWN ||
+            ch == KEY_LEFT || ch == KEY_RIGHT) {
+            if (ch == KEY_UP) cs_move_cursor(0, -1);
+            else if (ch == KEY_DOWN) cs_move_cursor(0, 1);
+            else if (ch == KEY_LEFT) cs_move_cursor(-1, 0);
+            else cs_move_cursor(1, 0);
+            cs_draw();
+            continue;
+        }
+#endif
+        if (ch == 5) { cs_move_cursor(0, -1); cs_draw(); continue; }
+        if (ch == 24) { cs_move_cursor(0, 1); cs_draw(); continue; }
+        if (ch == 19) { cs_move_cursor(-1, 0); cs_draw(); continue; }
+        if (ch == 4) { cs_move_cursor(1, 0); cs_draw(); continue; }
+        if (ch == KEY_BACKSPACE || ch == 8 || ch == 127) {
+            if (n > 0) buf[--n] = '\0';
+            continue;
+        }
+        if (ch >= 32 && ch < 127 && n < (int) sizeof(buf) - 2) {
+            buf[n++] = (char) ch;
+            buf[n] = '\0';
+        }
+    }
+}
+
 /* position the physical (blinking) terminal cursor.  It always rests at
  * the bottom of the screen: while typing, just after the entry text; on
  * the "edit: " field when idle -- never inside the cell area. */

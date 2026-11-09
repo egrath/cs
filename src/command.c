@@ -24,7 +24,7 @@ void cs_goto_cmd(void)
 {
     char buf[32];
     int c, r;
-    if (cs_prompt_str("Goto>", "A1", buf, (int) sizeof(buf)) < 0) return;
+    if (cs_prompt_coord("Goto>", "A1", buf, (int) sizeof(buf), 1) < 0) return;
     if (!cs_parse_coord(buf, &c, &r)) { cs_msg("Bad coord"); return; }
     curCol = c; curRow = r;
     if (curCol >= lockCols && curCol < winCol) winCol = curCol;
@@ -105,8 +105,8 @@ static void copy_cmd(void)
     Cell *tmp;
     int n, i;
 
-    if (cs_prompt_str("from coord (>coord)", "", from, (int) sizeof(from)) < 0) return;
-    if (cs_prompt_str("to coord (>coord)", "", to, (int) sizeof(to)) < 0) return;
+    if (cs_prompt_coord("from coord (>coord)", "", from, (int) sizeof(from), 0) < 0) return;
+    if (cs_prompt_coord("to coord (>coord)", "", to, (int) sizeof(to), 0) < 0) return;
 
     /* rep: 1x1 source repeated across a destination range (manual 5.9
      * "from one cell into a range of cells") */

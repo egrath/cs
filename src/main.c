@@ -41,6 +41,14 @@ static void move_cursor(int dc, int dr)
     scroll_v();
 }
 
+/* exported cursor step for the coordinate prompts' arrow handling
+ * (screen.c): same clamp/window semantics as the edit-line keys */
+void cs_move_cursor(int dc, int dr)
+{
+    move_cursor(dc, dr);
+    cs_stay_visible();
+}
+
 /* exported so command.c (goto, row-count toggle) can re-anchor the
  * window after the visible row count changes */
 void cs_stay_visible(void)

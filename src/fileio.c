@@ -146,6 +146,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
     char path[128];
     FILE *f;
     int c, count, pwlen, i;
+    int bascc = 0, basrr = 0, have_base = 0;
     char magic[4];
 
     cs_savename(name, path, (int) sizeof(path));
@@ -173,8 +174,6 @@ int cs_load(const char *name, int c0, int r0, int merge)
     if (count < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
     for (i = 0; i < count; i++) {
         int cc, rr, ty, just, prc, frm, len;
-        static int bascc, basrr, have_base;
-        if (i == 0) { bascc = 0; basrr = 0; have_base = 0; }
         int dr, dc, drop;
         Cell *cl, scratch;
         cc = fgetc(f);
@@ -405,7 +404,7 @@ int cs_load_dialog(int merge)
     if (cs_prompt_str(merge ? "File name :" : "File name : (make sure file is saved)",
                       "", name, (int) sizeof(name)) < 0) return 0;
     if (!name[0]) return 0;
-    if (cs_prompt_str(merge ? "Load position:" : "Load position:", "A1", b, (int) sizeof(b)) < 0)
+    if (cs_prompt_coord(merge ? "Load position:" : "Load position:", "A1", b, (int) sizeof(b), 1) < 0)
         return 0;
     if (!cs_parse_coord(b, &c0, &r0)) { cs_msg("bad coord"); return 0; }
     cs_msg("...");

@@ -142,7 +142,7 @@ void cs_print_cmd(void)
         if (!f) { cs_msg("can't open"); return; }
     }
 
-    if (cs_prompt_str("top left corner :", "A1", tl, (int) sizeof(tl)) < 0)
+    if (cs_prompt_coord("top left corner :", "A1", tl, (int) sizeof(tl), 1) < 0)
         goto fail;
     if (!cs_parse_coord(tl, &c1, &r1)) { cs_msg("bad coord"); goto fail; }
     {
@@ -171,7 +171,7 @@ gotc2:
     {
         char dbr[24];
         strcpy(dbr, br);
-        if (cs_prompt_str("bottom right corner :", dbr, br, (int) sizeof(br)) < 0)
+        if (cs_prompt_coord("bottom right corner :", dbr, br, (int) sizeof(br), 1) < 0)
             goto fail;
     }
     if (!br[0]) {
