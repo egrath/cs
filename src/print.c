@@ -106,7 +106,7 @@ void cs_print_cmd(void)
     int segStart[64], segEnd[64], nseg, seg;
     int col, row;
 
-    if (cs_prompt_str("To which file?", "PRINTER :", dest, (int) sizeof(dest)) < 0)
+    if (cs_prompt_str("To which file?", "print.txt", dest, (int) sizeof(dest)) < 0)
         return;
     if (!dest[0]) return;
     console = (strcmp(dest, "DISPLAY") == 0);
@@ -187,13 +187,45 @@ gotcol:
         cs_msg("bad coord"); goto fail;
     }
 
-    if (cs_prompt_str("Form length : CONTINUOUS(or lines)", "CONTINUOUS", tmp, (int) sizeof(tmp)) < 0)
-        goto fail;
-    if (tmp[0] == 'C' || tmp[0] == 'c' || !tmp[0] ||
-        strcmp(tmp, "CONTINUOUS") == 0 || strcmp(tmp, "CONTINUOUS ") == 0) form = 66;
-    else {
-        form = atoi(tmp);
-        if (form < 1 || form > 66) { cs_msg("bad form length"); goto fail; }
+    /* Form length editor: CONTINUOUS is the idle display; a digit
+     * switches to the number field (only digits accepted, backspace
+     * falls back to CONTINUOUS when the last digit goes), ESC cancels,
+     * RETURN commits.  Out-of-range numbers hit the manual's
+     * bad form length (1..66) and the question is re-asked. */
+    {
+        int ndig;
+        for (;;) {
+            char line[80];
+            char shown[40];
+            ndig = 0;
+            form = 66;
+            for (;;) {
+                int ch;
+                strcpy(shown, "CONTINUOUS");
+                if (ndig) { tmp[ndig] = '\0'; strcpy(shown, tmp); }
+                sprintf(line, "Form length : %s", shown);
+                cs_draw_prompt_text(line, "");
+                ch = getch();
+                if (cs_was_resize(ch)) continue;
+                if (ch == 27) goto fail;
+                if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) break;
+                if (ch == KEY_BACKSPACE || ch == 8 || ch == 127) {
+                    if (ndig > 0) tmp[--ndig] = '\0';
+                    continue;
+                }
+                if (ch >= '0' && ch <= '9' &&
+                    ndig < (int) sizeof(tmp) - 2) {
+                    tmp[ndig++] = (char) ch;
+                    tmp[ndig] = '\0';
+                }
+                /* any other key: silently rejected */
+            }
+            cs_draw();
+            if (!ndig) break;                      /* CONTINUOUS = 66 */
+            form = atoi(tmp);
+            if (form >= 1 && form <= 66) break;    /* lines per page */
+            cs_msg("bad form length");             /* re-ask */
+        }
     }
     stopp = cs_prompt_yn("Stop on each page (y,n)?");
     cs_draw();
@@ -375,12 +407,10 @@ gotcol:
         cs_draw();
         wait_space();
     } else {
-        /* manual 7.7: after the document is printed the prompt ends the
-         * flow (single-row screen: the report text carries the full
-         * ending) */
+        /* paints like any other transient message: the next key
+         * dismisses it (no blocking) */
         cs_draw();
         cs_msg("-** End of report");
-        wait_space();
     }
     cs_msg("");
     cs_draw();

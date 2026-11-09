@@ -294,12 +294,14 @@ Password: stored as typed and prompted for on load.
   `CALCSTAR.PRN` for spooling. All print output is pure ASCII (identical
   to valid UTF-8: the entry path admits printable ASCII only) — files
   only, no transcoding path.
-- `;P` file destinations follow the manual's extension rule (14-14):
+- `;P` file destinations follow the manual's extension rule (14-14); the
+  default output name is `print.txt` (RETURN takes it, `.TXT` kept):
   a typed name keeps its extension; a bare name gets `.TXT` (text
   report) or `.DTA` (`>name` data records) appended. Prompt literals are
   the manual's (`top left corner :`, `bottom right corner :` with the
-  engine-displayed farthest bottom-right default, `Form length :
-  CONTINUOUS`, `Stop on each page (y,n)?`, `Printer width : 132`,
+  engine-displayed farthest bottom-right default, `Form length :`  editor shows CONTINUOUS, accepts digits only
+  (backspace falls back to CONTINUOUS, out-of-range answers get
+  `bad form length` (1..66) and re-ask), `Stop on each page (y,n)?`, `Printer width : 132`,
   repeating `Title > `, printing starts on an empty title). `Fix
   ordinates (y,n)?` is asked only when A1 was not the origin. After the
   report the flow ends with `-** End of report` + space (the single-row
