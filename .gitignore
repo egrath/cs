@@ -15,3 +15,7 @@ CALCSTAR.PRN
 # build output (objects + executable) lives in build/
 /build/
 /calcstar
+/tdta*
+/tfr*
+/t_rp*
+/"PRINTER :.TXT"
