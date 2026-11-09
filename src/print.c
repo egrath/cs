@@ -98,6 +98,7 @@ static void print_name(const char *name, const char *ext, char *out, int outn)
 void cs_print_cmd(void)
 {
     char dest[64], tl[40], br[40], tmp[40];
+    char path[64];
     int c1, r1, c2, r2;
     int form, stopp, pw, fix, ntitle = 0;
     char titles[5][62];
@@ -113,21 +114,32 @@ void cs_print_cmd(void)
     delimited = (dest[0] == '>' && dest[1] != '\0');
     if (console) {
         ;
-    } else if (delimited) {
-        /* data file export: "manual: a .DTA extension [is assigned]
-         * automatically if no other extension is assigned" */
-        char path[64];
-        print_name(dest + 1, ".DTA", path, (int) sizeof(path));
-        f = fopen(path, "w");
-        if (!f) { cs_msg("can't open"); return; }
-    } else if (strcmp(dest, "PRINTER") == 0) {
-        f = fopen("CALCSTAR.PRN", "w");
-        if (!f) { cs_msg("can't open"); return; }
     } else {
-        char path[64];
-        print_name(dest, ".TXT", path, (int) sizeof(path));
+        /* resolve the output path FIRST, then the manual's overwrite
+         * question - a "w" open would truncate an existing file before
+         * the user could object */
+        if (delimited) {
+            /* data file export: "manual: a .DTA extension [is assigned]
+             * automatically if no other extension is assigned" */
+            print_name(dest + 1, ".DTA", path, (int) sizeof(path));
+        } else if (strcmp(dest, "PRINTER") == 0) {
+            strcpy(path, "CALCSTAR.PRN");
+        } else {
+            print_name(dest, ".TXT", path, (int) sizeof(path));
+        }
+        {
+            FILE *probe = fopen(path, "rb");
+            if (probe) {
+                fclose(probe);
+                /* user: 'File exists. Delete old file [y/n] ? ' */
+                if (cs_prompt_yn("File exists. Delete old file [y/n] ?") != 1) {
+                    /* 'n': the print aborts silently, no message */
+                    return;
+                }
+            }
+        }
         f = fopen(path, "w");
-        if (!f) { cs_msg("can't open file"); return; }
+        if (!f) { cs_msg("can't open"); return; }
     }
 
     if (cs_prompt_str("top left corner :", "A1", tl, (int) sizeof(tl)) < 0)
@@ -410,7 +422,11 @@ gotcol:
         /* paints like any other transient message: the next key
          * dismisses it (no blocking) */
         cs_draw();
-        cs_msg("-** End of report");
+        /* manual 7.7: "End of report - Hit space to continue" ends the
+         * print with ONE measured pause (the file itself keeps the
+         * appendix's "-** End of report" trailer line) */
+        cs_msg("End of report - Hit space to continue");
+        wait_space();
     }
     cs_msg("");
     cs_draw();
