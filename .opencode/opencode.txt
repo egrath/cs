@@ -1,6 +1,45 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (window scrolling, reverse-engineered from REAL CalcStar, pty-verified):
+- USER ran a full experiment series on a genuine CP/M CalcStar (captures in the
+  transcript). Resulting rules, all implemented + verified frame-by-frame:
+  * VERTICAL, both directions: winRow = max(lockRows, curRow - S/2),
+    S = cs_win_rows() - lockRows (10 normally -> cursor 6th row; S=7 under a
+    3-row lock -> cursor 4th scrollable row). Emergent slide +5 down, -6 up,
+    -4 under locks. Clamps at lock/sheet top (up-crossing near row 1).
+  * HORIZONTAL right-off: winCol = max(lockCols, curCol-3), then advance one
+    column at a time until the cursor column FULLY fits (stop at first fit;
+    uniform sheets make this look like a fixed step-3: A-F -> D-I, cursor G).
+  * HORIZONTAL left-off: MINIMAL, winCol = curCol (cursor flush left; this is
+    the one asymmetry; also drops an oversized trailing column from view).
+  * DRAWING: a column is drawn ONLY when it fits entirely (draw_rows now
+    breaks at x+colw > scrw; NO 9-char slivers — verified vs real captures).
+    Column header keeps painting the left bar of a non-fitting column.
+  * GOTO reuses the same rules and only scrolls when the target is OFF-window
+    (in-window target = no scroll at all; real-capture verified).
+  * Width change (;F W) now calls cs_stay_visible() — widened current column
+    re-anchors per the same rules.
+- Implementation: scroll_h/scroll_v rewritten in main.c (comments document the
+  rules); cs_stay_visible() now runs BOTH axes; goto (command.c) delegates to
+  cs_stay_visible only (old hand-rolled anchor removed). Wide-column cases:
+  E=45 cursor E -> view C,D,E; E=60 -> D,E; F beside E=60 -> E,F (fallback
+  walks past the anchor until the CURSOR fits).
+- --test: new scroll battery (18 checks incl. locks, clamp, extended 15-row
+  S/2=7, wide-column cases) + scrck() helper. All pass.
+- pty frames (per-stage log_file switching, /tmp/scroll{1,2,3}.exp, renders in
+  /tmp/frames.txt): uniform down/up walk, clamp, D..I/G, G..L, goto B1 flush,
+  goto A20 15..24, E=45/60, locked 8..14/12..18/4..10 — ALL match the user's
+  real-CalcStar captures exactly. cs1.txt idle (B3=33.00 state) EXACT MATCH.
+- HARNESS: log_file can be switched mid-script (close with bare `log_file`,
+  reopen -noappend) — one raw per state; render.py shows only the FINAL screen
+  of a raw, so per-stage files are the way to verify frame sequences. Markers
+  via puts do NOT land in the raw log. `expect timeout` after the spawn closed
+  raises a Tcl error (script dies) — close the log and exit instead.
+- EXPERIMENT LIST for future real-machine checks (untested there): goto LEFT
+  with lock cols active; sheet-edge clamps (row 255 / col DW); horizontal-left
+  when the cursor's own column is the oversized one.
+
 ## Project
 Faithful console clone of MicroPro/Sorcim CalcStar (1981) spreadsheet.
 - Language/build: pure C89 (-std=c89 -pedantic -Wall), ncurses (-lcurses -lm), plain Makefile in project root. Build target: ./calcstar. `./calcstar --test` = headless regression suite.

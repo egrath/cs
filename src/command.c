@@ -18,7 +18,6 @@ static void redraw(void);
 void cs_command_menu(void);   /* forward: auto entry loop needs it */
 
 static const char *collab(const char *w, int col, const char *rest);
-int cs_cell_x(int col);   /* exported geometry helper (screen.c) */
 
 void cs_goto_cmd(void)
 {
@@ -27,11 +26,9 @@ void cs_goto_cmd(void)
     if (cs_prompt_coord("Goto>", "A1", buf, (int) sizeof(buf), 1) < 0) return;
     if (!cs_parse_coord(buf, &c, &r)) { cs_msg("Bad coord"); return; }
     curCol = c; curRow = r;
-    if (curCol >= lockCols && curCol < winCol) winCol = curCol;
-    if (curRow >= lockRows && curRow < winRow) winRow = curRow;
-    while (cs_cell_x(curCol) + colw[curCol] > cs_scrw() - 1 && winCol < curCol)
-        winCol++;
-    cs_stay_visible();   /* keep the target row visible in the window */
+    cs_stay_visible();   /* scrolls only when the target is off-window
+                            (real CalcStar verified: in-window Goto
+                            target leaves the window untouched) */
     redraw();
 }
 
@@ -363,6 +360,7 @@ static void format_cmd(void)
         w = atoi(tmpb);
         if (w < 3 || w > 63) { cs_msg("Width must be 3 - 63"); return; }
         colw[curCol] = w;
+        cs_stay_visible();   /* a widened column may no longer fit */
     } else if (ch == 'P' || ch == 'p') {
         int p;
         sprintf(pw, "%d", colp[curCol]);

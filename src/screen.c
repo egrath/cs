@@ -19,6 +19,7 @@
  * Terminology (screen x coordinates, 0-based):
  *   - column c's cell contents occupy xs[c] .. xs[c]+colw[c]-1
  *     (xs[0]=5, xs[c+1]=xs[c]+colw[c]+1; default 10-wide => bars at 4,15,26..)
+ *     a column is drawn only when it fits entirely (no clipped slivers)
  *   - the '|' of a data row label sits at x=3
  *   - everything is clamped to 80 columns even on wide terminals
  */
@@ -282,16 +283,16 @@ static void draw_rows(void)
             sprintf(lab, "%3d%c", row + 1, row < lockRows ? '*' : '|');
             cputn(y, 0, lab, 4);
         }
-        /* cell contents: no column bars on data rows */
+        /* cell contents: no column bars on data rows; a column is
+         * drawn only when it fits entirely (real CalcStar shows no
+         * clipped slivers at the right edge) */
         for (c = 0; c < CS_MAXCOL; c++) {
             char rend[CS_MAX_W + 2];
-            int x = cell_x(c), wd;
+            int x = cell_x(c);
             if (x >= w) break;
-            wd = colw[c];
-            if (x + wd > w) wd = w - x;
-            cell_render(c, row, rend, wd);
-            cputn(y, x, rend, wd);
-            if (x + colw[c] >= w) break;
+            if (x + colw[c] > w) break;
+            cell_render(c, row, rend, colw[c]);
+            cputn(y, x, rend, colw[c]);
         }
         /* current-cell markers on the separator positions; the original
          * paints them INVERTED so they stay visible over cell contents */

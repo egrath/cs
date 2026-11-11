@@ -9,23 +9,46 @@
 static void redraw(void) { cs_draw(); }
 
 /* ---------------- movement with window scrolling -------------------- */
-/* scroll so the current cell (with its '<' marker) stays inside the
- * fixed 80-column screen mask */
+/* Window scrolling reverse-engineered from real CalcStar (CP/M) with
+ * user-run experiments (fall 2026, recorded in .opencode/opencode.txt):
+ *   - left of the window:  minimal re-anchor, cursor flush left
+ *     (winCol = curCol; also drops an oversized column from view)
+ *   - right of the window: winCol = max(lockCols, curCol-3), then advance
+ *     one column at a time until the cursor column fully fits (stop at
+ *     the first fitting position; columns are drawn only when they fit
+ *     entirely, see screen.c)
+ *   - vertical, BOTH directions: winRow = max(lockRows, curRow - S/2)
+ *     with S = scrollable rows (win rows minus locked rows); the cursor
+ *     lands mid-window (6th of 10 rows; 4th scrollable row under a
+ *     3-row lock), clamped at the sheet/lock top.
+ * Emergent slide amounts: +5 down, -6 up, +3 right, -1 left.
+ * Goto reuses these rules and only scrolls when the target is off-window. */
 static void scroll_h(void)
 {
+    int nc;
     if (curCol < lockCols) return;
-    if (curCol < winCol) winCol = curCol;
-    while (cs_cell_x(curCol) + colw[curCol] > cs_scrw() - 1 && winCol < curCol)
+    if (curCol < winCol) { winCol = curCol; return; }
+    if (cs_cell_x(curCol) + colw[curCol] <= cs_scrw()) return;
+    nc = curCol - 3;
+    if (nc < lockCols) nc = lockCols;      /* covers nc < 0 too */
+    winCol = nc;
+    while (cs_cell_x(curCol) + colw[curCol] > cs_scrw() && winCol < curCol)
         winCol++;
 }
 
 static void scroll_v(void)
 {
+    int s, off, eff, n;
     if (curRow < lockRows) return;
-    if (curRow < winRow) winRow = curRow;
-    while (lockRows + (curRow - (winRow >= lockRows ? winRow : lockRows)) >=
-               cs_win_rows() && winRow < curRow)
-        winRow++;
+    s = cs_win_rows() - lockRows;
+    if (s < 1) s = 1;
+    off = s / 2;
+    eff = winRow >= lockRows ? winRow : lockRows;
+    if (curRow < eff || curRow - eff >= s) {
+        n = curRow - off;
+        if (n < lockRows) n = lockRows;
+        winRow = n;
+    }
 }
 
 /* dc/dr: -1,0,1; clamps to array bounds and lock edges */
@@ -50,9 +73,10 @@ void cs_move_cursor(int dc, int dr)
 }
 
 /* exported so command.c (goto, row-count toggle) can re-anchor the
- * window after the visible row count changes */
+ * window with the real-CalcStar rules after cursor/count changes */
 void cs_stay_visible(void)
 {
+    scroll_h();
     scroll_v();
 }
 
@@ -448,6 +472,14 @@ static void setv(int col, int row, const char *txt)
     csn_parse(txt, &v);
     cs_free_cell(cs_cell(col, row));
     cs_set_num(cs_cell(col, row), txt, &v, 0, NULL);
+}
+
+/* window-scroll check: 1 on failure (added to `fails` by the caller) */
+static int scrck(int cond, const char *what)
+{
+    if (cond) { printf("ok   %s\n", what); return 0; }
+    printf("FAIL %s\n", what);
+    return 1;
 }
 
 static void run_tests(void)
@@ -1004,6 +1036,77 @@ static void run_tests(void)
                 if (cells[r][c].formf) fl = 1;
         if (fl) { printf("FAIL cs_clear_all left form flags\n"); fails++; }
         else printf("ok   cs_clear_all resets form flags\n");
+    }
+
+    /* window scrolling rules, reverse-engineered from real CalcStar
+     * (CP/M) with user-run experiments: uniform +5/-6 vertical slide,
+     * flush-left / anchor-3 horizontal, wide-column advance-until-fits,
+     * lock-aware S/2 vertical anchor, no scroll for in-window targets */
+    {
+        int f2 = 0;
+        COLS = 80;
+        lockCols = 0; lockRows = 0; extended = 0;
+        for (i = 0; i < CS_MAXCOL; i++) { colw[i] = 10; colp[i] = 2; }
+        /* vertical down: cursor rides 10 -> 11, window 1..10 -> 6..15 */
+        winRow = 0; curRow = 10; scroll_v();
+        f2 += scrck(winRow == 5, "scroll down slide +5 (rows 6..15)");
+        /* no scroll while visible */
+        winRow = 5; curRow = 13; scroll_v();
+        f2 += scrck(winRow == 5, "no vertical scroll inside window");
+        /* vertical up mid-sheet: window 10..19, cursor 9 -> 4..13 */
+        winRow = 9; curRow = 8; scroll_v();
+        f2 += scrck(winRow == 3, "scroll up lands cursor 6th row");
+        /* vertical up clamp at the sheet top: cursor 3 -> rows 1..10 */
+        winRow = 3; curRow = 2; scroll_v();
+        f2 += scrck(winRow == 0, "scroll up clamps at row 1");
+        /* horizontal right uniform: window A..F, cursor G -> D..I */
+        winCol = 0; curCol = 6; scroll_h();
+        f2 += scrck(winCol == 3, "scroll right anchor 3 (window D)");
+        /* no scroll while the column fits */
+        winCol = 3; curCol = 4; scroll_h();
+        f2 += scrck(winCol == 3, "no horizontal scroll inside window");
+        /* horizontal left: window E..J, cursor D -> flush left */
+        winCol = 4; curCol = 3; scroll_h();
+        f2 += scrck(winCol == 3, "scroll left flush at cursor");
+        /* goto-style left target deep from window: also flush */
+        winCol = 6; curCol = 1; scroll_h();
+        f2 += scrck(winCol == 1, "goto left target flush");
+        /* wide column E=45: anchor B would clip E (38..82) -> C */
+        colw[4] = 45;
+        winCol = 0; curCol = 4; scroll_h();
+        f2 += scrck(winCol == 2, "wide col: advance until it fits");
+        /* with E=45 in view, F beside E sits at 73..82: it does not
+         * fit, so the anchor moves to D (E 16..60, F 62..71) */
+        winCol = 2; curCol = 5; scroll_h();
+        f2 += scrck(winCol == 3, "wide col 45: F beside E re-anchors");
+        /* E=45, cursor G: anchor D would clip G (73..82) -> E */
+        curCol = 6; scroll_h();
+        f2 += scrck(winCol == 4, "wide col: cursor re-anchors past it");
+        /* wide column E=60: anchor B..C all clip -> D (16..75) */
+        colw[4] = 60;
+        winCol = 0; curCol = 4; scroll_h();
+        f2 += scrck(winCol == 3, "wide col 60: stops at first fit");
+        colw[4] = 10;
+        /* locks: lockRows=3 (S=7): cursor row 11 -> scrollable 8..14 */
+        lockRows = 3;
+        winRow = 0; curRow = 10; scroll_v();
+        f2 += scrck(winRow == 7, "locked: cursor 4th scrollable row");
+        /* cursor inside the locked area never scrolls */
+        winRow = 0; curRow = 1; scroll_v();
+        f2 += scrck(winRow == 0, "locked: cursor in lock, no scroll");
+        /* locked up-crossing: window 8..14, cursor 7 -> 4..10 */
+        winRow = 7; curRow = 6; scroll_v();
+        f2 += scrck(winRow == 3, "locked up: clamps at lock edge");
+        /* locked down-crossing: window 8..14, cursor 15 -> 12..18 */
+        winRow = 7; curRow = 14; scroll_v();
+        f2 += scrck(winRow == 11, "locked down: 4th scrollable again");
+        lockRows = 0;
+        /* extended mode (15 rows): S/2 = 7 */
+        extended = 1;
+        winRow = 0; curRow = 15; scroll_v();
+        f2 += scrck(winRow == 8, "extended: cursor 8th of 15 rows");
+        extended = 0;
+        fails += f2;
     }
 
     if (fails == 0) printf("\nAll tests passed.\n");
