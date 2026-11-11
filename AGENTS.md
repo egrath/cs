@@ -46,6 +46,10 @@ follow the original. Read this file before changing anything.
   follows at 24 too (manual 4.1 pinned 12). 24 sits inside the 30-digit
   honest core with 6 digits of margin, keeping the "display truncates
   and never shows a digit above the true value" guarantee.
+  Mind the units: visible precision counts DECIMAL PLACES, the honest
+  core counts SIGNIFICANT digits — honest decimals = 30 − (integer
+  digits of the value); the 24 cap is safe for values with up to 6
+  integer digits.
 - **Standing deviation policy (user, 2026-11): deviations from the
   manuals are allowed when they stay faithful in spirit and clearly
   benefit the user — flag every one (here or in the flagged-extension
@@ -185,7 +189,23 @@ Batch workflow (do all steps before reporting done):
 2. `./calcstar --test` — all pass. Extend `--test` with exact-string cases
    for anything you add (manual worked examples are preferred test data,
    e.g. `140%E4`=0.028, `(28**2)+(52**2)`=3488, `10*LOG(56/(12*10**-3))`
-   =36.6900...).
+   =36.6900...).  Precision-era reference strings (40-digit engine,
+   round30, verified against 60-digit decimal arithmetic and the live
+   binary — pin these, never re-derive):
+   - chain `+asin(acos(atan(tan(cos(sin(9))))))`: canon
+     `+9.0000000000000E+1`, fixed-24 `9.000000000000000000000002`
+     (23 correct decimals — the information floor of the `1-x`
+     amplification in acos/asin at a 30-digit honest core).
+   - `sqrt(2)`: fixed-28 `1.4142135623730950488016887242`; at prec 24
+     `1.414213562373095048801688`.
+   - `exp(1)`: fixed-30 `2.718281828459045235360287471350`; at prec 24
+     `2.718281828459045235360287`.
+   - π at prec 24 `3.141592653589793238462643`; `SIN(30)`/`COS(60)`:
+     exactly `0.5` (round30 boundary values stay clean).
+   - cos is EVEN: `COS(-60)` = `0.5` (regression for the fixed sign bug).
+   - Differential harness: `tests/precision_ref.c` + `tests/precision_ref.py`
+     (25 inputs × 9 functions at 38 decimals vs a 150-digit decimal
+     reference; tolerance 2e-29 relative — see the file headers).
 3. Interactive pty check of the affected UI paths with an `expect` script.
 4. The cs1.txt idle diff (see recipe in `.opencode/opencode.txt`).
 5. Update `.opencode/opencode.txt`.

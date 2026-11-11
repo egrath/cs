@@ -14,9 +14,10 @@ both manuals; where they disagree prefer the clearer reading and note it.
 
 Like the original CalcStar program on machines that had no FPU, all numeric
 work is **BCD decimal arithmetic** (`src/num.c`/`src/num.h`): every value is
-carry-side decimal digits, `value = 0.d1d2... * 10^exp` with up to **18
-digits** (14 calculation digits + guard digits, per the manual's "accurate
-to 14 decimal places"); the exponent range is ±999.  Add, subtract,
+carry-side decimal digits, `value = 0.d1d2... * 10^exp` with up to **40
+digits** (30 calculation digits + 10 guard digits — an engineering
+extension; the original carried 22 and the manual promises "accurate to 14
+decimal places"); the exponent range is ±999.  Add, subtract,
 multiply (schoolbook digit multiplication), divide (pencil-and-paper long
 division) and every system function work on digits:
 
@@ -50,6 +51,36 @@ division) and every system function work on digits:
 - Column precision prompt and error: user-extended from the manual's
   Appendix C range to `precision(0 - 24)` / `Prec. must be 0 - 24`
   (inside the 30-digit honest core).
+
+### Precision at a glance
+
+- **Internal:** 40-digit decimal (BCD) mantissa; every function is honest
+  to **30 significant digits** (`round30`), and pure arithmetic truncates
+  at 40 — no floating point anywhere.  The display always **truncates**
+  (never rounds), per the manual.
+- **Visible:** up to **24 decimals** per column (`;F`, then `P`, then the
+  precision), the `?`-calculator likewise.  Set `;F P 24` and a 63-wide
+  column, and type (all verified from the live program):
+
+  | entry | cell shows |
+  |---|---|
+  | `+asin(acos(atan(tan(cos(sin(9))))))` | `9.000000000000000000000002` |
+  | `+sqrt(2)` | `1.414213562373095048801688` |
+  | `+pi()` | `3.141592653589793238462643` |
+  | `+sin(30)` | `0.500000000000000000000000` |
+
+  `+2**0.5?` answers in the status bar with
+  `=1.414213562373095048801688`.  The first line is the classic
+  spreadsheet precision test: 23 correct decimals (the last shown digit
+  reflects the honest-core limit of the `1-x` amplification inside
+  `acos`/`asin`).
+- **Comparisons see all honest digits:** two values that were equal at 15
+  digits but differ beyond now compare unequal (`=` in a conditional, and
+  copy/delete dependency scans).
+- **Differential harness:** `tests/precision_ref.c` + `tests/precision_ref.py`
+  dump every transcendental function at 38 decimals and compare against a
+  150-digit Python-decimal reference (`python3 tests/precision_ref.py
+  /tmp/eng.txt`); the engine agrees to ≤ ~7e-30 relative everywhere.
 - **Form mode (`;F ... F`, manual 11.3) and the `;A` auto course**: a flagged
   cell shows `(form mode set)` after the type text - e.g.
   `type: (empty, but allocated) (form mode set)` on an empty stop cell,

@@ -1,6 +1,27 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (precision documentation + permanent differential harness):
+- All doc examples verified against the LIVE binary via pty (docex.exp)
+  before being written down: chain -> 9.000000000000000000000002, sqrt(2)
+  -> 1.414213562373095048801688, pi() -> 3.141592653589793238462643,
+  sin(30) -> 0.500000000000000000000000, calculator -> =1.414213562373095048801688.
+- README.md: engine section updated 18 -> 40 digits (was stale!), new
+  "Precision at a glance" block with the verified example table, the
+  comparisons-see-honest-digits note and the tests/ harness pointer.
+- AGENTS.md: precision-era reference strings pinned under the build/test
+  step (canon + fixed-decimal values, never re-derive); decimals-vs-
+  significant-digits note in the invariants; harness pointer.
+- NEW tests/: precision_ref.c (C89 dump harness, 25 inputs x 9 fns at 38
+  decimals, builds warning-free) + precision_ref.py (150-digit decimal
+  reference; with an engine dump as argv it runs the comparison itself,
+  exit code 0 on success). Deliberate exception to the no-scratch-commits
+  rule (user approved).
+- Verification: harness run clean (zero over-tolerance), --test all pass,
+  cs1.txt idle EXACT.
+- Stale-doc trap: README had "18 digits" from a pre-40 batch — grep the
+  docs for old precision numbers when the engine changes.
+
 ## BATCH (visible precision 12 -> 24, user decision):
 - USER POLICY (standing, recorded in AGENTS.md): deviations from the
   manuals are allowed when faithful in spirit + clearly beneficial —
