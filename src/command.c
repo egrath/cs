@@ -364,10 +364,10 @@ static void format_cmd(void)
     } else if (ch == 'P' || ch == 'p') {
         int p;
         sprintf(pw, "%d", colp[curCol]);
-        if (cs_prompt_str(collab("Column", curCol, "precision(0 - 12)"), pw, tmpb, 20) < 0) return;
+        if (cs_prompt_str(collab("Column", curCol, "precision(0 - 24)"), pw, tmpb, 20) < 0) return;
         if (tmpb[0] == 'E' || tmpb[0] == 'e') {
             p = atoi(tmpb + 1);
-            if (p < 0 || p > CS_MAX_P) { cs_msg("Prec. must be 0 - 12"); return; }
+            if (p < 0 || p > CS_MAX_P) { cs_msg("Prec. must be 0 - 24"); return; }
             if (cur->type == CE_EMPTY) {
                 /* per-cell format needs the cell: manual "can't create -
                  * not enough memory to set format precision" */
@@ -378,7 +378,7 @@ static void format_cmd(void)
             cur->prec = p;
         } else {
             p = atoi(tmpb);
-            if (p < 0 || p > CS_MAX_P) { cs_msg("Prec. must be 0 - 12"); return; }
+            if (p < 0 || p > CS_MAX_P) { cs_msg("Prec. must be 0 - 24"); return; }
             colp[curCol] = p;
         }
     } else if (ch == 'F' || ch == 'f') {

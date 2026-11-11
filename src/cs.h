@@ -11,7 +11,7 @@
 #define CS_MIN_W 3
 #define CS_MAX_W 63
 #define CS_DEF_P 2
-#define CS_MAX_P 12
+#define CS_MAX_P 24   /* visible decimals; engineering extension (manual: 12) */
 #define CS_EDITMAX 120
 #define CS_BUDGET 2000         /* emulated entry pool for ';?' */
 

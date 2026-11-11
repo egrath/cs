@@ -126,8 +126,10 @@ int cs_commit_entry(int col, int rw, const char *entry)
         } else {
             /* format with up to 10 decimals, then strip trailing zeros
                for the calculator display (string work only) */
-            /* manual 4.1/4.2: every answer contains 12 decimal places */
-            csn_fmt_fixed(&val, 12, out, (int) sizeof(out));
+            /* manual 4.1/4.2 pinned the calculator at 12 decimals; the
+               visible precision is user-extended to CS_MAX_P (24) to
+               match the cells */
+            csn_fmt_fixed(&val, CS_MAX_P, out, (int) sizeof(out));
             cs_msg_plain("=%24s", out);   /* answers are non-inverse */
         }
         return err;

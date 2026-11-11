@@ -164,9 +164,10 @@ void cs_set_errpend(int on)
 
 /* evaluate the pending (not yet committed) edit-line text with the
  * Evaluate Function: the answer paints on the status bar as
- * "=         10.000000000000" ('=' plus a %24s right-aligned field of
- * the 12-decimal fixed form) and the edit field clears.  Manual 4.1:
- * every answer has 12 decimal places; no floating point anywhere. */
+ * "=         10.000000000000000000000000" ('=' plus a %24s right-aligned
+ * field of the CS_MAX_P-decimal fixed form) and the edit field clears.
+ * Manual 4.1 pinned 12 decimals; the visible precision is user-extended
+ * to 24 (CS_MAX_P) to match the cells.  No floating point anywhere. */
 static void eval_pending(void)
 {
     char saved[CS_EDITMAX + 1];
@@ -190,7 +191,7 @@ static void eval_pending(void)
         free(str);
         return;
     }
-    csn_fmt_fixed(&val, 12, num, (int) sizeof(num));
+    csn_fmt_fixed(&val, CS_MAX_P, num, (int) sizeof(num));
     cs_msg_plain("=%24s", num);   /* the answer paints non-inverse */
 }
 
@@ -676,6 +677,33 @@ static void run_tests(void)
         if (strcmp(g, "0.999847725615063856701212110583"))
             { printf("FAIL cos(-0.9999) got %s\n", g); fails++; }
         else printf("ok   cos(-0.9999) sign + 30 digits\n");
+
+        /* visible precision 24 (user-extended from the manual's 12):
+         * fixed-form strings at CS_MAX_P, verified against the
+         * 60-digit decimal reference */
+        csn_parse("2", &t);
+        csn_sqrt(&r, &t);
+        csn_fmt_fixed(&r, CS_MAX_P, g, (int) sizeof(g));
+        if (strcmp(g, "1.414213562373095048801688"))
+            { printf("FAIL sqrt2 p24 got %s\n", g); fails++; }
+        else printf("ok   sqrt2 at prec 24\n");
+        csn_parse("3.14159265358979323846264338327950288419716939937510582097494459", &r);
+        csn_fmt_fixed(&r, CS_MAX_P, g, (int) sizeof(g));
+        if (strcmp(g, "3.141592653589793238462643"))
+            { printf("FAIL pi p24 got %s\n", g); fails++; }
+        else printf("ok   pi literal at prec 24\n");
+        csn_from_int(&t, 1);
+        csn_exp(&r, &t);
+        csn_fmt_fixed(&r, CS_MAX_P, g, (int) sizeof(g));
+        if (strcmp(g, "2.718281828459045235360287"))
+            { printf("FAIL exp1 p24 got %s\n", g); fails++; }
+        else printf("ok   exp1 at prec 24\n");
+        /* values below 1e-30 print exact zeros beyond the honest core */
+        csn_parse("1e-40", &r);
+        csn_fmt_fixed(&r, CS_MAX_P, g, (int) sizeof(g));
+        if (strcmp(g, "0.000000000000000000000000"))
+            { printf("FAIL tiny p24 got %s\n", g); fails++; }
+        else printf("ok   tiny value at prec 24 underflows to zeros\n");
     }
 
     /* PI() at maximum internal precision (deg-mode trig companion) */
@@ -993,18 +1021,18 @@ static void run_tests(void)
      * error text with the cell coordinate */
     {
         int ec;
-        /* "= " + %24s of the 12-decimal fixed answer, no float */
+        /* "= " + %24s of the CS_MAX_P-decimal fixed answer, no float */
         {
             Csn r;
             char num[64], msg[76], want[76];
             char *s2 = NULL;
             if (cs_eval_formula("5+5", &r, &s2) != 0) { printf("FAIL 5+5\n"); fails++; }
             if (s2) free(s2);
-            csn_fmt_fixed(&r, 12, num, (int) sizeof(num));
+            csn_fmt_fixed(&r, CS_MAX_P, num, (int) sizeof(num));
             sprintf(msg, "=%24s", num);
-            sprintf(want, "=         10.000000000000");
+            sprintf(want, "=10.000000000000000000000000");
             if (strcmp(msg, want)) { printf("FAIL eval-key fmt %s want %s\n", msg, want); fails++; }
-            else printf("ok   eval-key format\n");
+            else printf("ok   eval-key format (24 decimals)\n");
         }
         /* '@'-reference entries commit as bare-coordinate formulas */
         {

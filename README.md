@@ -34,20 +34,22 @@ division) and every system function work on digits:
   `sqrt(10)` half-step of the exponent); `LOG` computed directly, so
   integral powers of ten come out exactly (`LOG(0.001) = -3`).
 - **Trigonometry in degrees** (SIN COS TAN ASIN ACOS ATAN — plus `PI()` at
-  the full 22-digit internal precision — not documented in the manual,
+  the full 40-digit internal precision — not documented in the manual,
   reconstructed from the original's feature set; the unit convention is
   degrees, matching Sorcim-era products): Maclaurin series
   of the reduced angle (≤ 22.5° after quadrant+halving mapping), `atan`
   via the half-angle identity `atan(x) = 2*atan(x/(1+sqrt(1+x²)))` and
   `asin/acos` through atan.  All series results are **rounded at the
-  15th digit** so boundary-exact values (SIN(30°) = 0.5) come out clean;
+  30th digit** so boundary-exact values (SIN(30°) = 0.5) come out clean;
   the cell display still truncates, per the manual.
-- The Evaluate (`?`) calculator prints **12 decimal places** (manual
-  4.1/4.2), and a leading `+`/`-` is required for functions in entries
-  (manual: "if a + or a — is not placed in front of the function... the
-  entry will be read as a text entry").
-- Column precision prompt and error are per the manual's Appendix C:
-  `precision(0 - 12)` and `Prec. must be 0 - 12`.
+- The Evaluate (`?`) calculator prints **24 decimal places** (manual 4.1/4.2
+  pinned 12; user-extended to match the worksheet), and a leading `+`/`-`
+  is required for functions in entries (manual: "if a + or a — is not
+  placed in front of the function... the entry will be read as a text
+  entry").
+- Column precision prompt and error: user-extended from the manual's
+  Appendix C range to `precision(0 - 24)` / `Prec. must be 0 - 24`
+  (inside the 30-digit honest core).
 - **Form mode (`;F ... F`, manual 11.3) and the `;A` auto course**: a flagged
   cell shows `(form mode set)` after the type text - e.g.
   `type: (empty, but allocated) (form mode set)` on an empty stop cell,
@@ -258,8 +260,9 @@ to-right by default (`;O` toggles).
 - Errors display as `?n?` (Error 0, value range/div-zero) or `Error n` per
   the manual's error table (1 coordinate, 2 range, 3 paren, 4 unknown fn,
   6 terminal, 7 trailing, 8 number, 9 regression, 12 depth, 255 illegal
-  REGR value). Internal math carries 14 digits; display truncates at the
-  column precision rather than rounding (manual-faithful).
+  REGR value). Internal math carries 40 digits (30 honest through `round30`);
+  display truncates at the column precision (up to 24 decimals) rather than
+  rounding (manual-faithful).
 
 ## File format (.CSD)
 

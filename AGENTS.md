@@ -41,6 +41,15 @@ follow the original. Read this file before changing anything.
   come out clean and long chains keep ~24+ digits. The on-disk format is
   pinned to the original's 22 digit bytes (`CSN_FILE_DIGS`, CSD3) — wider
   mantissas truncate on save.
+- **Visible precision is user-extended to 24 decimals** (`CS_MAX_P`,
+  flagged 2026-11: manual Appendix C says `0 - 12`). The `?`-calculator
+  follows at 24 too (manual 4.1 pinned 12). 24 sits inside the 30-digit
+  honest core with 6 digits of margin, keeping the "display truncates
+  and never shows a digit above the true value" guarantee.
+- **Standing deviation policy (user, 2026-11): deviations from the
+  manuals are allowed when they stay faithful in spirit and clearly
+  benefit the user — flag every one (here or in the flagged-extension
+  lists), never silently.**
 - Extension functions (Batch A, flagged not from the 1982 manuals): `SIGN`,
   `MOD`, `POWER`, `FACT`, `COMBIN`, `PERMUT`, `GCD`, `LCM`, `DEGREES`,
   `RADIANS`, `ROUND`, `TRUNC`, `PI()` and the trig set. Integer caps
@@ -87,7 +96,7 @@ follow the original. Read this file before changing anything.
   Committing an entry only evaluates that entry.
 - After a data entry commit the cell cursor **stays**; RETURN moves right
   only when the edit buffer was empty. A bare `?`-terminated entry is the
-  calculator (no store, 12 decimals shown).
+  calculator (no store, 24 decimals shown).
 - System functions in entries need a leading `+`/`-`, else they are text
   (manual: functions without a leading + or - are text entries).
 - `\` starts a non-evaluative comment: kept in `cont` (shown on the
@@ -128,7 +137,8 @@ follow the original. Read this file before changing anything.
   manuals' error lists): `?n?`, `Error <n>-> %s  hit space`,
   `Room for %d entries`, `MEMORY IS TOO LOW`, `ERROR: would delete
   ref(s) at %s`, `bad coord`, `bad range coord`, `Width must be 3 - 63`,
-  `Prec. must be 0 - 12`, `can't create`, `can't open` (print output),
+  `Prec. must be 0 - 24` (user-extended range), `can't create`, `can't
+  open` (print output),
   `can't open file`, `not ok`, `READ ERROR`, `no form flags`,
   `sizes don't agree`, `not along row/column`, `data too wide`,
   `bad form length`, `write error, not the same`,
@@ -207,10 +217,10 @@ Batch workflow (do all steps before reporting done):
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.
 - Trigonometry inputs/outputs are **degrees** (Sorcim-era convention; the
   trig set is not documented in either manual).
-- The `?`-calculator shows 12 decimals with no zero-stripping (literal
-  reading of 1982 manual 4.1).
-- Precision range is `0 - 12` (Appendix C) even though one chapter says
-  "0 to 10 places" — Appendix C wins.
+- The `?`-calculator shows CS_MAX_P (24) decimals with no zero-stripping
+  (manual 4.1 pinned 12 — user-extended 2026-11, see the standing policy).
+- Precision range is `0 - 24` (user-extended from Appendix C's `0 - 12`,
+  flagged 2026-11) even though one chapter says "0 to 10 places".
 
 ## Source map
 

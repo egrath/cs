@@ -1,6 +1,31 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (visible precision 12 -> 24, user decision):
+- USER POLICY (standing, recorded in AGENTS.md): deviations from the
+  manuals are allowed when faithful in spirit + clearly beneficial —
+  flag every one, never silently.
+- CHANGES: CS_MAX_P 12 -> 24 (cs.h); format dialog prompt label
+  "precision(0 - 24)" and message "Prec. must be 0 - 24" (both preserved-
+  string updates, flagged); the ?-calculator follows at 24 (eval.c
+  cs_commit_entry calculator path + main.c eval_pending) — %24s is a
+  MINIMUM width so 26+-char answers simply widen the status field
+  (verified: "=1.414213562373095048801688"). cs_fmt_num is width-driven,
+  no change needed; save format unaffected (prec byte).
+- RATIONALE: 24 decimals sits inside the 30-digit honest core (round30)
+  with 6 digits of margin — the "display truncates, never above truth"
+  guarantee holds for values with up to 6 integer digits.
+- TESTS: --test +5 checks (sqrt2/pi-literal/exp1 at prec 24, tiny value
+  underflow to zeros, eval-key 24-decimal want WITHOUT padding — a
+  27-char answer overflows the %24s minimum so no spaces). README.md
+  synced (24 decimals, 40-digit engine, message strings).
+- pty (prec24.exp): ;F W 63 + ;F P 24 -> A1 shows 1.414213562373095048801688
+  (2**0.5); width 10 -> sci fallback 1.4142E+0; ;F P 25 -> "Prec. must be
+  0 - 24"; ?-calculator 24 decimals. cs1.txt idle EXACT.
+- HARNESS GOTCHA: the idle-diff checker has two variants — one keeps the
+  render's trailing "|" (norm_render must strip endswith('|')) — a sloppy
+  rewrite of the checker produced 24 bogus "diffs" on a perfect screen.
+
 ## BATCH (precision raise to 40 digits, differential-verified):
 - USER REQUEST: more precision for engineering; the standard test
   "+asin(acos(atan(tan(cos(sin9)))))" scored only ~8 decimals (got
