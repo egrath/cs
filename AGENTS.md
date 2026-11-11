@@ -33,10 +33,14 @@ follow the original. Read this file before changing anything.
 ## Identity & hard invariants
 
 - **No floating point anywhere.** All math is the BCD engine. A value is
-  `0.d1d2... * 10^exp10` with up to 22 digits (14 calculation + guard),
-  exponent range ±999. Arithmetic **truncates**, never rounds; only
-  multi-term transcendental series results are rounded at the 15th digit
-  (`round15`) so boundary-exact values (SIN(30°) = 0.5) come out clean.
+  `0.d1d2... * 10^exp10` with up to 40 digits (30 calculation + 10 guard;
+  engineering extension flagged 2026-11: the original carried 22 digits
+  and the manual promises only 14), exponent range ±999. Arithmetic
+  **truncates**, never rounds; transcendental series results are rounded
+  at the 30th digit (`round30`) so boundary-exact values (SIN(30°) = 0.5)
+  come out clean and long chains keep ~24+ digits. The on-disk format is
+  pinned to the original's 22 digit bytes (`CSN_FILE_DIGS`, CSD3) — wider
+  mantissas truncate on save.
 - Extension functions (Batch A, flagged not from the 1982 manuals): `SIGN`,
   `MOD`, `POWER`, `FACT`, `COMBIN`, `PERMUT`, `GCD`, `LCM`, `DEGREES`,
   `RADIANS`, `ROUND`, `TRUNC`, `PI()` and the trig set. Integer caps
@@ -154,7 +158,7 @@ follow the original. Read this file before changing anything.
 - Engine caution: `finish()`'s `baseExp` parameter means "place of the
   LAST digit of the digit string" and every call site must derive it
   itself (mul: `Ea+Eb-na-nb`; div: `na-(j0+L-1)+Ea-Eb-na+nb`; truncate:
-  `exp10-n`; round15: `exp10-15`). Several historical bugs were wrong
+  `exp10-n`; round30: `exp10-30`). Several historical bugs were wrong
   baseExp derivations.
 
 ## Building & testing
@@ -212,7 +216,7 @@ Batch workflow (do all steps before reporting done):
 
 | file | responsibility |
 |---|---|
-| `src/num.c/h` | BCD engine: Csn type, add/sub/mul/div/scale, parse/canon/fixed/sci formats, pow, trig (degrees), ln/exp/log/sqrt, round15 |
+| `src/num.c/h` | BCD engine: Csn type, add/sub/mul/div/scale, parse/canon/fixed/sci formats, pow, trig (degrees), ln/exp/log/sqrt, round30 |
 | `src/parser.c` | expression grammar: numbers, refs/ranges, `SUM/CNT/AVG/MAX/MIN`, math+linear functions, conditionals, `%` postfix, `**`, `\` comments |
 | `src/cells.c` | cell store, coords, ref scanners, `cs_fmt_num`, REGR state |
 | `src/eval.c` | `cs_recalc_*` (manual-only), commit path incl. `?` calculator, comments |

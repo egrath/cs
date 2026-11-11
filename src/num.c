@@ -2,15 +2,17 @@
  *
  * Everything here works on decimal digits (BCD), one digit per byte.
  * No floating point is used anywhere; multiply and divide follow the
- * pencil-and-paper algorithms the original spreadsheet had to use,
- * keeping 18 digits (14 calculation digits + guard digits, per the
- * manual's "accurate to 14 decimal places").
+ * pencil-and-paper algorithms the original spreadsheet had to use.
+ * The mantissa carries 40 digits (30 calculation + 10 guard) - an
+ * engineering extension beyond the manual's "accurate to 14 decimal
+ * places"; the display still shows at most 12 decimals and the manual's
+ * truncation rule governs everything the user sees.
  */
 #include <string.h>
 #include <ctype.h>
 #include "num.h"
 
-#define CSN_PARSE_MAX 48     /* digit cap when parsing; beyond: overflow */
+#define CSN_PARSE_MAX 64     /* digit cap when parsing; beyond: overflow */
 
 /* ================= internal helpers ================================= */
 
@@ -26,9 +28,9 @@ static void mkzero(Csn *r)
  * first and represents the exact integer mantissa M; the value equals
  * sign * M * 10^baseExp, i.e. digit d[n-1] sits at place 10^baseExp.
  * Leading zeros are skipped, trailing zeros stripped (both value-
- * preserving), the mantissa is cut to CSN_DIGS digits (era-faithful
- * truncation, the manual: "numbers are ... truncated") and the
- * exponent is range-checked. */
+ * preserving), the mantissa is cut to CSN_DIGS digits (truncation per
+ * the manual's "numbers are ... truncated"; CSN_DIGS itself is an
+ * engineering extension, see num.h) and the exponent is range-checked. */
 static int finish(Csn *r, const unsigned char *d, int n, int baseExp, int sign)
 {
     int k0 = 0, last, i;
@@ -153,7 +155,7 @@ static void csn_truncate(Csn *r, const Csn *a, int keep)
 /* forward decls */
 static void csn_truncate(Csn *r, const Csn *a, int keep);
 static void trunc_int(Csn *r, const Csn *a);
-static void round15(Csn *r);
+static void round30(Csn *r);
 static int cmp_abs(const Csn *a, const Csn *b);
 
 void csn_zero(Csn *r)          { mkzero(r); }
@@ -498,13 +500,13 @@ static int    got_const;
 static Csn    SR10;        /* sqrt(10)                    */
 static Csn    LN10;        /* ln(10)                      */
 static Csn    LN10H;       /* ln(10)/2                    */
-static Csn    RCG_TH;      /* convergence threshold 1e-19 */
+static Csn    RCG_TH;      /* convergence threshold 1e-40 */
 static Csn    HALF;        /* 0.5 (sqrt initial estimate) */
 
 /* sqrt of the raw mantissas (used by ensure_const before ln exists):
  * exact same Newton algorithm as csn_sqrt but without the constant
  * hook; declared here, defined below */
-static int sqrt_core(Csn *r, const Csn *a);
+static int sqrt_core(Csn *r, const Csn *a, int snap);
 
 static void ensure_const(void)
 {
@@ -514,10 +516,10 @@ static void ensure_const(void)
     csn_from_int(&nine, 9);
     csn_from_int(&eleven, 11);
     csn_from_int(&two, 2);
-    csn_parse("1e-19", &RCG_TH);
+    csn_parse("1e-40", &RCG_TH);
     csn_parse("0.5", &HALF);
 
-    sqrt_core(&SR10, &ten);
+    sqrt_core(&SR10, &ten, 0);   /* internal constant: no 30-digit snap */
     /* ln(10) = 2 * sum z^(2n+1)/(2n+1), z = 9/11, computed directly so
      * nothing depends on an already-computed ln. */
     csn_div(&z, &nine, &eleven);
@@ -538,11 +540,16 @@ static void ensure_const(void)
     got_const = 1;
 }
 
-/* sqrt(x), x >= 0: Newton iteration on (y + x/y)/2; a final snap
- * guarantees the result is the greatest 15-digit value whose square
- * does not exceed x, so display truncation can never show a digit
- * above the true value. */
-static int sqrt_core(Csn *r, const Csn *a)
+/* sqrt(x), x >= 0: Newton iteration on (y + x/y)/2.  With snap != 0 a
+ * final snap guarantees the result is the greatest 30-digit value whose
+ * square does not exceed x, so display truncation can never show a
+ * digit above the true value (engineering extension: the snap point
+ * moved from the original's 15 digits to the round30 working
+ * precision).  Internal callers (atan halving, asin/acos, the SR10
+ * constant) pass snap = 0: the raw Newton iterate is honest to ~1e-38
+ * and carries no 30-digit granularity, which the cancellation-prone
+ * ln reduction and the inverse-trig chains would otherwise amplify. */
+static int sqrt_core(Csn *r, const Csn *a, int snap)
 {
     Csn x, y, ynext, d, two, ulp, ysq, ypad, tmpy;
     int i;
@@ -569,11 +576,12 @@ static int sqrt_core(Csn *r, const Csn *a)
         if (done) break;
     }
 
-    /* snap so that y*y <= x < (y+ulp)^2 at the 15th digit */
-    csn_truncate(&tmpy, &y, 15);
+    /* snap so that y*y <= x < (y+ulp)^2 at the 30th digit */
+    if (!snap) { csn_copy(r, &y); return CSN_OK; }
+    csn_truncate(&tmpy, &y, 30);
     csn_copy(&y, &tmpy);
     mkzero(&ulp);
-    ulp.nd[0] = 1; ulp.ndig = 1; ulp.exp10 = y.exp10 - 14;
+    ulp.nd[0] = 1; ulp.ndig = 1; ulp.exp10 = y.exp10 - 29;
     for (i = 0; i < 4; i++) {          /* grow while (y+ulp)^2 <= x */
         csn_add(&ypad, &y, &ulp);
         csn_mul(&ysq, &ypad, &ypad);
@@ -596,13 +604,13 @@ int csn_sqrt(Csn *r, const Csn *a)
     if (a->ndig == 0) { mkzero(r); return CSN_OK; }
     if (a->sign) return CSN_ER_DOMAIN;
     ensure_const();
-    return sqrt_core(r, a);
+    return sqrt_core(r, a, 1);
 }
 
 /* e^a: range-reduce by whole ln10 steps (n counted), then a Taylor
  * series in the residual (|rem| < ln10/2 < 1.16).  e^x = e^rem * 10^n.
  * Only mul/div of small numbers, so truncation noise stays at the
- * 18th digit - far below the 14-digit accuracy goal. */
+ * 40th digit - far below the 30-digit working accuracy. */
 int csn_exp(Csn *r, const Csn *a)
 {
     Csn x, sum, term, sq, t, two, kcs;
@@ -653,7 +661,7 @@ int csn_exp(Csn *r, const Csn *a)
         e2 = csn_div(r, &one, r);   /* e^-x = 1 / e^x */
         if (e2 != CSN_OK) return e2;
     }
-    round15(r);
+    round30(r);
     return CSN_OK;
 }
 
@@ -722,7 +730,7 @@ int csn_ln(Csn *r, const Csn *a)
         csn_copy(r, &res);
         err = CSN_OK;
     }
-    if (err == CSN_OK) round15(r);
+    if (err == CSN_OK) round30(r);
     return err;
 }
 
@@ -751,25 +759,28 @@ int csn_log10(Csn *r, const Csn *a)
         if (err != CSN_OK) return err;
     }
     csn_copy(r, &res);
-    round15(r);
+    round30(r);
     return CSN_OK;
 }
 
 /* ==================== powers and trigonometry ======================== */
 
-/* round the result at the 15th significant digit (half-up).  The
+/* round the result at the 30th significant digit (half-up).  The
  * manual promises internal accuracy of 14 places; multi-term BCD
  * series carry a small systematic truncation bias, and rounding the
- * final value keeps digit 14 honest (the cell display still always
- * truncates, per the manual) */
-static void round15(Csn *r)
+ * final value keeps the working digits honest.  The round point is an
+ * engineering extension: 30 honest digits instead of the original 15,
+ * so long round-trip chains (asin(acos(atan(tan(cos(sin9)))))) keep
+ * their digits.  The cell display still always truncates, per the
+ * manual, and only shows 12 decimals - far inside the honest span. */
+static void round30(Csn *r)
 {
     unsigned char ms[CSN_DIGS + 2];
     int i, n, carry;
-    if (r->ndig <= 15) return;      /* nothing beyond the kept digits */
-    n = 15;
+    if (r->ndig <= 30) return;      /* nothing beyond the kept digits */
+    n = 30;
     for (i = 0; i < n; i++) ms[i] = r->nd[i];
-    if (r->nd[15] >= 5) {
+    if (r->nd[30] >= 5) {
         carry = 1;
         for (i = n - 1; i >= 0 && carry; i--) {
             int d = ms[i] + carry;
@@ -783,8 +794,8 @@ static void round15(Csn *r)
         }
     }
     /* ms[0..n-1] = the first n significant digits; digit i carries
-     * place exp10 - i, so the last one sits at exp10 - 15 */
-    finish(r, ms, n, r->exp10 - 15, r->sign);
+     * place exp10 - i, so the last one sits at exp10 - 30 */
+    finish(r, ms, n, r->exp10 - 30, r->sign);
 }
 
 /* is the value exactly an integer small enough to handle in a long? */
@@ -865,7 +876,7 @@ int csn_pow(Csn *r, const Csn *a, const Csn *b)
     if (err != CSN_OK) return err;
     err = csn_exp(r, r);
     if (err != CSN_OK) return err;
-    round15(r);
+    round30(r);
     return CSN_OK;
 }
 
@@ -884,7 +895,7 @@ static int ser_sin_rad(Csn *r, const Csn *rad)
     if (err != CSN_OK) return err;
     err = csn_mul(&term, &term, rad);        /* then x^3, sign added in loop */
     if (err != CSN_OK) return err;
-    csn_parse("1e-20", &th);
+    csn_parse("1e-40", &th);
     for (k = 1; k <= 40; k++) {
         csn_from_int(&odd, (2 * k) * (2 * k + 1));
         err = csn_div(&term, &term, &odd);   /* /(2k)(2k+1) */
@@ -909,7 +920,7 @@ static int ser_cos_rad(Csn *r, const Csn *rad)
     if (err != CSN_OK) return err;
     csn_from_int(&sum, 1);
     csn_from_int(&term, 1);
-    csn_parse("1e-20", &th);
+    csn_parse("1e-40", &th);
     for (k = 1; k <= 40; k++) {
         csn_from_int(&odd, (2 * k - 1) * (2 * k));
         err = csn_mul(&term, &term, &sq);
@@ -950,7 +961,7 @@ static void ensure_trig_set(void)
 {
     if (got_trig) return;
     ensure_const();
-    csn_parse("3.1415926535897932384626433832795028841971", &PI);
+    csn_parse("3.14159265358979323846264338327950288419716939937510582097494459", &PI);
     csn_from_int(&D2R, 180);
     csn_div(&D2R, &PI, &D2R);          /* pi/180 */
     csn_from_int(&TR90, 90);
@@ -994,7 +1005,7 @@ int csn_sin(Csn *r, const Csn *deg)
         err = ser_at90(r, &y, 0);
     }
     if (err != CSN_OK) return err;
-    round15(r);
+    round30(r);
     if (neg && !csn_is_zero(r)) csn_neg(r, r);
     return CSN_OK;
 }
@@ -1006,7 +1017,9 @@ int csn_cos(Csn *r, const Csn *deg)
 
     ensure_trig_set();
     csn_copy(&y, deg);
-    if (y.sign && !csn_is_zero(&y)) { csn_neg(&y, &y); neg = 1; }
+    /* cos is an EVEN function: a negative input flips nothing (unlike
+     * sin).  Only the 180/90-degree reductions may negate. */
+    if (y.sign && !csn_is_zero(&y)) csn_neg(&y, &y);
     mod_pos(&y, &TR360);            /* y in [0,360) */
     if (csn_cmp(&y, &TR180) >= 0) {
         csn_sub(&y, &y, &TR180);
@@ -1020,7 +1033,7 @@ int csn_cos(Csn *r, const Csn *deg)
         err = ser_at90(r, &y, 1);
     }
     if (err != CSN_OK) return err;
-    round15(r);
+    round30(r);
     if (neg && !csn_is_zero(r)) csn_neg(r, r);
     return CSN_OK;
 }
@@ -1038,7 +1051,7 @@ int csn_tan(Csn *r, const Csn *deg)
     if (csn_is_zero(&c)) return CSN_ER_DIVZERO;
     err = csn_div(r, &s, &c);
     if (err != CSN_OK) return err;
-    round15(r);
+    round30(r);
     return CSN_OK;
 }
 
@@ -1056,7 +1069,7 @@ int csn_asin(Csn *r, const Csn *x)
     if (err != CSN_OK) return err;
     err = csn_sub(&omx, &one, &xsq);
     if (err != CSN_OK) return err;
-    err = csn_sqrt(&s, &omx);
+    err = sqrt_core(&s, &omx, 0);   /* unsnapped: precision, not display */
     if (err != CSN_OK) return err;
     if (csn_is_zero(&s)) {         /* x = +1 or -1: 90 / -90 */
         csn_copy(r, &m90);
@@ -1067,7 +1080,7 @@ int csn_asin(Csn *r, const Csn *x)
     if (err != CSN_OK) return err;
     err = csn_atan(r, &t);
     if (err != CSN_OK) return err;
-    round15(r);
+    round30(r);
     return CSN_OK;
 }
 
@@ -1090,13 +1103,13 @@ int csn_acos(Csn *r, const Csn *x)
     if (err != CSN_OK) return err;
     err = csn_div(&omx, &omx, &two);
     if (err != CSN_OK) return err;
-    err = csn_sqrt(&y, &omx);
+    err = sqrt_core(&y, &omx, 0);   /* unsnapped: precision, not display */
     if (err != CSN_OK) return err;
     err = csn_asin(&as, &y);
     if (err != CSN_OK) return err;
     err = csn_add(r, &as, &as);
     if (err != CSN_OK) return err;
-    round15(r);
+    round30(r);
     return CSN_OK;
 }
 
@@ -1124,7 +1137,7 @@ int csn_atan(Csn *r, const Csn *x)
             if (err != CSN_OK) return err;
             err = csn_add(&sq, &one, &t2);
             if (err != CSN_OK) return err;
-            err = csn_sqrt(&d, &sq);
+            err = sqrt_core(&d, &sq, 0);   /* unsnapped (halving identity) */
             if (err != CSN_OK) return err;
             err = csn_add(&d, &d, &one);
             if (err != CSN_OK) return err;
@@ -1137,7 +1150,7 @@ int csn_atan(Csn *r, const Csn *x)
     if (err != CSN_OK) return err;
     csn_copy(&s, &t);
     csn_copy(&term, &t);
-    csn_parse("1e-20", &th);
+    csn_parse("1e-40", &th);
     {
         Csn prev, odd;
         csn_from_int(&prev, 1);      /* prev odd: (2k-1) of the last step */
@@ -1169,7 +1182,7 @@ int csn_atan(Csn *r, const Csn *x)
         if (err != CSN_OK) return err;
         err = csn_mul(r, &s, &rad2deg);
         if (err != CSN_OK) return err;
-        round15(r);
+        round30(r);
         return CSN_OK;
     }
 }
@@ -1216,7 +1229,7 @@ int csn_mod(Csn *r, const Csn *a, const Csn *b)
 
 /* radians -> degrees and back; both derive from the shared PI so every
  * conversion is self-consistent.  Boundary-exact values (DEGREES(PI())
- * = 180) come out clean through round15. */
+ * = 180) come out clean through round30. */
 static Csn RAD2DEG;             /* 180/pi, prepared with ensure_trig */
 
 int csn_degrees(Csn *r, const Csn *rad)
@@ -1231,7 +1244,7 @@ int csn_degrees(Csn *r, const Csn *rad)
     }
     err = csn_mul(r, rad, &RAD2DEG);
     if (err != CSN_OK) return err;
-    round15(r);
+    round30(r);
     return CSN_OK;
 }
 
@@ -1241,7 +1254,7 @@ int csn_radians(Csn *r, const Csn *deg)
     ensure_trig_set();                 /* D2R = pi/180 */
     err = csn_mul(r, deg, &D2R);
     if (err != CSN_OK) return err;
-    round15(r);
+    round30(r);
     return CSN_OK;
 }
 

@@ -1,6 +1,47 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (precision raise to 40 digits, differential-verified):
+- USER REQUEST: more precision for engineering; the standard test
+  "+asin(acos(atan(tan(cos(sin9)))))" scored only ~8 decimals (got
+  9.0000000036813). NOW: 9.0000000000000000000000028611 (23 correct
+  decimals; that is the information floor — cos(sin9) is honest to 30
+  digits and the 1−x amplification in acos/asin burns ~6).
+- ENGINE CHANGES (num.h/num.c):
+  * CSN_DIGS 22 -> 40 (30 calculation + 10 guard); CSN_PARSE_MAX 48 -> 64
+    (the 48-decimal pi literal has 49 sig digits — at cap 48 csn_parse
+    returned overflow and PI silently became 0, breaking ALL trig!).
+  * round15 -> round30 (round at the 30th significant digit, half-up);
+    series thresholds 1e-19/1e-20 -> 1e-40 (RCG_TH + the three th
+    literals); sqrt snap 15 -> 30 (ulp.exp10 = y.exp10-29).
+  * NEW: sqrt_core takes a snap flag; INTERNAL callers (atan halving,
+    asin sqrt(1-x^2), acos sqrt((1-x)/2), the SR10 constant) now use
+    UNSNAPPED Newton (honest ~1e-38). The 30-digit snap granularity
+    otherwise amplified: ln near 1 lost ~9 digits via the k=-1
+    cancellation (m = x*10/SR10), and acos/asin chains ate their budget.
+    Public csn_sqrt keeps the snap (display-truncation safety).
+  * PI literal extended to 48 decimals.
+  * PRE-EXISTING BUG FIXED: csn_cos negated for NEGATIVE input — cos is
+    even! cos(-60) returned -0.5. Found by a 38-decimal differential
+    test against python decimal (probe6/ref.py in /tmp scratch).
+- FILE FORMAT: CSD3 pinned to CSN_FILE_DIGS = 22 digit bytes (wr_num/rd_num
+  in fileio.c) — wider internal mantissa truncates on save; old files load
+  byte-compatibly (verified by --test save/load round trip).
+- VERIFICATION: 25-input x 9-function differential vs python decimal at 38
+  decimals — ZERO diffs above 2e-29 relative (all functions sit at the
+  round30/snap granularity). --test: +6 new checks (chain fixed-24,
+  sqrt2/exp1 fixed strings, cos(-60)/cos(-0.9999) sign+precision) — all
+  pass; two old expectations re-derived (ACOS(0.9999) ...6570 was the
+  round15 carry artifact, true truncation ...6569; chain canon now clean).
+  pty: ?-calculator shows "= 9.000000000000", entry commits 9.00 with the
+  formula in contents; cs1.txt idle diff EXACT.
+- BEHAVIOR NOTES: cell comparisons now see digits 16-30 (values equal at
+  15 digits but different beyond now compare unequal — more correct,
+  flagged). Display unchanged (12 decimals, truncating).
+- SCRATCH harness (reusable): probe6.c (38-decimal dump of 9 fns x 25
+  inputs) + ref.py (python decimal reference incl. wrap_sin/cos reductions,
+  atanh-series ln10) + a diff driver; /tmp/eng.txt + /tmp/py.txt.
+
 ## BATCH (window scrolling, reverse-engineered from REAL CalcStar, pty-verified):
 - USER ran a full experiment series on a genuine CP/M CalcStar (captures in the
   transcript). Resulting rules, all implemented + verified frame-by-frame:

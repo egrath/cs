@@ -12,6 +12,12 @@
  * (never rounds) anything beyond CSN_DIGS digits, exactly as the
  * original cut numbers off (the manual: "Numbers are ... truncated").
  *
+ * The mantissa is an engineering extension beyond the original's
+ * 14-digit accuracy: 40 digits = 30 calculation digits + 10 guard
+ * digits, with the transcendental functions honest through digit 30
+ * (round30).  The on-disk format stays at the original's 22 digit
+ * bytes (CSN_FILE_DIGS) for byte compatibility with CSD3 files.
+ *
  * Exponent range is +/-CSN_EMAX.  Results beyond that are reported as
  * CSN_ER_OVERFLOW (the manual's "math op error - numeric overflow",
  * surfaced as evaluation Error 0 / ?n?) or, on the low end, collapse
@@ -20,8 +26,9 @@
 #ifndef CS_NUM_H
 #define CS_NUM_H
 
-#define CSN_DIGS 22   /* mantissa digits: 14 calculation + 8 guard   */
+#define CSN_DIGS 40   /* mantissa digits: 30 calculation + 10 guard   */
 #define CSN_EMAX 999  /* exponent range: value = 0.d1d2... * 10^exp  */
+#define CSN_FILE_DIGS 22  /* digit bytes per value in the CSD3 file */
 
 typedef struct {
     int sign;                   /* 0 = positive (or zero), 1 = negative */

@@ -613,7 +613,10 @@ static void run_tests(void)
     ckc("ACOS(0)", "ACOS(0)", "+9.0000000000000E+2");         /* 90 */
     ckc("ACOS(1)", "ACOS(1)", "0");
     ckc("ACOS(-0.9999)", "ACOS(-0.9999)", "+1.7918970856293E+3");
-    ckc("ACOS(0.9999)", "ACOS(0.9999)", "+8.1029143706570E+0");
+    /* true value 0.81029143706569954...: the old want (...6570) carried
+     * the old round15 carry into digit 14; round30 keeps the true
+     * truncation (...6569) */
+    ckc("ACOS(0.9999)", "ACOS(0.9999)", "+8.1029143706569E+0");
     ckc("ACOS(0.9999976)", "ACOS(0.9999976)",
         "+1.2552878866239E+0");
     {
@@ -624,14 +627,55 @@ static void run_tests(void)
             "+ASIN(ACOS(ATAN(TAN(COS(SIN(9))))))", &r, &s2);
         if (s2) free(s2);
         csn_canon(&r, g, (int) sizeof(g));
-        if (e != 0 || strcmp(g, "+9.0000000036813E+1")) {
-            /* the round-trip chain lands on 9 within the 14-digit
-             * conditioning floor (it printed 6.25 before the atan
-             * reduction + acos identity fixes); the trailing digits are
-             * the engine's deterministic precision floor */
+        /* 40-digit mantissa + round30: the chain lands on 9 through
+         * 23 decimals (9.0000000000000000000000028611); the canon
+         * floor is clean.  The pre-raise engine stopped at
+         * 9.0000000036813 (round15) */
+        if (e != 0 || strcmp(g, "+9.0000000000000E+1")) {
             printf("FAIL trig round-trip chain e=%d got %s\n", e, g);
             fails++;
-        } else printf("ok   trig round-trip chain -> 9.0000000036813\n");
+        } else printf("ok   trig round-trip chain -> 9.0000000000000\n");
+    }
+
+    /* engineering-precision battery: fixed-decimal strings beyond the
+     * old 15-digit floor (values verified against 60-digit decimal
+     * reference arithmetic) */
+    {
+        Csn r, t;
+        char g[160];
+        int e;
+        e = cs_eval_formula(
+            "+ASIN(ACOS(ATAN(TAN(COS(SIN(9))))))", &r, NULL);
+        csn_fmt_fixed(&r, 24, g, (int) sizeof(g));
+        if (e != 0 || strcmp(g, "9.000000000000000000000002"))
+            { printf("FAIL chain fixed-24 e=%d got %s\n", e, g); fails++; }
+        else printf("ok   chain fixed-24 keeps 23 digits\n");
+        csn_parse("2", &t);
+        csn_sqrt(&r, &t);
+        csn_fmt_fixed(&r, 28, g, (int) sizeof(g));
+        if (strcmp(g, "1.4142135623730950488016887242"))
+            { printf("FAIL sqrt2 fixed-28 got %s\n", g); fails++; }
+        else printf("ok   sqrt2 carries 29 digits\n");
+        csn_from_int(&t, 1);
+        csn_exp(&r, &t);
+        csn_fmt_fixed(&r, 30, g, (int) sizeof(g));
+        if (strcmp(g, "2.718281828459045235360287471350"))
+            { printf("FAIL exp1 fixed-30 got %s\n", g); fails++; }
+        else printf("ok   exp1 carries 30 digits\n");
+        /* cos is even: negative input must NOT flip the sign
+         * (pre-existing bug found by the 38-decimal differential) */
+        csn_parse("-60", &t);
+        csn_cos(&r, &t);
+        csn_canon(&r, g, (int) sizeof(g));
+        if (strcmp(g, "+5.0000000000000E+0"))
+            { printf("FAIL cos(-60) got %s\n", g); fails++; }
+        else printf("ok   cos(-60) = 0.5 (even function)\n");
+        csn_parse("-0.9999", &t);
+        csn_cos(&r, &t);
+        csn_fmt_fixed(&r, 30, g, (int) sizeof(g));
+        if (strcmp(g, "0.999847725615063856701212110583"))
+            { printf("FAIL cos(-0.9999) got %s\n", g); fails++; }
+        else printf("ok   cos(-0.9999) sign + 30 digits\n");
     }
 
     /* PI() at maximum internal precision (deg-mode trig companion) */

@@ -19,8 +19,10 @@
  *          [type==3] BCD number of value:
  *               unsigned char sign (0/1),
  *               signed short exp10 (LE, two's complement),
- *               unsigned char ndig (0..18),
- *               CSN_DIGS (=22) digit bytes (0..9, most significant first),
+ *               unsigned char ndig (0..CSN_FILE_DIGS),
+ *               CSN_FILE_DIGS (=22) digit bytes (0..9, most significant
+ *               first; the file format is pinned to the original's 22
+ *               digits regardless of the wider CSN_DIGS mantissa),
  *          unsigned short strreslen + bytes, unsigned short replen + bytes
  *  (Older "CSD1"/"CSD2" files are refused with READ ERROR.)
  */
@@ -43,8 +45,12 @@ static void wr_num(FILE *f, const Csn *v)
     fputc(v->sign, f);
     fputc(v->exp10 & 255, f);
     fputc((v->exp10 >> 8) & 255, f);
-    fputc(v->ndig, f);
-    for (i = 0; i < CSN_DIGS; i++) fputc(v->nd[i], f);
+    /* the record is CSD3-compatible: exactly CSN_FILE_DIGS digit bytes
+     * regardless of the (wider) internal mantissa; digits beyond are
+     * dropped - typed values rarely carry more than 22 digits */
+    fputc(v->ndig > CSN_FILE_DIGS ? CSN_FILE_DIGS : v->ndig, f);
+    for (i = 0; i < CSN_FILE_DIGS; i++)
+        fputc(i < v->ndig ? v->nd[i] : 0, f);
 }
 
 static int rd_num(FILE *f, Csn *v)
@@ -58,13 +64,14 @@ static int rd_num(FILE *f, Csn *v)
     v->sign = (sign != 0) ? 1 : 0;
     v->exp10 = e0 | (e1 << 8);
     if (v->exp10 >= 32768) v->exp10 -= 65536;
-    v->ndig = (nd > CSN_DIGS) ? CSN_DIGS : nd;
+    v->ndig = (nd > CSN_FILE_DIGS) ? CSN_FILE_DIGS : nd;
     if (v->ndig < 0) v->ndig = 0;
-    for (i = 0; i < CSN_DIGS; i++) {
+    for (i = 0; i < CSN_FILE_DIGS; i++) {
         d = fgetc(f);
         if (d == EOF) return 0;
         v->nd[i] = (i < v->ndig && d >= 0 && d <= 9) ? (unsigned char) d : 0;
     }
+    for (; i < CSN_DIGS; i++) v->nd[i] = 0;   /* clear the wider tail */
     if (v->exp10 < -CSN_EMAX || v->exp10 > CSN_EMAX) v->exp10 = 0;
     if (v->ndig == 0) { v->exp10 = 0; v->sign = 0; }
     return 1;
