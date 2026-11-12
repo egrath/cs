@@ -1052,7 +1052,7 @@ static void run_tests(void)
         colw[1] = 38; colp[1] = 12;
         csn_parse("9", &v);
         cs_set_num(cs_cell(1, 0), "9", &v, 0, NULL);    /* B1 */
-        cs_delete_column(0);
+        cs_delete_columns(0, 0);
         if (colw[0] != 38 || colp[0] != 12)
             { printf("FAIL col delete keeps format\n"); fails++; }
         else printf("ok   column delete shifts width/precision\n");
@@ -1061,6 +1061,39 @@ static void run_tests(void)
             strcmp(g, "+9.0000000000000E+1"))
             { printf("FAIL col delete moves value\n"); fails++; }
         else printf("ok   column delete moves the value to A\n");
+        /* range deletes: rows 1..3 of a populated sheet shift up two;
+         * column range deletes shift the formats by the range width */
+        colw[0] = 10; colw[1] = 20; colw[2] = 30; colw[3] = 40;
+        colp[0] = 2; colp[1] = 4; colp[2] = 6; colp[3] = 8;
+        csn_parse("1", &v); cs_set_num(cs_cell(0, 4), "1", &v, 0, NULL);
+        csn_parse("2", &v); cs_set_num(cs_cell(0, 5), "2", &v, 0, NULL);
+        csn_parse("3", &v); cs_set_num(cs_cell(0, 6), "3", &v, 0, NULL);
+        cs_delete_rows(0, 1);               /* rows 1..2 */
+        csn_canon(&cs_cell(0, 4)->val, g, (int) sizeof(g));
+        if (cs_cell(0, 4)->type != CE_NUM ||
+            strcmp(g, "+3.0000000000000E+1") || colw[2] != 30 || colp[2] != 6)
+            { printf("FAIL row range delete\n"); fails++; }
+        else printf("ok   row range delete shifts cells up\n");
+        cs_delete_columns(0, 1);            /* columns A..B */
+        if (colw[0] != 30 || colp[0] != 6 || colw[1] != 40 || colp[1] != 8)
+            { printf("FAIL col range delete formats\n"); fails++; }
+        else printf("ok   column range delete shifts formats\n");
+        /* From-To clear: cells freed, pool bookkeeping stays honest */
+        {
+            int before = entriesUsed;
+            csn_parse("7", &v); cs_set_num(cs_cell(0, 8), "7", &v, 0, NULL);
+            csn_parse("8", &v); cs_set_num(cs_cell(1, 8), "8", &v, 0, NULL);
+            if (entriesUsed != before + 2)
+                { printf("FAIL clear range pool pre\n"); fails++; }
+            cs_clear_range(0, 8, 1, 8);
+            if (entriesUsed != before ||
+                cs_cell(0, 8)->type != CE_EMPTY ||
+                cs_cell(1, 8)->type != CE_EMPTY)
+                { printf("FAIL clear range pool\n"); fails++; }
+            else printf("ok   From-To clear frees the rectangle\n");
+        }
+        colw[0] = 10; colw[1] = 10; colw[2] = 10; colw[3] = 10;
+        colp[0] = 2; colp[1] = 2; colp[2] = 2; colp[3] = 2;
         /* (b) All save + load at A1: identity, formula intact */
         cs_clear_all();
         colw[0] = 10; colp[0] = 2;      /* cs_clear_all resets formats */

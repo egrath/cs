@@ -59,6 +59,21 @@ follow the original. Read this file before changing anything.
   corners).  The formula parser and the reference scanners already
   folded case; the formula normalizer stores coordinate words
   UPPERCASED in `cont`, so the display and files are unaffected.
+- **`;D` range deletes + F)rom-To are user-extended 2026-11** (the
+  manual deletes ONE row/column per command; the menu string changed
+  to `Delete: A)ll R)ow C)olumn F)rom-To E)ntry`): R/C prompt for a
+  range prefilled with the current row/column (`1>5`, `A>D`; a full
+  coordinate range is accepted and only the relevant part is used —
+  `A1>C3` = rows 1..3 / columns A..C; ALWAYS the full form, `>5` with
+  an omitted left side is `bad range coord`; reversed ranges
+  normalize).  Dependencies are checked per line over the whole range
+  (merged `ERROR: would delete ref(s) at ...` message — the same
+  refuse-behavior the single-line delete always had, kept unchanged
+  per the user).  The new F)rom-To clears a rectangle like `;D E` per
+  cell: no dependency check, `verify Y/N` only (user decision).
+  `cs_delete_rows(r1,r2)` / `cs_delete_columns(c1,c2)` /
+  `cs_clear_range(...)` are exported; `cs_shift_refs_n` is the
+  delta-based ref shifter (refs beyond the range shift by −n).
 - Extension functions (Batch A, flagged not from the 1982 manuals): `SIGN`,
   `MOD`, `POWER`, `FACT`, `COMBIN`, `PERMUT`, `GCD`, `LCM`, `DEGREES`,
   `RADIANS`, `ROUND`, `TRUNC`, `PI()` and the trig set. Integer caps

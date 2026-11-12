@@ -1,6 +1,47 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (;D range deletes + F)rom-To):
+- USER SPEC: ;D R asks for a range prefilled with the current row
+  ("1"), ;D C prefilled with the current column ("A"); "1>5"/"A>D"
+  delete the inclusive range; a full coordinate range is accepted and
+  only the wanted part is used (A1>C3 = rows 1..3 / cols A..C); NEW
+  F)rom-To clears a rectangle like ;D E per cell (no dep check, verify
+  Y/N - user decisions). Menu string: "Delete: A)ll R)ow C)olumn
+  F)rom-To E)ntry" (flagged deviation - the manual deletes one line).
+- INPUT PARSER: parse_del_side(s, want, &c, &r) - want=1 (rows): a bare
+  number OR a coordinate (row taken); want=0 (columns): 1-2 letters OR
+  a coordinate (column taken); bare numbers are INVALID for columns
+  and letters-only for rows ("x>5"/"5>7" -> bad range coord). ALWAYS
+  the full form: ">5" with an omitted left side is invalid (user
+  decision). parse_del_range(s, want, &a1, &a2) splits at '>',
+  normalizes (5>1 -> 1..5).
+- MECHANICS: cs_delete_rows(r1,r2)/cs_delete_columns(c1,c2) (generalized
+  exports; cs_delete_row/column removed): refs BEYOND the range shift
+  by -n via the NEW cs_shift_refs_n (delta-based; cs_shift_refs
+  refactored into shift_refs_core(s, iscol, at, delta, ge) - insert=ge+1,
+  delete=ge0-1); colw/colp shift for columns; window/lock/cursor follow
+  the gap (decrement above r2/c2, clamp into the range otherwise).
+  dep_check_range walks every line and merges the coordinate list -
+  SAME refuse path as before (user: keep). cs_clear_range(c1,r1,c2,r2)
+  for F.
+- TESTS: --test +range cases (rows 1..2 shift, col formats shift by the
+  range width, cs_clear_range pool bookkeeping) - all pass; pty
+  checklist dd2.exp: prefill prompts, 2>3 rows (Test 04 shifts up),
+  B>C refusal with the merged message, A1>B2 clear, x>5/5>7 error
+  paths - exit 0, idle diff EXACT.
+- BIG HARNESS LESSON: my first pty test data "R1".."R4" are LITERALLY
+  VALID COORDINATES (column R!) - the dependency machinery treated the
+  TEXT cells as formulas referencing R-cells and REFUSED the row
+  delete (correctly!), desyncing my guessed script for an hour. Use
+  non-coordinate test data ("Test 01" / "Alpha"); a checklist expect
+  is only proof if it can ONLY match the post-state. Also: expect
+  timeout does NOT abort the script - exit 0 alone proves nothing
+  without distinctive matches.
+- render.py quirk: partial-update streams with \x08 can misrender
+  (prompt repaints) - verify via matched strings, not the painted
+  frame, when the frame comes from a partial update.
+
 ## BATCH (case-insensitive coordinates; docs):
 - USER REQUEST: ;G/TAB should accept lowercase ("most users don't care
   to type uppercase"). FINDING: the formula parser and all reference

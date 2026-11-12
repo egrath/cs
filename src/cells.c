@@ -308,7 +308,10 @@ char *cs_adjust_refs(const char *s, int dc, int dr)
    iscol: 0 -> rows, 1 -> cols.  insert: 1 for insert (+1 at & beyond),
    0 for delete (-1 strictly beyond).  Returns fresh string or NULL if
    nothing was changed. */
-char *cs_shift_refs(const char *s, int iscol, int at, int insert)
+/* shift every coordinate reference in s by `delta` (iscol: columns vs
+ * rows).  With ge != 0 references AT `at` shift too (insertion mode,
+ * delta +1), otherwise only those beyond it (deletion mode). */
+static char *shift_refs_core(const char *s, int iscol, int at, int delta, int ge)
 {
     char *out = (char *) malloc(strlen(s) * 2 + 16);
     char *o = out;
@@ -343,9 +346,9 @@ char *cs_shift_refs(const char *s, int iscol, int at, int insert)
                     if (ok && !bang) {
                         int did = 0;
                         if (iscol) {
-                            if (insert ? newc >= at : newc > at) { newc += insert ? 1 : -1; did = 1; }
+                            if (ge ? newc >= at : newc > at) { newc += delta; did = 1; }
                         } else {
-                            if (insert ? newr >= at : newr > at) { newr += insert ? 1 : -1; did = 1; }
+                            if (ge ? newr >= at : newr > at) { newr += delta; did = 1; }
                         }
                         if (did && newc >= 0 && newc < CS_MAXCOL &&
                             newr >= 0 && newr < CS_MAXROW) {
@@ -373,6 +376,18 @@ char *cs_shift_refs(const char *s, int iscol, int at, int insert)
     *o = '\0';
     if (!changed) { free(out); return NULL; }
     return out;
+}
+
+char *cs_shift_refs(const char *s, int iscol, int at, int insert)
+{
+    return shift_refs_core(s, iscol, at, insert ? 1 : -1, insert);
+}
+
+/* range-delete variant: every reference BEYOND `at` shifts by `delta`
+ * (negative for deletions) */
+char *cs_shift_refs_n(const char *s, int iscol, int at, int delta)
+{
+    return shift_refs_core(s, iscol, at, delta, 0);
 }
 
 /* ------------------------------------------------------------+

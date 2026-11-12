@@ -47,8 +47,9 @@ extern char fname[40];          /* current file name (no extension) */
 extern char cs_cmdfile[40];     /* .CSD name given on the command line */
 void   cs_stay_visible(void);   /* re-anchor window around the cursor */
 void   cs_move_cursor(int dc, int dr);     /* exported cursor step */
-void   cs_delete_row(int r);      /* shift cells+refs+formats, close gap */
-void   cs_delete_column(int c);
+void   cs_delete_rows(int r1, int r2);   /* shift cells+refs+formats */
+void   cs_delete_columns(int c1, int c2);
+void   cs_clear_range(int c1, int r1, int c2, int r2);  /* ;D F clear */
 int    cs_prompt_coord(const char *pr, const char *dflt, char *out,
                        int maxlen, int setmode);  /* @-aware coord prompt */
 
@@ -80,6 +81,7 @@ void   cs_clear_all(void);
 int    cs_scan_refs(const char *s, void (*cb)(int col, int row, void *), void *ctx);
 char  *cs_adjust_refs(const char *s, int dc, int dr);
 char  *cs_shift_refs(const char *s, int iscol, int at, int insert);
+char  *cs_shift_refs_n(const char *s, int iscol, int at, int delta);
 int    cs_recalc_entry(int col, int rw);   /* returns eval error code */
 void   cs_recalc_all(void);
 

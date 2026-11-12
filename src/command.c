@@ -288,49 +288,188 @@ static int dep_check(int iscol, int at, char *list, int listmax)
     return found;
 }
 
-/* delete a row/column: shift cells (and refs), close the gap; the
- * column's width/precision shift with it, and the window/lock edges
- * follow the gap.  Exported for --test; delete_cmd calls these after
- * its dependency check and verify prompt. */
-void cs_delete_row(int r)
+/* delete rows r1..r2 (inclusive): refs below the range shift up by the
+ * range height; the window/lock/cursor edges follow the gap */
+void cs_delete_rows(int r1, int r2)
 {
-    int rr, c;
-    shift_all_refs(0, r, 0);
-    for (rr = r; rr < CS_MAXROW - 1; rr++)
+    int n = r2 - r1 + 1, rr, c;
+    if (n < 1) return;
+    for (rr = 0; rr < CS_MAXROW; rr++)
+        for (c = 0; c < CS_MAXCOL; c++) {
+            Cell *cl = &cells[rr][c];
+            char *nu;
+            if (!cl->cont) continue;
+            nu = cs_shift_refs_n(cl->cont, 0, r2, -n);
+            if (nu) {
+                free(cl->cont);
+                cl->cont = nu;
+            }
+        }
+    for (rr = r1; rr < CS_MAXROW - n; rr++)
         for (c = 0; c < CS_MAXCOL; c++)
-            cells[rr][c] = cells[rr + 1][c];
-    for (c = 0; c < CS_MAXCOL; c++)
-        cs_free_cell(&cells[CS_MAXROW - 1][c]);
-    if (winRow > r) winRow--;           /* follow the gap closing */
-    if (lockRows > r) lockRows--;
+            cells[rr][c] = cells[rr + n][c];
+    for (rr = CS_MAXROW - n; rr < CS_MAXROW; rr++)
+        for (c = 0; c < CS_MAXCOL; c++)
+            cs_free_cell(&cells[rr][c]);
+    if (winRow > r2) winRow -= n;
+    else if (winRow > r1) winRow = r1;
+    if (lockRows > r2) lockRows -= n;
+    else if (lockRows > r1) lockRows = r1;
+    if (curRow > r2) curRow -= n;
+    else if (curRow > r1) curRow = r1;
 }
 
-void cs_delete_column(int c)
+/* delete columns c1..c2 (inclusive): the columns' width/precision
+ * shift with them (the tail resets to defaults) */
+void cs_delete_columns(int c1, int c2)
 {
-    int r, cc;
-    shift_all_refs(1, c, 0);
+    int n = c2 - c1 + 1, r, cc;
+    if (n < 1) return;
     for (r = 0; r < CS_MAXROW; r++)
-        for (cc = c; cc < CS_MAXCOL - 1; cc++)
-            cells[r][cc] = cells[r][cc + 1];
+        for (cc = 0; cc < CS_MAXCOL; cc++) {
+            Cell *cl = &cells[r][cc];
+            char *nu;
+            if (!cl->cont) continue;
+            nu = cs_shift_refs_n(cl->cont, 1, c2, -n);
+            if (nu) {
+                free(cl->cont);
+                cl->cont = nu;
+            }
+        }
     for (r = 0; r < CS_MAXROW; r++)
-        cs_free_cell(&cells[r][CS_MAXCOL - 1]);
-    /* the column's width/precision shift with it (a deleted column
-     * must not leave its format behind) */
-    for (cc = c; cc < CS_MAXCOL - 1; cc++) {
-        colw[cc] = colw[cc + 1];
-        colp[cc] = colp[cc + 1];
+        for (cc = c1; cc < CS_MAXCOL - n; cc++)
+            cells[r][cc] = cells[r][cc + n];
+    for (r = 0; r < CS_MAXROW; r++)
+        for (cc = CS_MAXCOL - n; cc < CS_MAXCOL; cc++)
+            cs_free_cell(&cells[r][cc]);
+    for (cc = c1; cc < CS_MAXCOL - n; cc++) {
+        colw[cc] = colw[cc + n];
+        colp[cc] = colp[cc + n];
     }
-    colw[CS_MAXCOL - 1] = CS_DEF_W;
-    colp[CS_MAXCOL - 1] = CS_DEF_P;
-    if (winCol > c) winCol--;           /* follow the gap closing */
-    if (lockCols > c) lockCols--;
+    for (cc = CS_MAXCOL - n; cc < CS_MAXCOL; cc++) {
+        colw[cc] = CS_DEF_W;
+        colp[cc] = CS_DEF_P;
+    }
+    if (winCol > c2) winCol -= n;
+    else if (winCol > c1) winCol = c1;
+    if (lockCols > c2) lockCols -= n;
+    else if (lockCols > c1) lockCols = c1;
+    if (curCol > c2) curCol -= n;
+    else if (curCol > c1) curCol = c1;
+}
+
+/* clear (delete entry) every cell in the rectangle, like ;D E per
+ * cell: no dependency check, no ref adjustments */
+void cs_clear_range(int c1, int r1, int c2, int r2)
+{
+    int r, c;
+    for (r = r1; r <= r2; r++)
+        for (c = c1; c <= c2; c++)
+            cs_free_cell(&cells[r][c]);
+}
+
+/* one side of a delete-range answer.  want = 1 (rows): a bare row
+ * number ("5") or a coordinate ("C3" - the row is taken).  want = 0
+ * (columns): a column letter ("B") or a coordinate ("B7" - the column
+ * is taken).  The non-wanted part is ignored.  Returns 1 on success
+ * with the col/row pointers set (the non-wanted one is -1). */
+static int parse_del_side(const char *s, int want, int *col, int *row)
+{
+    int l = 0, d = 0, i;
+    const char *p = s;
+    if (!s || !*s) return 0;
+    while (((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')) && l < 3) { p++; l++; }
+    while (*p >= '0' && *p <= '9') { p++; d++; }
+    if (*p) return 0;                      /* trailing junk */
+    if (l == 0) {                          /* a bare number: a row */
+        int r = 0;
+        if (!want) return 0;               /* columns need letters */
+        for (i = 0; i < d; i++) r = r * 10 + (s[i] - '0');
+        if (r < 1 || r > CS_MAXROW) return 0;
+        *row = r - 1;
+        *col = -1;
+        return 1;
+    }
+    if (l > 2 || d == 0) {                 /* letters only: a column */
+        int c = 0;
+        if (want) return 0;                /* rows need numbers/coords */
+        for (i = 0; i < l; i++) {
+            char ch = s[i];
+            c = (i == 0) ? ((ch >= 'a' && ch <= 'z') ? ch - 'a' : ch - 'A')
+                         : 26 + c * 26 + ((ch >= 'a' && ch <= 'z') ? ch - 'a' : ch - 'A');
+        }
+        if (c >= CS_MAXCOL) return 0;
+        *col = c;
+        *row = -1;
+        return 1;
+    }
+    /* letters + digits: a full coordinate - take the wanted part */
+    {
+        char word[8];
+        for (i = 0; i < l; i++)
+            word[i] = (char) ((s[i] >= 'a' && s[i] <= 'z') ? s[i] - 32 : s[i]);
+        for (i = 0; i < d; i++) word[l + i] = s[l + i];
+        word[l + d] = '\0';
+        if (!cs_parse_coord(word, col, row)) return 0;
+        return 1;
+    }
+}
+
+/* a delete-range answer for the R)ow / C)olumn prompts: one side or a
+ * full "x>y" range; each side yields the WANTED part (rows: a number
+ * or a coordinate's row; columns: a letter or a coordinate's column),
+ * normalized so a1 <= a2.  Returns 1 on success. */
+static int parse_del_range(const char *s, int want, int *a1, int *a2)
+{
+    int v1, v2, c, r;
+    const char *gt;
+    if (!s || !*s) return 0;
+    gt = strchr(s, '>');
+    if (!gt) {
+        if (!parse_del_side(s, want, &c, &r)) return 0;
+        *a1 = *a2 = want ? r : c;
+        return 1;
+    }
+    {
+        char left[40];
+        int ln = (int) (gt - s);
+        if (ln <= 0 || ln >= (int) sizeof(left)) return 0;
+        memcpy(left, s, (size_t) ln);
+        left[ln] = '\0';
+        if (!parse_del_side(left, want, &c, &r)) return 0;
+        v1 = want ? r : c;
+        if (!parse_del_side(gt + 1, want, &c, &r)) return 0;
+        v2 = want ? r : c;
+    }
+    if (v1 <= v2) { *a1 = v1; *a2 = v2; }
+    else { *a1 = v2; *a2 = v1; }
+    return 1;
+}
+
+/* the dependency refusal: per manual 14-4, a row/column is not
+ * deleted when it contains information used by other cells.  The
+ * range check walks every line and merges the coordinate list; the
+ * message path is the one the single-line delete always used
+ * (user 2026-11: keep this behavior unchanged) */
+static void dep_check_range(int iscol, int a1, int a2, char *list, int listmax)
+{
+    char one[128];
+    int a;
+    list[0] = '\0';
+    for (a = a1; a <= a2; a++) {
+        if (!dep_check(iscol, a, one, (int) sizeof(one))) continue;
+        if (list[0] && (int) strlen(list) + 2 < listmax)
+            strcat(list, ", ");
+        if ((int) strlen(list) + (int) strlen(one) < listmax - 1)
+            strcat(list, one);
+    }
 }
 
 static void delete_cmd(void)
 {
-    char list[128];
-    int ch;
-    ch = cs_prompt_char("Delete: A)ll R)ow C)olumn E)ntry");
+    char list[256], dflt[8], inp[80];
+    int ch, c1, r1, c2, r2;
+    ch = cs_prompt_char("Delete: A)ll R)ow C)olumn F)rom-To E)ntry");
     redraw();
     if (ch == 27) return;
     if (ch == 'E' || ch == 'e') {
@@ -339,23 +478,52 @@ static void delete_cmd(void)
         return;
     }
     if (ch == 'R' || ch == 'r') {
-        if (dep_check(0, curRow, list, (int) sizeof(list))) {
-            cs_msg("ERROR: would delete ref(s) at %s", list);
-            return;
-        }
+        int hit;
+        sprintf(dflt, "%d", curRow + 1);
+        if (cs_prompt_str("Delete rows (1>5)", dflt, inp, (int) sizeof(inp)) < 0) return;
+        redraw();
+        if (!parse_del_range(inp, 1, &r1, &r2))
+            { cs_msg("bad range coord"); return; }
+        dep_check_range(0, r1, r2, list, (int) sizeof(list));
+        hit = (list[0] != '\0');
+        if (hit)
+            { cs_msg("ERROR: would delete ref(s) at %s", list); return; }
         ch = cs_prompt_yn("verify Y/N - ");
         redraw();
         if (ch != 1) return;
-        cs_delete_row(curRow);
+        cs_delete_rows(r1, r2);
     } else if (ch == 'C' || ch == 'c') {
-        if (dep_check(1, curCol, list, (int) sizeof(list))) {
-            cs_msg("ERROR: would delete ref(s) at %s", list);
-            return;
-        }
+        int hit;
+        cs_col_name(curCol, dflt);
+        if (cs_prompt_str("Delete columns (A>D)", dflt, inp, (int) sizeof(inp)) < 0) return;
+        redraw();
+        if (!parse_del_range(inp, 0, &c1, &c2))
+            { cs_msg("bad range coord"); return; }
+        dep_check_range(1, c1, c2, list, (int) sizeof(list));
+        hit = (list[0] != '\0');
+        if (hit)
+            { cs_msg("ERROR: would delete ref(s) at %s", list); return; }
         ch = cs_prompt_yn("verify Y/N - ");
         redraw();
         if (ch != 1) return;
-        cs_delete_column(curCol);
+        cs_delete_columns(c1, c2);
+    } else if (ch == 'F' || ch == 'f') {
+        cs_col_name(curCol, dflt);
+        sprintf(dflt + strlen(dflt), "%d", curRow + 1);
+        if (cs_prompt_coord("From-To (A1>C3)", dflt, inp, (int) sizeof(inp), 0) < 0) return;
+        redraw();
+        if (!cs_parse_range(inp, &c1, &r1, &c2, &r2)) {
+            if (!cs_parse_coord(inp, &c1, &r1)) { cs_msg("bad range coord"); return; }
+            c2 = c1; r2 = r1;
+        }
+        cs_range_norm(&c1, &r1, &c2, &r2);
+        /* the manual's E)ntry case checks no dependencies and asks no
+         * verification; the bulk clear asks for verify only (user
+         * decision 2026-11) */
+        ch = cs_prompt_yn("verify Y/N - ");
+        redraw();
+        if (ch != 1) return;
+        cs_clear_range(c1, r1, c2, r2);
     } else if (ch == 'A' || ch == 'a') {
         ch = cs_prompt_yn("verify Y/N - ");
         redraw();
