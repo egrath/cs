@@ -134,9 +134,13 @@ follow the original. Read this file before changing anything.
   and `!`-frozen refs. After a copy, `cs_recount_entries()` keeps the
   entry pool count honest (`;? Room for` and the `MEMORY GETTING LOW`
   right-sided warning at ≤ 200 free entries depend on it).
-- Save format is `CSD3` (magic "CSD3", per value: sign byte, exp10 LE i16,
-  ndig byte, 22 digit bytes). Older magics (`CSD1`, `CSD2`) are refused
-  with the manual's `READ ERROR`.
+- Save format is `CSD4` (magic "CSD4", then the saved range's origin col
+  byte + origin row LE u16, per value: sign byte, exp10 LE i16,
+  ndig byte, 22 digit bytes). Older magics (`CSD1`, `CSD2`, `CSD3`) are
+  refused with the manual's `READ ERROR` — re-save to convert. The
+  origin anchors the LOAD position (manual 14-9: the file's upper-left
+  corner goes at the requested corner; All-mode origin = 0,0, so an
+  All+load-at-A1 round trip is an identity).
 - Preserved message strings (do not reword; cross-checked against BOTH
   manuals' error lists): `?n?`, `Error <n>-> %s  hit space`,
   `Room for %d entries`, `MEMORY IS TOO LOW`, `ERROR: would delete
@@ -266,7 +270,7 @@ Batch workflow (do all steps before reporting done):
 | `src/eval.c` | `cs_recalc_*` (manual-only), commit path incl. `?` calculator, comments |
 | `src/screen.c` | layout, menu/status rows, `place_cursor`, prompts/messages |
 | `src/command.c` | `;`-commands,	goto, format (0..12), delete dependency check |
-| `src/fileio.c` | CSD3 save/load/merge, password dialogs |
+| `src/fileio.c` | CSD4 save/load/merge (origin-anchored), password dialogs |
 | `src/print.c` | reports to .TXT (typed name, or `.TXT` auto-extension), PRINTER = `CALCSTAR.PRN` spool, `>name` = `.DTA` records, display; page breaks |
 | `src/help.c` | help pages |
 | `src/main.c` | key loop (arrows, `@` refs, errpend), CLI arg load, `--test` |

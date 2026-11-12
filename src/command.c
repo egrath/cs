@@ -288,10 +288,48 @@ static int dep_check(int iscol, int at, char *list, int listmax)
     return found;
 }
 
+/* delete a row/column: shift cells (and refs), close the gap; the
+ * column's width/precision shift with it, and the window/lock edges
+ * follow the gap.  Exported for --test; delete_cmd calls these after
+ * its dependency check and verify prompt. */
+void cs_delete_row(int r)
+{
+    int rr, c;
+    shift_all_refs(0, r, 0);
+    for (rr = r; rr < CS_MAXROW - 1; rr++)
+        for (c = 0; c < CS_MAXCOL; c++)
+            cells[rr][c] = cells[rr + 1][c];
+    for (c = 0; c < CS_MAXCOL; c++)
+        cs_free_cell(&cells[CS_MAXROW - 1][c]);
+    if (winRow > r) winRow--;           /* follow the gap closing */
+    if (lockRows > r) lockRows--;
+}
+
+void cs_delete_column(int c)
+{
+    int r, cc;
+    shift_all_refs(1, c, 0);
+    for (r = 0; r < CS_MAXROW; r++)
+        for (cc = c; cc < CS_MAXCOL - 1; cc++)
+            cells[r][cc] = cells[r][cc + 1];
+    for (r = 0; r < CS_MAXROW; r++)
+        cs_free_cell(&cells[r][CS_MAXCOL - 1]);
+    /* the column's width/precision shift with it (a deleted column
+     * must not leave its format behind) */
+    for (cc = c; cc < CS_MAXCOL - 1; cc++) {
+        colw[cc] = colw[cc + 1];
+        colp[cc] = colp[cc + 1];
+    }
+    colw[CS_MAXCOL - 1] = CS_DEF_W;
+    colp[CS_MAXCOL - 1] = CS_DEF_P;
+    if (winCol > c) winCol--;           /* follow the gap closing */
+    if (lockCols > c) lockCols--;
+}
+
 static void delete_cmd(void)
 {
     char list[128];
-    int ch, r, c;
+    int ch;
     ch = cs_prompt_char("Delete: A)ll R)ow C)olumn E)ntry");
     redraw();
     if (ch == 27) return;
@@ -308,12 +346,7 @@ static void delete_cmd(void)
         ch = cs_prompt_yn("verify Y/N - ");
         redraw();
         if (ch != 1) return;
-        shift_all_refs(0, curRow, 0);
-        for (r = curRow; r < CS_MAXROW - 1; r++)
-            for (c = 0; c < CS_MAXCOL; c++)
-                cells[r][c] = cells[r + 1][c];
-        for (c = 0; c < CS_MAXCOL; c++)
-            cs_free_cell(&cells[CS_MAXROW - 1][c]);
+        cs_delete_row(curRow);
     } else if (ch == 'C' || ch == 'c') {
         if (dep_check(1, curCol, list, (int) sizeof(list))) {
             cs_msg("ERROR: would delete ref(s) at %s", list);
@@ -322,12 +355,7 @@ static void delete_cmd(void)
         ch = cs_prompt_yn("verify Y/N - ");
         redraw();
         if (ch != 1) return;
-        shift_all_refs(1, curCol, 0);
-        for (r = 0; r < CS_MAXROW; r++)
-            for (c = curCol; c < CS_MAXCOL - 1; c++)
-                cells[r][c] = cells[r][c + 1];
-        for (r = 0; r < CS_MAXROW; r++)
-            cs_free_cell(&cells[r][CS_MAXCOL - 1]);
+        cs_delete_column(curCol);
     } else if (ch == 'A' || ch == 'a') {
         ch = cs_prompt_yn("verify Y/N - ");
         redraw();

@@ -47,6 +47,8 @@ extern char fname[40];          /* current file name (no extension) */
 extern char cs_cmdfile[40];     /* .CSD name given on the command line */
 void   cs_stay_visible(void);   /* re-anchor window around the cursor */
 void   cs_move_cursor(int dc, int dr);     /* exported cursor step */
+void   cs_delete_row(int r);      /* shift cells+refs+formats, close gap */
+void   cs_delete_column(int c);
 int    cs_prompt_coord(const char *pr, const char *dflt, char *out,
                        int maxlen, int setmode);  /* @-aware coord prompt */
 

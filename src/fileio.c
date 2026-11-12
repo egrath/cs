@@ -7,8 +7,13 @@
 #include "cs.h"
 
 /*
- * Custom CalcStar sheet archive ("CSD3"):
- *   char  magic[4] = "CSD3"
+ * Custom CalcStar sheet archive ("CSD4"):
+ *   char  magic[4] = "CSD4"
+ *   unsigned char  origin col  (0-based; the saved range's upper-left
+ *                  corner - manual 14-9: the load position anchors the
+ *                  FILE's upper left corner, not its first data cell,
+ *                  so an All-mode sheet loads identically at A1)
+ *   unsigned short origin row (0-based LE)
  *   per column (127): unsigned char width, unsigned char precision
  *   unsigned char pwdlength, pwd chars        (0 = no password)
  *   unsigned short cellCount (little endian)
@@ -24,7 +29,7 @@
  *               first; the file format is pinned to the original's 22
  *               digits regardless of the wider CSN_DIGS mantissa),
  *          unsigned short strreslen + bytes, unsigned short replen + bytes
- *  (Older "CSD1"/"CSD2" files are refused with READ ERROR.)
+ *  (Older "CSD1"/"CSD2"/"CSD3" files are refused with READ ERROR.)
  */
 static void wr16(FILE *f, int v)
 {
@@ -109,7 +114,11 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
             if (cells[r][c].type != CE_EMPTY) count++;
     f = fopen(path, "wb");
     if (!f) { cs_msg("can't open file"); return 0; }
-    fwrite("CSD3", 1, 4, f);
+    fwrite("CSD4", 1, 4, f);
+    /* the saved range's upper-left corner: the load position anchors
+     * THIS, so All-mode sheets (origin 0,0) load identically at A1 */
+    fputc(c1, f);
+    wr16(f, r1);
     for (c = 0; c < CS_MAXCOL; c++) {
         fputc(colw[c], f);
         fputc(colp[c], f);
@@ -153,16 +162,21 @@ int cs_load(const char *name, int c0, int r0, int merge)
     char path[128];
     FILE *f;
     int c, count, pwlen, i;
-    int bascc = 0, basrr = 0, have_base = 0;
+    int bascc = 0, basrr = 0;
     char magic[4];
 
     cs_savename(name, path, (int) sizeof(path));
     f = fopen(path, "rb");
     if (!f) { cs_msg("write error %s not found", path); return 0; }
-    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD3", 4) != 0) {
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD4", 4) != 0) {
         fclose(f);
         cs_msg("READ ERROR");
         return 0;
+    }
+    {
+        int oc = fgetc(f), or1 = rd16(f);
+        if (oc == EOF || or1 < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
+        bascc = oc; basrr = or1;
     }
     if (!merge) {
         cs_clear_all();
@@ -190,15 +204,12 @@ int cs_load(const char *name, int c0, int r0, int merge)
         prc = fgetc(f) - 1;
         frm = fgetc(f);
         if (cc == EOF || rr < 0 || cc >= CS_MAXCOL || rr >= CS_MAXROW) break;
-        /* Load position (manual 14-14: "If the upper left corner is to
+        /* Load position (manual 14-9: "If the upper left corner is to
          * be positioned at another location, enter the coordinates of
-         * that location"): the file's own top-left cell goes at the
-         * requested corner; cells running off the sheet edge are parsed
-         * and DROPPED so the file stream stays exactly in sync.  The
-         * base is the first stored cell's coordinates. */
-        dr = r0 + rr;
-        dc = c0 + cc;
-        if (!have_base) { bascc = cc; basrr = rr; have_base = 1; }
+         * that location"): the stored range's upper-left corner goes at
+         * the requested position, so an All-mode sheet (origin 0,0)
+         * loads identically at A1.  Cells running off the sheet edge
+         * are parsed and DROPPED so the file stream stays in sync. */
         dc = c0 + cc - bascc;
         dr = r0 + rr - basrr;
         drop = (dc >= CS_MAXCOL || dr >= CS_MAXROW || dc < 0 || dr < 0);

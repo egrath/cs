@@ -998,21 +998,24 @@ static void run_tests(void)
         }
         cs_save("t_of", 0, 19, 2, 22, "");
         cs_clear_all();
-        /* merge the 3-cell block at E10 */
+        /* merge the 3-cell block at E10: the block's upper-left corner
+         * (A20, stored origin) goes to E10, so A21 lands at E11 etc.
+         * (manual 14-9: the load position anchors the FILE's upper
+         * left corner, not its first data cell) */
         if (cs_load("t_of", 4, 9, 1)) {
             char ok1 = 0, ok2 = 0, ok3 = 0;
             {
                 char buf[8];
-                csn_canon(&cs_cell(4, 9)->val, g, (int) sizeof(g));
-                ok1 = (cs_cell(4, 9)->type == CE_NUM &&
+                csn_canon(&cs_cell(4, 10)->val, g, (int) sizeof(g));
+                ok1 = (cs_cell(4, 10)->type == CE_NUM &&
                        !strcmp(g, "+1.1000000000000E+2"));
-                csn_canon(&cs_cell(5, 9)->val, buf, (int) sizeof(buf));
-                ok2 = (cs_cell(5, 9)->type == CE_NUM);
-                ok3 = (cs_cell(4, 10)->type == CE_NUM);
+                csn_canon(&cs_cell(5, 10)->val, buf, (int) sizeof(buf));
+                ok2 = (cs_cell(5, 10)->type == CE_NUM);
+                ok3 = (cs_cell(4, 11)->type == CE_NUM);
             }
             if (!ok1 || !ok2 || !ok3)
                 { printf("FAIL load-offset cells\n"); fails++; }
-            else printf("ok   load position offsets cells (E10/F10/E11)\n");
+            else printf("ok   load position offsets cells (E11/F11/E12)\n");
             if (cs_cell(0, 0)->type != CE_EMPTY || cs_cell(0, 20)->type != CE_EMPTY)
                 { printf("FAIL offset leak to origin\n"); fails++; }
             else printf("ok   no cells at original coordinates\n");
@@ -1021,13 +1024,13 @@ static void run_tests(void)
             if (cs_load("t_of", CS_MAXCOL - 1, CS_MAXROW - 1, 1)) {
                 /* B21/B22/A22 land outside; the stream must stay in sync
                  * - reload the same file at A1 afterwards and see ALL
-                 * three cells */
+                 * three cells (range corner A20 -> A1: A21 -> A2, ...) */
                 cs_clear_all();
                 if (cs_load("t_of", 0, 0, 1) &&
-                    cs_cell(0, 0)->type == CE_NUM &&
-                    cs_cell(1, 0)->type == CE_NUM &&
-                    cs_cell(0, 1)->type == CE_NUM) {
-                    csn_canon(&cs_cell(0, 0)->val, g, (int) sizeof(g));
+                    cs_cell(0, 1)->type == CE_NUM &&
+                    cs_cell(1, 1)->type == CE_NUM &&
+                    cs_cell(0, 2)->type == CE_NUM) {
+                    csn_canon(&cs_cell(0, 1)->val, g, (int) sizeof(g));
                     if (strcmp(g, "+1.1000000000000E+2"))
                         { printf("FAIL edge-drop desync\n"); fails++; }
                     else printf("ok   edge drop keeps stream in sync\n");
@@ -1036,6 +1039,57 @@ static void run_tests(void)
         } else { printf("FAIL offset load\n"); fails++; }
         cs_clear_all();
         remove("t_of.csd");
+    }
+    /* bugfix regressions (user report): (a) deleting a column shifts
+     * its width/precision with the values; (b) All-mode save + load at
+     * A1 is an identity - the formula lands where it was and survives
+     * a recalculation */
+    {
+        Csn v;
+        char g[48];
+        int ec;
+        colw[0] = 10; colp[0] = 2;
+        colw[1] = 38; colp[1] = 12;
+        csn_parse("9", &v);
+        cs_set_num(cs_cell(1, 0), "9", &v, 0, NULL);    /* B1 */
+        cs_delete_column(0);
+        if (colw[0] != 38 || colp[0] != 12)
+            { printf("FAIL col delete keeps format\n"); fails++; }
+        else printf("ok   column delete shifts width/precision\n");
+        csn_canon(&cs_cell(0, 0)->val, g, (int) sizeof(g));
+        if (cs_cell(0, 0)->type != CE_NUM ||
+            strcmp(g, "+9.0000000000000E+1"))
+            { printf("FAIL col delete moves value\n"); fails++; }
+        else printf("ok   column delete moves the value to A\n");
+        /* (b) All save + load at A1: identity, formula intact */
+        cs_clear_all();
+        colw[0] = 10; colp[0] = 2;      /* cs_clear_all resets formats */
+        csn_parse("5", &v);
+        cs_set_num(cs_cell(1, 1), "5", &v, 0, NULL);    /* B2 */
+        ec = cs_commit_entry(1, 2, "+B2*10");           /* B3 */
+        if (ec != 0) { printf("FAIL B3 commit err %d\n", ec); fails++; }
+        cs_save("t_id", 0, 0, CS_MAXCOL - 1, CS_MAXROW - 1, "");
+        cs_clear_all();
+        if (!cs_load("t_id", 0, 0, 0))
+            { printf("FAIL identity load\n"); fails++; }
+        else {
+            csn_canon(&cs_cell(1, 1)->val, g, (int) sizeof(g));
+            if (cs_cell(1, 1)->type != CE_NUM ||
+                strcmp(g, "+5.0000000000000E+1"))
+                { printf("FAIL identity B2 got %s\n", g); fails++; }
+            else printf("ok   All+load(A1): B2 stays at B2\n");
+            if (!cs_cell(1, 2)->cont ||
+                strcmp(cs_cell(1, 2)->cont, "+B2*10"))
+                { printf("FAIL identity B3 formula\n"); fails++; }
+            else printf("ok   All+load(A1): formula unchanged\n");
+            cs_recalc_all();
+            csn_canon(&cs_cell(1, 2)->val, g, (int) sizeof(g));
+            if (cs_cell(1, 2)->type != CE_NUM ||
+                strcmp(g, "+5.0000000000000E+2"))
+                { printf("FAIL identity B3 recalc got %s\n", g); fails++; }
+            else printf("ok   All+load(A1): formula evaluates 50\n");
+        }
+        remove("t_id.csd");
     }
     /* user batch: Evaluate-key formatting, @-reference entries, sticky
      * error text with the cell coordinate */

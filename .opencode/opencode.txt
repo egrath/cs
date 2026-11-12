@@ -1,6 +1,43 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (three user-reported bugs fixed; CSD4):
+- BUG 1 (ghost digits when scrolled right): cell_x() positions columns
+  LEFT of winCol at the screen margin (x=5) and draw_rows rendered them -
+  a wide column's 38-char render smeared its digits into the separator
+  gaps (the user's '7'/'8' = B's right-justified string at x15/26/37,
+  matched exactly). FIX: draw_rows + draw_headers skip columns in
+  [lockCols, fc), fc = max(winCol, lockCols). pty: AD..AI view clean.
+- BUG 2 (column delete lost the column's format): delete shifted cells
+  but not colw[]/colp[]. FIX: delete_cmd refactored into exported
+  cs_delete_row(int)/cs_delete_column(int) (cs.h) - cells + refs shift,
+  the column's width/precision shift with it (last col resets to
+  defaults), winRow/winCol/lockRows/lockCols follow the gap (decrement
+  when right of/below the deleted line). delete_cmd keeps dep_check +
+  verify, then calls the helper. --test: colw/colp follow, value lands
+  in A. pty: A shows 9.000000000000000000000000 (38/24) after delete.
+- BUG 3 (All-save + load at A1 shifted everything): the loader anchored
+  the FIRST DATA CELL at the requested corner; manual 14-9 says the
+  load position anchors the FILE's upper-left corner. FIX: format bumped
+  to CSD4 - the saved range's origin (c1 byte + r1 LE u16) is written in
+  the HEADER after the magic; loader reads it unconditionally, base =
+  stored origin (first-cell/bascc/have_base logic deleted). All-mode
+  saves pass (0,0) -> All+load(A1) = identity. CSD1/CSD2/CSD3 all
+  refused with READ ERROR (user: no backwards compat needed - re-save).
+  --test: load-position case updated to range-corner semantics
+  (block A20..C23 at E10: A21->E11, B21->F11, A22->E12; edge-drop reload
+  now A21->A2/B21->B2/A22->A3); NEW regression: All+load(A1) identity
+  with B2=5, B3=+B2*10 - formula unchanged, ;R A evaluates 50.
+- VERIFICATION: --test all pass (build warning-free); pty checklists
+  (script exits 0 = every match hit) for all three scenarios; cs1.txt
+  idle EXACT.
+- HARNESS LESSON: log_file switching cannot capture IDLE states (an
+  idle program emits nothing -> 0-byte logs). Verify states by EXPECT
+  MATCHES (checklist scripts): each state-changing send followed by
+  expect -exact of a string that only exists in the new state; script
+  exit 0 = whole checklist passed. Batched multi-key sends desync
+  scripts - one send per expect, always.
+
 ## BATCH (trig -> RADIANS + inverse-trig round38 + sqrt relative Newton):
 - USER TEST TABLE (08-14) drove this: sin(1E-20), atan(1E-20) expected
   1E-20 (radians!); sqrt(1E-998) returned garbage; tan(atan(123456789.

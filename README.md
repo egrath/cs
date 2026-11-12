@@ -90,7 +90,7 @@ division) and every system function work on digits:
   cell shows `(form mode set)` after the type text - e.g.
   `type: (empty, but allocated) (form mode set)` on an empty stop cell,
   `type: numeric (form mode set)` once data is in. The flag survives
-  commits, `;D E`, copy, and save/load (CSD3); it is reset only by
+  commits, `;D E`, copy, and save/load (CSD4); it is reset only by
   `;D A` / clear. `;A` walks the flags in L-R/T-B order and announces
   itself: `Form Control Mode` on the bottom row at every stop, and
   `Auto complete` when the course ends (the original's wording). RETURN

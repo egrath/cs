@@ -250,10 +250,12 @@ static void draw_headers(void)
 {
     char nambuf[4];
     int c, x;
+    int fc = winCol >= lockCols ? winCol : lockCols;
     cput(line_colhdr, 0, "Col>");
     cputn(line_rowhdr, 0, "Row+", 4);
     dashline(line_rowhdr, 4);
     for (c = 0; c < CS_MAXCOL; c++) {
+        if (c >= lockCols && c < fc) continue;   /* left of window */
         x = cell_x(c);
         if (x - 1 >= cs_scrw()) break;
         cchr(line_colhdr, x - 1, c < lockCols ? '*' : '|');
@@ -285,14 +287,22 @@ static void draw_rows(void)
         }
         /* cell contents: no column bars on data rows; a column is
          * drawn only when it fits entirely (real CalcStar shows no
-         * clipped slivers at the right edge) */
-        for (c = 0; c < CS_MAXCOL; c++) {
-            char rend[CS_MAX_W + 2];
-            int x = cell_x(c);
-            if (x >= w) break;
-            if (x + colw[c] > w) break;
-            cell_render(c, row, rend, colw[c]);
-            cputn(y, x, rend, colw[c]);
+         * clipped slivers at the right edge).  Columns LEFT of the
+         * window must be SKIPPED: cell_x() positions everything at the
+         * screen margin, so rendering them would smear the wide
+         * columns' digits into the separator gaps (ghost digits) */
+        {
+            int fc = winCol >= lockCols ? winCol : lockCols;
+            for (c = 0; c < CS_MAXCOL; c++) {
+                char rend[CS_MAX_W + 2];
+                int x;
+                if (c >= lockCols && c < fc) continue;
+                x = cell_x(c);
+                if (x >= w) break;
+                if (x + colw[c] > w) break;
+                cell_render(c, row, rend, colw[c]);
+                cputn(y, x, rend, colw[c]);
+            }
         }
         /* current-cell markers on the separator positions; the original
          * paints them INVERTED so they stay visible over cell contents */
