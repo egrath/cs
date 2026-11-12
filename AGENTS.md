@@ -92,7 +92,13 @@ follow the original. Read this file before changing anything.
   (pass N)`; while iterating the window is repainted after every
   changed pass so the user watches the values update live (user
   request 2026-11) — the plain one-pass paths keep their single
-  repaint).  The keyboard is NON-BLOCKING for the driver's duration:
+  repaint).  An OVERRUN sets cs_limit_hit; the callers re-paint
+  `Recalculation limit reached` as the LAST status action after their
+  final repaint (the driver's own message would be wiped by them:
+  recalc_cmd, entry_commit, the ?-calculator, the ;A course — user
+  request 2026-11: the resting screen must show success or overrun;
+  cs_recalc_limit_reset() clears the state at each driver context).
+  The keyboard is NON-BLOCKING for the driver's duration:
   cs_kb_nodelay_set(1) ... (0) brackets the loop and cs_poll_escape
   restores the wanted mode (a hard-coded blocking restore once made
   every pass wait for an ENTER — user bug 2026-11-12).  cs_recalc_entry is the stability sensor: it compares the
@@ -132,6 +138,13 @@ follow the original. Read this file before changing anything.
   (`Error 0-> ...`, `Form Control Mode`, `Auto complete`, `SAVED`, ...) are
   painted **inverse** (`cputa` + `A_REVERSE`); input prompts stay
   non-inverse.
+- **The edit field scrolls horizontally** (user-extended 2026-11): the
+  caret is always at the buffer end, so `draw_editline_idle` /
+  `place_cursor` show the SUFFIX that fits `cs_scrw() - EDITTEXT_X`,
+  recomputed at every paint (a resized terminal re-windows the entry
+  live — KEY_RESIZE already forces a full repaint).  The field is
+  padded to its full width (`cputn`) so backspacing (which slides the
+  window back toward the text start) leaves no ghost characters.
 - The cell-cursor marks `>` `<` paint INVERTED (`cchra` + `A_REVERSE`).
 - TAB / `;G` with a bad target answers `Bad coord` (capital B, user
   instruction; copy/print keep the manuals' lowercase `bad coord`).

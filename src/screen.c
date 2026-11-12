@@ -420,12 +420,20 @@ static void draw_typecont(void)
 }
 
 /* idle state of the edit line: "                edit: " */
-/* idle state of the edit line: "                edit: " */
 static void draw_editline_idle(void)
 {
+    int vis, off;
     cput(line_edit, 16, "edit: ");
-    if (g_editstate == EDIT_EDITING && g_editlen > 0)
-        cput(line_edit, EDITTEXT_X, g_edit);
+    if (g_editstate != EDIT_EDITING || g_editlen <= 0) return;
+    /* horizontal scroll: the caret is always at the buffer end, so the
+     * visible window is the SUFFIX that fits the current screen width
+     * (recomputed per paint - resizing re-windows the text live).  The
+     * field is padded to its full width so a shrinking text leaves no
+     * ghost characters at the right edge. */
+    vis = cs_scrw() - EDITTEXT_X;
+    if (vis < 1) vis = 1;
+    off = (g_editlen > vis) ? g_editlen - vis : 0;
+    cputn(line_edit, EDITTEXT_X, g_edit + off, vis);
 }
 
 /* draw an interactive prompt line (bottom row, starting at column 0)
@@ -770,11 +778,16 @@ int cs_poll_escape(void)
  * the "edit: " field when idle -- never inside the cell area. */
 static void place_cursor(void)
 {
-    int x;
+    int x, vis, off;
 
     if (promptvis) return;   /* prompt routines position it themselves */
     if (g_editstate == EDIT_EDITING) {
-        x = EDITTEXT_X + g_editlen;
+        /* same window as draw_editline_idle: the caret sits after the
+         * visible suffix of the entry text (any screen width) */
+        vis = cs_scrw() - EDITTEXT_X;
+        if (vis < 1) vis = 1;
+        off = (g_editlen > vis) ? g_editlen - vis : 0;
+        x = EDITTEXT_X + (g_editlen - off);
         if (x > cs_scrw() - 1) x = cs_scrw() - 1;
         move(line_edit, x);
         return;

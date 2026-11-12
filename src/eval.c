@@ -115,6 +115,21 @@ static void recalc_pass(void)
     }
 }
 
+/* 1 = the last driver run exhausted the pass limit without stabilizing
+ * (the callers re-paint the message AFTER their final repaint, which
+ * would otherwise wipe it) */
+static int cs_limit_hit;
+
+int cs_recalc_limit_hit(void)
+{
+    return cs_limit_hit;
+}
+
+void cs_recalc_limit_reset(void)
+{
+    cs_limit_hit = 0;
+}
+
 /* the side-effect execution driver: RECALC() during a formula marks a
  * request; the CALLING context runs whole-sheet passes until the
  * spreadsheet stabilizes (a pass changes no stored value), the pass
@@ -127,10 +142,11 @@ static void recalc_pass(void)
  * 2026-11).  The keyboard is non-blocking for the driver's duration
  * (its own ESC poll and the per-statement cs_poll_escape share the
  * mode; a hard-coded blocking restore once made every pass wait for
- * an ENTER keypress). */
+ * an ENTER keypress).  An overrun sets cs_limit_hit for the callers. */
 void cs_run_recalc_passes(int always_one)
 {
     int pass, iterating = 0;
+    cs_limit_hit = 0;
     if (!always_one && !cs_recalc_requested) return;
     cs_recalc_requested = 0;
     cs_eval_aborted = 0;
@@ -161,8 +177,10 @@ void cs_run_recalc_passes(int always_one)
         }
     }
     cs_kb_nodelay_set(0);
-    if (iterating && pass > CS_MAX_PASSES)
+    if (iterating && pass > CS_MAX_PASSES) {
+        cs_limit_hit = 1;
         cs_msg("Recalculation limit reached");
+    }
 }
 
 void cs_recalc_all(void)
@@ -224,6 +242,11 @@ int cs_commit_entry(int col, int rw, const char *entry)
             csn_fmt_fixed(&val, CS_MAX_P, out, (int) sizeof(out));
             cs_msg_plain("=%24s", out);   /* answers are non-inverse */
         }
+        /* the calculator is a driver context too (RECALC in the pending
+         * text iterates; flagged) */
+        cs_run_recalc_passes(0);
+        if (cs_recalc_limit_hit())
+            cs_msg("Recalculation limit reached");
         return err;
     }
 

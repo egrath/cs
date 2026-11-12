@@ -614,6 +614,7 @@ static void recalc_cmd(void)
     int ch = cs_prompt_char("Recalculate - A)ll or E)ntry");
     redraw();
     if (ch == 27) return;
+    cs_recalc_limit_reset();          /* fresh overrun state per run */
     if (ch == 'A' || ch == 'a')
         cs_recalc_all();
     else if (ch == 'E' || ch == 'e') {
@@ -630,6 +631,10 @@ static void recalc_cmd(void)
                       cs_errlist[0].col, cs_errlist[0].row);
         cs_set_errpend(1);
     }
+    if (cs_recalc_limit_hit())
+        /* the driver painted this before our redraws wiped it: the
+         * overrun must be visible on the resting screen (flagged) */
+        cs_msg("Recalculation limit reached");
 }
 
 /* ======================= What / Lock / misc ======================== */
@@ -733,11 +738,15 @@ static void auto_cmd(void)
             redraw();
         }
         if (k > 0) {
-            int ec = cs_commit_entry(cc, cr, buf);
+            int ec;
+            cs_recalc_limit_reset();  /* fresh overrun state per commit */
+            ec = cs_commit_entry(cc, cr, buf);
             /* numeric eval error -> message (space is data inside Auto:
              * no "hit space" confirm here) */
             if (cells[cr][cc].iserr)
                 cs_msg("Error %d-> %s", ec <= 0 ? 0 : ec, buf);
+            if (cs_recalc_limit_hit())
+                cs_msg("Recalculation limit reached");
         }
         g_edit[0] = '\0';
         g_editlen = 0;
@@ -746,6 +755,8 @@ static void auto_cmd(void)
     cs_recalc_all();
     redraw();
     cs_msg("Auto complete");   /* paint after the final redraw */
+    if (cs_recalc_limit_hit())
+        cs_msg("Recalculation limit reached");
 }
 
 /* ========================== Quit / menu ============================ */

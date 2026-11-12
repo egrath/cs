@@ -209,6 +209,7 @@ static void entry_commit(void)
     if (g_editlen == 0) { edit_clear(); redraw(); return; }
     g_edit[g_editlen] = '\0';
     strcpy(saved, g_edit);
+    cs_recalc_limit_reset();          /* fresh overrun state per commit */
     ec = cs_commit_entry(col, row, g_edit);   /* eval error code, 0 = none */
     c = cs_cell(col, row);
     edit_clear();
@@ -220,9 +221,15 @@ static void entry_commit(void)
         errpend = 1;
         redraw();                 /* cells first ... */
         cs_sticky_err(ec, saved, col, row);   /* "... hit space [cell]" */
+        if (cs_recalc_limit_hit())
+            cs_msg("Recalculation limit reached");
         return;
     }
     redraw();
+    if (cs_recalc_limit_hit())
+        /* an iterated entry that overran: the message must survive the
+         * repaint above (flagged) */
+        cs_msg("Recalculation limit reached");
 }
 
 /* manual 6.4/14.2: caret toggles the interpretation of a cell between

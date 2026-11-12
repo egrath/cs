@@ -91,6 +91,8 @@ void   cs_recalc_all(void);
 void   cs_run_recalc_passes(int always_one); /* side-effect driver */
 void   cs_mark_sheet_change(void);  /* eval.c: a stored value changed */
 extern int cs_recalc_requested;     /* RECALC() seen during evaluation */
+int    cs_recalc_limit_hit(void);   /* 1 = the last driver run overran */
+void   cs_recalc_limit_reset(void); /* clear before a new driver context */
 
 /* error-cell queue (filled by the last Recalculate, in recalc order):
  * main.c replays the sticky "Error ... hit space [coord]" messages one

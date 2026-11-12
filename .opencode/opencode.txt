@@ -1,6 +1,50 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "turing": overrun message + scrolling edit field — 2026-11-12):
+- USER REQUESTS: (1) when the 1000-pass iteration cap is reached, an
+  error message must stay visible (success vs overrun must be
+  distinguishable on the resting screen); (2) the edit field must
+  scroll horizontally for long formulas, sliding BACK when backspace
+  shrinks the text; both must work on a resized (e.g. 120x30) terminal.
+- (1) ROOT CAUSE: the driver DID paint "Recalculation limit reached",
+  but every caller repaints right after and wiped it (recalc_cmd's
+  redraw after cs_recalc_all; entry_commit's redraw after
+  cs_commit_entry).  FIX: the driver sets cs_limit_hit (cleared at
+  each driver top); cs_recalc_limit_hit() getter +
+  cs_recalc_limit_reset() for the non-driver paths; the callers
+  re-paint the message as the LAST status action: recalc_cmd (after
+  redraw + errq sticky), entry_commit (both paths), the ?-calculator
+  (which now ALSO runs the driver — it never did, a gap vs the
+  documented behavior; the overrun note replaces the "=..." answer),
+  the ;A course (per-commit + after the final cs_recalc_all).
+- (2) draw_editline_idle paints the SUFFIX that fits
+  cs_scrw()-EDITTEXT_X (caret is always at the buffer end ->
+  right-anchored window), padded to the full width via cputn (no
+  ghost chars when the window slides back on backspace);
+  place_cursor mirrors the same off computation.  All per paint from
+  the live screen size -> resizes re-window the entry immediately
+  (KEY_RESIZE -> cs_draw).  place_cursor clamps x as before.
+- VERIFIED: pty overrun = 1000 passes ticked (A1=1, A2 counter,
+  C4=+(A1>0):SET(A2,A2+1);...) and the resting screen shows the
+  message (render line 24); scroll at 80x24: the 70-char formula
+  paints the suffix ((A1<A2)...:"al, + scrolled off) and backspace
+  steps the window back index-by-index (A2)->(<A2)->(1<A2)->(A1<A2)
+  — head chars reappear; 1234567890 + 2 DEL -> 12345678; 120x30: the
+  full 70-char formula visible on the edit row (row 29; layout
+  adapts); mid-entry resize 80->120 via `exec stty rows 30 cols 120
+  < $spawn_out(slave,name)` re-windows live (90 chars fully visible).
+  --test all pass; cs1.txt idle EXACT.
+- HARNESS: (a) the pty write-deadlock bites HARD on long typing bursts
+  (69 chars x full redraw each): use `send -s` with
+  `set send_slow {1 .01}`; (b) anchors on entry TEXT are useless (the
+  head chars appear in early paints - expect matches stale buffer
+  content): verify via log-switch SNAPSHOTS, and remember a snapshot
+  window only captures output DURING it (switch the log BEFORE the
+  state-changing keystroke); (c) `exec stty rows N cols M <
+  $spawn_out(slave,name)` resizes the spawned pty (SIGWINCH ->
+  KEY_RESIZE).
+
 ## BATCH (branch "turing": driver autonomy + live per-pass display — 2026-11-12):
 - USER REPORT: ;R A on the counting sheet needed an ENTER keypress per
   pass; the values should also display at each iteration.
