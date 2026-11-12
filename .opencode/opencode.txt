@@ -1,6 +1,26 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "ref-val", docs): documentation pass for the new language
+- README: the ref-val section is now a full chapter ("The expression
+  language: references, values and ranges") with worked examples for
+  VAL, REF, dynamic ranges, the range functions (incl. multi-area
+  SUM(A1>A5,B1>B3) and REGR with a dynamic range), comparisons vs
+  ranges, SET/RECALC in conditionals (the user's
+  (1):SET(REF(C1,C2),VAL(B7));0:1, the countdown, the fight/limit
+  case, the honest-marking note), and the dialog integration.
+- AGENTS.md: the ref-val record carries the same worked examples (all
+  pinned in --test).
+- help.c: a THIRD help page (flagged, boxed format, page1->2->3 flow)
+  summarizing the new language features.
+- --test: +14 pins in a "documented examples" block - EVERY example
+  shown in the docs is backed by a check (the user's formula with the
+  target verified at B3, multi-area SUM/CNT, SET copying text AND
+  number via coercion, REGR(REF(1,1)>REF(1,5),B1) + SLOPE, both
+  conditional branches, the dynamic VAL lookup).  277 ok total.
+- NOTE: notes/*.txt (the manual OCRs) are historical records - NOT
+  updated.
+
 ## BATCH (branch "ref-val", follow-up: honest SET marking + dialog ranges):
 - USER REPORTS: (1) the always-true SET formula (1):SET(REF(C1,C2),
   VAL(B7));0:1 works but spins ;R A to the 1000-pass limit — every SET

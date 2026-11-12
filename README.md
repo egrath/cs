@@ -127,34 +127,184 @@ recalculation = loops).  Flagged extensions:
   the outermost conditional.  `;` inside an entry types a statement
   separator (the `;` command menu stays available when idle).
 
-## First-class references, VAL/REF and dynamic ranges (user-extended 2026-11)
+## The expression language: references, values and ranges
+## (user-extended 2026-11, branch ref-val — not in the manuals)
 
-The expression language treats cell identifiers as **references**, not
-values.  This is the flagged `ref-val` semantics (the user chose
-"option 3": references coerce to values wherever a value is consumed,
-so existing formulas keep working):
+The evaluator has a real type system: Number, String, Boolean,
+**Reference** and **Range**.  The rule that changes everything:
 
-- **`A1`, `B5`, `AA20` are Reference values.**  `VAL(cell)` retrieves a
-  referenced cell's numeric value explicitly (`VAL(A1)+VAL(B1)`,
-  `SQRT(VAL(A1))`); `VAL` of an empty, text or error cell is Error 1 —
-  never a silent 0.
-- **`REF(col,row)`** builds a reference from one-based numbers —
-  `REF(1,1)` is A1, and dynamic coordinates work: `REF(VAL(B1)+1,5)`.
-  Coordinates must be integers in 1..127 (columns A..DW) / 1..255.
-- **Dynamic ranges**: `>` between two references builds a Range —
-  `A1>A5`, `REF(1,1)>REF(1,5)`, `A1>REF(1,5)`.  Between numbers `>`
-  compares as before.  Ranges must lie along one row/column
-  (diagonals are Error 2); reversed ranges normalize.
-- **Range functions** take ranges through the same evaluator:
-  `SUM(A1>A5)`, `AVG(REF(2,1)>REF(2,10))`, `CNT(A1>REF(1,10))`,
-  `REGR(A1>A10,B2)`.
-- **`SET(cell,value)`** takes a Reference target — `SET(A1,100)`,
-  `SET(REF(2,5),200)`, `SET(REF(VAL(B1),VAL(B2)),200)` — and the value
-  argument coerces (`SET(A2,VAL(B1)*2)`, `SET(A1,B2)` copies B2's
-  number or text).  `RECALC()` / `RECALC(ref)` unchanged.
-- Type errors are reported as `Error 6` (wrong type), `Error 2`
-  (diagonal range), `Error 1` (bad coordinates, VAL of a non-numeric
-  cell), `Error 0` (fractional REF coordinate).
+> **A bare cell identifier is a REFERENCE value, not a number.**
+> `A1`, `B5`, `AA20` all evaluate to references.  The contents of a
+> cell are retrieved explicitly with `VAL()`.
+
+References are *lightweight* — they name a cell, they do not read it.
+Wherever a value is consumed, a reference **coerces** to that value
+(option 3, chosen for compatibility): a numeric cell yields its
+number, a TEXT cell yields its content as a string, and an empty or
+error cell raises **Error 1** — never a silent zero.
+
+### VAL(cell) — explicit value access
+
+```text
+VAL(A1)                 the number stored in A1
+VAL(REF(2,5))           the number in B5
+VAL(A1)+VAL(B1)         sum of two cells
+VAL(A1)*10              scale a cell value
+SQRT(VAL(A1))           any numeric function accepts VAL(...)
+VAL(REF(1+1,2+3))       fully dynamic: the value of B5
+```
+
+`VAL` needs exactly one cell reference.  `VAL` of an empty, text or
+error cell is **Error 1** — decide in a conditional instead:
+
+```text
+VAL(A1)>0:"filled":"empty"
+```
+
+### REF(col,row) — construct a reference
+
+Coordinates are **one-based** numbers:
+
+```text
+REF(1,1)                is A1
+REF(2,5)                is B5
+REF(3,10)               is C10
+REF(1+1,2+3)            is B5 (expressions allowed)
+REF(A1,5)               column taken from A1's value (coercion)
+REF(VAL(B1)+1,VAL(B2))  fully dynamic addressing
+```
+
+Both arguments must be **integers**.  Rejected with an error:
+fractional coordinates (`REF(1,1.5)` → Error 0), zero or negative
+(`REF(0,1)` → Error 1), outside the sheet (columns 1..127 = A..DW,
+rows 1..255 — `REF(128,1)`, `REF(1,256)` → Error 1), wrong types
+(`REF("x",1)` → Error 6), wrong argument counts (Error 3).
+
+### Dynamic ranges: `>` between references
+
+`>` builds a **Range** when both operands are references; between
+numbers it compares as always:
+
+```text
+A1>A5                   the range A1..A5
+REF(1,1)>REF(1,5)       the same range, built dynamically
+A1>REF(1,5)             mixed spellings work
+REF(1,1)>A5
+B1>B3                   a horizontal range
+```
+
+All four spellings feed the range functions identically.  Reversed
+ranges normalize (`A5>A1` ≡ `A1>A5`).  A range must lie along one row
+or one column — diagonals are **Error 2** (`SUM(A1>B5)`).  A chain
+like `A1>A5>A9` is Error 6.
+
+### Range functions
+
+`SUM`, `CNT`, `AVG`, `MAX`, `MIN` take any mix of ranges, numbers and
+references through the same evaluator; text entries inside a range are
+skipped, empty cells are skipped, an error cell inside a range is
+Error 0:
+
+```text
+SUM(A1>A5)                      plain
+SUM(REF(1,1)>REF(1,10))         dynamic
+AVG(REF(2,1)>REF(2,10))         average of B1..B10
+CNT(A1>REF(1,10))               mixed spelling
+MIN(REF(1,1)>A10)   MAX(A1>REF(1,10))
+SUM(A1>A5,B1>B3)                multi-area: both ranges add up
+CNT(A1>A5,B1>B3)                -> 8
+```
+
+The regression set takes a range plus one anchor reference and keeps
+its results in `SLOPE()`, `PROJ(x)` and `DEPD(y)`:
+
+```text
+REGR(A1>A10,B2)         x = A1..A10, y starts at B2
+REGR(REF(1,1)>REF(1,5),B1)      dynamic spelling
+```
+
+### Comparisons are not ranges
+
+With references on both sides, `>` builds a range; to compare values,
+make the operands numbers with `VAL`:
+
+```text
+VAL(A1)>VAL(A5)         ordinary comparison -> Boolean
+VAL(A1)<VAL(A5)  VAL(A1)=VAL(A5)
+A1=A5                   dereferences both: compares the values
+```
+
+In a conditional's condition the same rule applies — a two-reference
+`>` would build a range, so write `(VAL(A1)>VAL(A5)):…`.
+
+### SET and RECALC with references (in conditionals)
+
+`SET` assigns to a cell; the first argument must be exactly one
+reference (a range is Error 6), the second is any value:
+
+```text
+SET(A1,100)                     plain target
+SET(REF(2,5),200)               reference built by REF
+SET(REF(VAL(B1),VAL(B2)),200)   fully dynamic target: the cell at
+                                column B1's value, row B2's value
+SET(A2,VAL(B1)*2)               computed value
+SET(A1,B2)                      copies B2's number OR its text
+SET(A1,"\rTotal")              text, right-justified (\l left, \c center)
+```
+
+Side effects live in conditional branches (semicolon-separated; the
+branch needs exactly one value expression at the end, and only the
+selected branch executes):
+
+```text
+(1):SET(REF(C1,C2),VAL(B7));0:1
+     always true: B7's value lands in the cell addressed by C1/C2;
+     the formula's own cell shows 0 (1 in the false branch)
+
+(VAL(A1)>0):SET(A1,VAL(A1)-1);RECALC();0:"finished"
+     a countdown: A1 counts down to 0, then the branch value flips
+     the cell to the text "finished"
+
+1:SET(REF(2,1),VAL(A1)*2);RECALC(REF(2,1));0:"ok"
+     write and request recalculation of the target
+```
+
+`RECALC()` requests recalculation passes; the drivers (entry commit,
+`;R`) iterate whole-sheet passes until nothing changes, the
+1000-pass limit, or ESC.  The change detection is honest: an SET that
+writes the *same* value does not keep the iteration alive, so an
+always-true SET branch like the first example settles immediately
+under `;R A`.  Two formulas fighting over one cell (one writes 20,
+the other writes 19) hit the limit and show `Recalculation limit
+reached`.
+
+### Dynamic ranges in the command dialogs
+
+The coordinate prompts (delete `;D R/C/F` From-To, the copy corners,
+Goto, print corners, load position) try the plain coordinate text
+first and then evaluate an expression:
+
+```text
+;D R   Delete rows (From>To):  REF(1,C2)>REF(1,C3)
+       deletes the rows of that range (C2, C3 hold the row numbers)
+Goto>  REF(2,4)                moves the cursor to B4
+```
+
+Plain coordinates, `>`-prefill and `@` keep working (the static text
+wins).  Note that the dialog expressions run the full evaluator — a
+conditional with side effects typed into a prompt executes.
+
+### Digits beyond the 18 mantissa digits are **truncated, never rounded**
+(the manual: "Numbers are not rounded but are truncated (cut off)").
+Nothing over the exponent range triggers the manual's `math op error -
+numeric overflow` (evaluation Error 0, shown as `?n?`); values that
+underflow collapse to zero.  **Inline comments** (manual II.18):
+everything from a `\` to the end of an entry is non-evaluative:
+`+SUM(A1>A5) \This is a comment` — kept in the contents, invisible to
+the sheet, printouts and every reference scanner.  Cells and the save
+format (CSD4) hold the BCD values as-is; older magics are refused with
+the manual's `READ ERROR`.
+
 - **Differential harness:** `tests/precision_ref.c` + `tests/precision_ref.py`
   dump every transcendental function at 38 decimals and compare against a
   150-digit Python-decimal reference (`python3 tests/precision_ref.py

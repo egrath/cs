@@ -69,6 +69,39 @@ static void draw_page(const char **pg, int n)
         mvaddstr(i, 0, pg[i]);
 }
 
+/* page 3 (flagged extension 2026-11, branch ref-val): the expression
+ * language extensions - references, VAL/REF, dynamic ranges, SET/
+ * RECALC with conditionals */
+static const char *page3[] = {
+"*       Help page 3 -- extensions (hit <RETURN> to end)                  *",
+"*                                                                        *",
+"* EXPRESSION EXTENSIONS (not in the 1982 manual)                         *",
+"* A bare cell name is a REFERENCE:  A1  B5  AA20                         *",
+"* VAL(cell)    the cell's numeric value:  VAL(A1)+VAL(B1)                *",
+"*              SQRT(VAL(A1))   VAL(REF(2,5))                             *",
+"*              VAL of an empty/text/error cell -> Error 1                *",
+"* REF(col,row) one-based coordinates:  REF(1,1) is A1  REF(2,5) is B5    *",
+"*              dynamic:  REF(1+1,2+3)  REF(VAL(B1)+1,VAL(B2))            *",
+"*              limits: columns 1..127, rows 1..255                       *",
+"* RANGES      ref > ref builds a range (numbers compare as before):      *",
+"*              A1>A5   REF(1,1)>REF(1,5)   A1>REF(1,5)                   *",
+"*              reversed ranges normalize; diagonals are Error 2          *",
+"*              SUM(A1>A5)  AVG(REF(2,1)>REF(2,10))  CNT(A1>REF(1,10))    *",
+"*              SUM(A1>A5,B1>B3)   REGR(A1>A10,B2)                        *",
+"*              value comparisons use VAL:  VAL(A1)>VAL(A5)               *",
+"* SET(cell,value) in conditionals:                                       *",
+"*              (VAL(A1)>0):SET(A1,VAL(A1)-1);RECALC();0:\"finished\"       *",
+"*              (1):SET(REF(C1,C2),VAL(B7));0:1  dynamic target           *",
+"*              SET(A2,VAL(B1)*2)  SET(A1,B2) copies number or text       *",
+"*              SET(A1,\"\\rtext\") right-justifies                      *",
+"*              RECALC() / RECALC(ref) request recalculation passes       *",
+"*              idempotent SETs settle; 1000-pass limit; ESC interrupts   *",
+"* DIALOGS     dynamic ranges in prompts:  ;D R  REF(1,C2)>REF(1,C3)      *",
+"*              Goto  REF(2,4)  (static coords still work first)          *",
+};
+
+#define P3N (int) (sizeof(page3) / sizeof(page3[0]))
+
 void cs_help_cmd(void)
 {
     draw_page(page1, P1N);
@@ -86,6 +119,15 @@ void cs_help_cmd(void)
         int ch = getch();
 #ifdef KEY_RESIZE
         if (ch == KEY_RESIZE) { draw_page(page2, P2N); refresh(); continue; }
+#endif
+        if (ch == '\n' || ch == '\r' || ch == KEY_ENTER || ch == 27) break;
+    }
+    draw_page(page3, P3N);
+    refresh();
+    for (;;) {
+        int ch = getch();
+#ifdef KEY_RESIZE
+        if (ch == KEY_RESIZE) { draw_page(page3, P3N); refresh(); continue; }
 #endif
         if (ch == '\n' || ch == '\r' || ch == KEY_ENTER || ch == 27) break;
     }

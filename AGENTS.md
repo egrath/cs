@@ -231,6 +231,23 @@ follow the original. Read this file before changing anything.
     operators.  Error mapping: type mismatch 6, diagonal range 2,
     REF out-of-limits/bad coordinate 1, fractional REF coordinate 0,
     unknown function 4, malformed call 3/7.
+  - WORKED EXAMPLES (all pinned in --test, section "documented
+    examples"): `VAL(A1)`, `VAL(REF(2,5))`, `VAL(A1)+VAL(B1)`,
+    `SQRT(VAL(A1))`, `VAL(REF(1+1,2+3))`; `REF(1,1)`, `REF(2,5)`,
+    `REF(1+1,2+3)`, `REF(A1,5)`, `REF(VAL(B1)+1,VAL(B2))`;
+    `A1>A5`, `REF(1,1)>REF(1,5)`, `A1>REF(1,5)`, `REF(1,1)>A5`,
+    `A5>A1` (normalizes), `SUM(A1>B5)` -> Error 2 (diagonal);
+    `SUM(A1>A5)`, `SUM(REF(1,1)>REF(1,10))`, `AVG(REF(2,1)>REF(2,10))`,
+    `CNT(A1>REF(1,10))`, `MIN(REF(1,1)>A10)`, `MAX(A1>REF(1,10))`,
+    `SUM(A1>A5,B1>B3)` (multi-area), `REGR(REF(1,1)>REF(1,5),B1)`;
+    `VAL(A1)>VAL(A5)` vs `A1>A5` (range); the user's
+    `(1):SET(REF(C1,C2),VAL(B7));0:1` (writes B7's value into the cell
+    addressed by C1/C2's values); the countdown
+    `(VAL(A1)>0):SET(A1,VAL(A1)-1);RECALC();0:"finished"`;
+    `1:SET(REF(2,1),VAL(A1)*2);RECALC(REF(2,1));0:"ok"`;
+    `SET(A1,B2)` copies B2's number or text via coercion;
+    `SET(A1,"\rTotal")`; dialog `;D R` `REF(1,C2)>REF(1,C3)`,
+    `Goto REF(2,4)`.
 - **The edit field scrolls horizontally** (user-extended 2026-11): the
   caret is always at the buffer end, so `draw_editline_idle` /
   `place_cursor` show the SUFFIX that fits `cs_scrw() - EDITTEXT_X`,

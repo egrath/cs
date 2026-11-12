@@ -1152,6 +1152,62 @@ static void run_tests(void)
         cs_clear_all();
     }
 
+    /* ---- documented examples (README/help page 3): every example in
+     * the docs is pinned here ---- */
+    {
+        Cell *c;
+        char buf[64];
+        /* the user's formula: an always-true branch writing B7's value
+         * into the cell referenced by the values in C1 and C2 */
+        cs_clear_all();
+        setv(2, 0, "2");                        /* C1 = 2 */
+        setv(2, 1, "3");                        /* C2 = 3 */
+        setv(1, 6, "99");                       /* B7 = 99 */
+        cke("user formula", "(1):SET(REF(C1,C2),VAL(B7));0:1", 0);
+        c = cs_cell(1, 2);                      /* B3 = REF(2,3) */
+        csn_canon(&c->val, buf, (int) sizeof(buf));
+        if (c->type != CE_NUM || strcmp(buf, "+9.9000000000000E+2"))
+            { printf("FAIL user formula target (%s)\n", buf); fails++; }
+        else printf("ok   (1):SET(REF(C1,C2),VAL(B7));0:1 -> B3 = 99\n");
+        /* multi-area range lists */
+        cs_clear_all();
+        setv(0, 0, "42"); setv(0, 2, "3"); setv(0, 4, "5");
+        setv(1, 0, "17"); setv(1, 1, "2"); setv(1, 2, "4");
+        ckc("multi-area SUM", "SUM(A1>A5,B1>B3)", "+7.3000000000000E+2");
+        ckc("cnt multi-area", "CNT(A1>A5,B1>B3)", "+6.0000000000000E+1");
+        /* SET copies text through coercion (B3 holds text) */
+        cs_set_text(cs_cell(1, 2), "hi", 'L');
+        cke("SET copies text", "1:SET(A1,B3);0", 0);
+        c = cs_cell(0, 0);
+        if (c->type != CE_TEXT || !c->cont || strcmp(c->cont, "hi"))
+            { printf("FAIL SET text copy (%d)\n", c->type); fails++; }
+        else printf("ok   SET(A1,B3) copies the text hi\n");
+        /* SET copies a number through coercion (B2 holds 2) */
+        cke("SET copies number", "1:SET(A1,B2);0", 0);
+        c = cs_cell(0, 0);
+        csn_canon(&c->val, buf, (int) sizeof(buf));
+        if (c->type != CE_NUM || strcmp(buf, "+2.0000000000000E+1"))
+            { printf("FAIL SET number copy (%s)\n", buf); fails++; }
+        else printf("ok   SET(A1,B2) copies the number 2\n");
+        /* REGR through a dynamic range */
+        cs_clear_all();
+        setv(0, 0, "1"); setv(0, 1, "2"); setv(0, 2, "3");
+        setv(0, 3, "4"); setv(0, 4, "5");
+        setv(1, 0, "2"); setv(1, 1, "4"); setv(1, 2, "6");
+        setv(1, 3, "8"); setv(1, 4, "10");
+        ckc("REGR dyn range", "REGR(REF(1,1)>REF(1,5),B1)", "+6.0000000000000E+1");
+        ckc("SLOPE dyn", "SLOPE()", "+2.0000000000000E+1");
+        /* conditionals: both branches and the false value */
+        setv(0, 0, "42"); setv(1, 0, "17");
+        ckc("cond true branch", "(VAL(A1)>VAL(B1)):100:200", "+1.0000000000000E+3");
+        ckc("cond false branch", "(VAL(B1)>VAL(A1)):100:200", "+2.0000000000000E+3");
+        /* the dynamic VAL lookup from the docs */
+        setv(1, 0, "1");                        /* B1 = 1 */
+        setv(1, 4, "8");                        /* B5 = 8 */
+        ckc("dyn VAL lookup", "VAL(REF(VAL(B1)+1,5))", "+8.0000000000000E+1");
+        cs_clear_all();
+    }
+
     /* cs_name_to_col */
     {
         int dc;
