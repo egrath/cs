@@ -73,12 +73,14 @@
   mis-derived expected string ("42.00,---" for a numeric in A1 read
   at A3, which is correctly "---,42.00").
 
-## STATE (2026-11-12): "turing" was fast-forwarded into "master"
-- master = a40ba66..60f1101 (side effects + iteration + stability fix +
+## STATE (2026-11-12): master = the feature line; "notation" merged
+- master = a40ba66..5a25222: side effects/iteration + stability +
   hands-off iteration + live per-pass display + overrun message +
-  scrolling edit field) — pushed to origin.  The "turing" branch is
-  kept as the historical pointer (same commit).  Future batches branch
-  from master.
+  scrolling edit field + ;W heading fix + per-cell notation
+  ((auto)/(dec)/(sci) via ;F N, packed into the prec byte's spare
+  bits — CSD4 unchanged).  Pushed to origin.  The "turing" and
+  "notation" branches are kept as historical pointers (same commits).
+  Future batches branch from master.
 
 ## BATCH (branch "turing": overrun message + scrolling edit field — 2026-11-12):
 - USER REQUESTS: (1) when the 1000-pass iteration cap is reached, an
