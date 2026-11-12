@@ -1,6 +1,40 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "turing": driver autonomy + live per-pass display — 2026-11-12):
+- USER REPORT: ;R A on the counting sheet needed an ENTER keypress per
+  pass; the values should also display at each iteration.
+- ROOT CAUSE (real bug): cs_poll_escape restored nodelay FALSE after
+  its poll — but it runs INSIDE the driver's passes (per-statement ESC
+  poll in run_branch), so the driver's own per-pass getch() ran
+  BLOCKING after the first statement had executed: one ENTER per pass.
+  ;R E never hits it (single cs_recalc_entry, no driver loop).
+  FIX: screen.c keeps the wanted mode in cs_kb_nodelay;
+  cs_kb_nodelay_set(on) sets flag+nodelay; cs_poll_escape restores the
+  WANTED mode; the driver brackets its loop with set(1)/set(0).
+- FEATURE: while iterating, cs_draw() repaints the window after every
+  changed pass (values update live), then the pass message is
+  repainted (cs_draw wipes the status rows).  Only while iterating —
+  the plain one-pass ;R/commit repaints are untouched (cs1.txt idle
+  byte-exact).
+- VERIFIED: headless trace A3=1 sheet = commit->2, passes 1-8 count
+  3..10, pass 9 the "done" strres transition (changed=1), pass 10
+  clean -> settle; pty: ;R A iterates 1..9 messages with NO keystrokes,
+  live draws show 3.00..9.00, settled screen A3=10.00/C4=done;
+  ESC mid-loop on a long counter (SET target != formula cell!) ->
+  "User interrupted execution"; ;R A on the settled sheet = one silent
+  pass; --test all pass; cs1.txt idle EXACT.
+- GOTCHAS: (a) SET(A1,A1+1) where A1 holds the formula DESTROYS the
+  formula (plain-value write) — the loop self-terminates; ESC tests
+  need the SET target in a DIFFERENT cell than the formula.  (b) curses
+  diffing dedups identical repaints: one message per pass appears in
+  pty logs even though the code paints it twice (start + post-draw).
+  (c) probe binaries linked from src/*.c go STALE after source edits —
+  re-link cc ... before every probe run (this bit twice).
+- RETRO-DIAGNOSIS: the previous batch's "pty lost keystrokes" chaos was
+  THIS SAME BUG — the queued keys were consumed as continue-presses by
+  the blocked driver's getch.
+
 ## BATCH (branch "turing": iteration stability fix — 2026-11-12):
 - USER BUG REPORT: the sheet A3=5, A4=10, C4=(A3<A4):SET(A3,A3+1);"counting";
   RECALC(A3):"done" — ;R E counted fine, but ;R A spammed "DBG mark" (a

@@ -89,7 +89,13 @@ follow the original. Read this file before changing anything.
   pass changes no stored value, the 1000-pass limit (CS_MAX_PASSES) or
   ESC (`User interrupted execution`; the limit shows
   `Recalculation limit reached`; the loop paints `Calculating ...
-  (pass N)`).  cs_recalc_entry is the stability sensor: it compares the
+  (pass N)`; while iterating the window is repainted after every
+  changed pass so the user watches the values update live (user
+  request 2026-11) — the plain one-pass paths keep their single
+  repaint).  The keyboard is NON-BLOCKING for the driver's duration:
+  cs_kb_nodelay_set(1) ... (0) brackets the loop and cs_poll_escape
+  restores the wanted mode (a hard-coded blocking restore once made
+  every pass wait for an ENTER — user bug 2026-11-12).  cs_recalc_entry is the stability sensor: it compares the
   NEW stored value against the OLD one (2026-11 bugfix — it once
   compared a zeroed value, so any nonzero fixed point kept the passes
   running to the 1000 limit) and counts a changed string result

@@ -742,6 +742,18 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
     }
 }
 
+/* the wanted input mode while nested code runs (the recalculation
+ * driver switches the keyboard to non-blocking for its ESC polls and
+ * restores the previous state afterwards; cs_poll_escape must restore
+ * THE WANTED MODE, not blocking - it runs inside the driver's passes) */
+static int cs_kb_nodelay;       /* 0 = blocking (default), 1 = non-blocking */
+
+void cs_kb_nodelay_set(int on)
+{
+    cs_kb_nodelay = on;
+    nodelay(stdscr, on);
+}
+
 /* poll for an ESC keystroke: non-blocking read, 1 = ESC seen, else 0.
  * Used by the side-effect statement machinery for the user interrupt. */
 int cs_poll_escape(void)
@@ -749,7 +761,7 @@ int cs_poll_escape(void)
     int ch;
     nodelay(stdscr, TRUE);
     ch = getch();
-    nodelay(stdscr, FALSE);
+    nodelay(stdscr, cs_kb_nodelay);     /* restore the wanted mode */
     return (ch == 27);
 }
 

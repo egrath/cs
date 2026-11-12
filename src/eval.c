@@ -122,14 +122,19 @@ static void recalc_pass(void)
  * the first pass unconditionally (the ;R entry points) or only when a
  * RECALC was requested (the entry-commit / calculator contexts).
  * Status: an inverse "Calculating ... (pass N)" line while iterating
- * (flagged strings). */
+ * (flagged); the window is repainted after every changed pass so the
+ * user sees the current cell values update live (user request
+ * 2026-11).  The keyboard is non-blocking for the driver's duration
+ * (its own ESC poll and the per-statement cs_poll_escape share the
+ * mode; a hard-coded blocking restore once made every pass wait for
+ * an ENTER keypress). */
 void cs_run_recalc_passes(int always_one)
 {
     int pass, iterating = 0;
     if (!always_one && !cs_recalc_requested) return;
     cs_recalc_requested = 0;
     cs_eval_aborted = 0;
-    nodelay(stdscr, TRUE);              /* non-blocking ESC poll */
+    cs_kb_nodelay_set(1);               /* non-blocking ESC polls */
     for (pass = 1; pass <= CS_MAX_PASSES; pass++) {
         int ch;
         if (iterating)
@@ -144,13 +149,18 @@ void cs_run_recalc_passes(int always_one)
         if (!iterating && !cs_sheet_changed) break;   /* plain ;R: one pass */
         iterating = 1;
         if (!cs_sheet_changed) break;                 /* stabilized */
-        ch = getch();
+        /* the user watches the iteration: repaint the window with the
+         * current values, then put the pass status back (cs_draw
+         * wipes the status rows) */
+        cs_draw();
+        cs_msg("Calculating ... (pass %d)", pass);
+        ch = getch();                   /* non-blocking: ERR when idle */
         if (ch == 27) {
             cs_msg("User interrupted execution");
             break;
         }
     }
-    nodelay(stdscr, FALSE);
+    cs_kb_nodelay_set(0);
     if (iterating && pass > CS_MAX_PASSES)
         cs_msg("Recalculation limit reached");
 }
