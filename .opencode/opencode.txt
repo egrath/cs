@@ -1,6 +1,32 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (master: ;W heading display fix — 2026-11-12):
+- USER CORRECTION (two rounds): (1) the ;W fields were SWAPPED — at an
+  empty A7 with A1="A1" it printed "row, column  = A1,-"; the ROW
+  heading is the cell in COLUMN A at the cursor's row and the COLUMN
+  heading is the cell in ROW 1 at the cursor's column, so it must read
+  "= ---,A1".  (2) The display is CONTENT-BASED, not visibility-based
+  (my first plan inferred a "show only when scrolled off" rule — the
+  user's A7 example, with row 1 VISIBLE and still showing A1's
+  content, killed it; the manual's text agrees: always show, dashes
+  when a heading is missing).
+- IMPLEMENTATION: what_heading(cell, col, out) — text -> cont, numeric
+  -> cs_fmt_num with the cell's prec/colp prec (flagged choice: numeric
+  headings display their value), input formula -> "In!", else "---"
+  (three dashes, flagged).  what_cmd reads cs_cell(0,curRow) for the
+  row field and cs_cell(curCol,0) for the column field.
+- VERIFIED pty: the user's correction sheet (A1..A4, cursor A7) ->
+  "row, column  = ---,A1"; A12 -> "= ---,Cell A1"; H1 (empty) ->
+  "= Cell A1,---"; H12 (A12/H1 filled) -> "= Cell A12,Cell H1";
+  numeric A5=42, cursor C5 -> "= 42.00,---" (and A3 with A1=42 ->
+  "= ---,42.00" — the numeric in column A is the COLUMN heading).
+  --test all pass; cs1.txt idle EXACT.
+- HARNESS: anchors on the message text are fine (one inverse chunk);
+  beware wrong EXPECTATIONS, not wrong output — w3 first ran with a
+  mis-derived expected string ("42.00,---" for a numeric in A1 read
+  at A3, which is correctly "---,42.00").
+
 ## STATE (2026-11-12): "turing" was fast-forwarded into "master"
 - master = a40ba66..60f1101 (side effects + iteration + stability fix +
   hands-off iteration + live per-pass display + overrun message +

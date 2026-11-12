@@ -638,13 +638,40 @@ static void recalc_cmd(void)
 }
 
 /* ======================= What / Lock / misc ======================== */
+/* the heading content of one cell as the What line shows it (flagged
+ * extension 2026-11): text as typed, numbers in the display format of
+ * their column, input formulas as "In!" (the window's token), and the
+ * manual's "---" when there is no heading at that coordinate */
+static void what_heading(const Cell *c, int col, char *out, int outn)
+{
+    out[0] = '\0';
+    if (!c || !c->cont || !c->cont[0]) { strcpy(out, "---"); return; }
+    if (c->type == CE_TEXT) {
+        strncpy(out, c->cont, outn - 1);
+        out[outn - 1] = '\0';
+        return;
+    }
+    if (c->type == CE_NUM) {
+        char buf[64];
+        int prec;
+        if (cs_is_inputf(c)) { strcpy(out, "In!"); return; }
+        prec = (c->prec >= 0) ? c->prec : colp[col];
+        cs_fmt_num(&c->val, 20, prec, c->iserr, buf, (int) sizeof(buf));
+        strncpy(out, buf, outn - 1);
+        out[outn - 1] = '\0';
+        return;
+    }
+    strcpy(out, "---");
+}
+
 static void what_cmd(void)
 {
-    const char *rt = "-", *ct = "-";
-    Cell *c = cs_cell(curCol, 0);
-    if (c && c->type == CE_TEXT && c->cont && c->cont[0]) rt = c->cont;
-    c = cs_cell(0, curRow);
-    if (c && c->type == CE_TEXT && c->cont && c->cont[0]) ct = c->cont;
+    /* the ROW heading lives in column A at the cursor's row; the
+     * COLUMN heading lives in row 1 at the cursor's column (the two
+     * reads were swapped: ";W" printed "A1,-" for an empty A7) */
+    char rt[80], ct[80];
+    what_heading(cs_cell(0, curRow), 0, rt, (int) sizeof(rt));
+    what_heading(cs_cell(curCol, 0), curCol, ct, (int) sizeof(ct));
     cs_msg("row, column  = %s,%s", rt, ct);
 }
 

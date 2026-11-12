@@ -138,6 +138,17 @@ follow the original. Read this file before changing anything.
   (`Error 0-> ...`, `Form Control Mode`, `Auto complete`, `SAVED`, ...) are
   painted **inverse** (`cputa` + `A_REVERSE`); input prompts stay
   non-inverse.
+- **`;W` shows the heading of the row and column** (user-fixed
+  2026-11): `row, column  = <rowHeading>,<colHeading>` where the ROW
+  heading is the cell in COLUMN A at the cursor's row and the COLUMN
+  heading is the cell in ROW 1 at the cursor's column — always
+  content-based (shown even when the heading row/column is on-screen;
+  the earlier "visibility" reading was wrong — the user's A7 example
+  decided it).  The two reads were SWAPPED before ("= A1,-" for an
+  empty A7).  Content: text as typed, numbers in their column's
+  display format (numeric headings are a flagged choice), input
+  formulas as "In!", and "---" when the heading cell is empty (three
+  dashes, flagged — the "at least" note used one).
 - **The edit field scrolls horizontally** (user-extended 2026-11): the
   caret is always at the buffer end, so `draw_editline_idle` /
   `place_cursor` show the SUFFIX that fits `cs_scrw() - EDITTEXT_X`,
