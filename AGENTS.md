@@ -149,6 +149,24 @@ follow the original. Read this file before changing anything.
   display format (numeric headings are a flagged choice), input
   formulas as "In!", and "---" when the heading cell is empty (three
   dashes, flagged — the "at least" note used one).
+- **Per-cell notation: (auto) / (dec) / (sci)** (user-extended
+  2026-11, not in the manuals): `;F` gains `N)otation (%s)` showing the
+  cell's state in small letters; N cycles `auto → dec → sci → auto`.
+  `(auto)` is the manual's default (decimal, exponential fallback when
+  too narrow, then `!n!`).  `(sci)` always renders scientific; a value
+  even exponential cannot fit shows `!n!` (flagged choice).  `(dec)`
+  always renders decimal: a value wider than the column keeps its head
+  (the first width−1 characters) and shows `*` as the LAST symbol — the
+  user knows the number is visually truncated and looks the full value
+  up in the `contents:` line.  The attribute lives on the cell
+  (allocating an empty cell like the per-cell precision does; the
+  manual's "can't create" budget message) and survives commits,
+  deletes, copy and SET writes like prec/formf; `cs_clear_all` resets
+  it.  The cell-window renderer, the `;W` heading display and the
+  printed reports all honor it; the `contents:` line stays the
+  notation-independent value view.  SAVE: 2 bits packed into the spare
+  high bits (5-6) of the existing per-cell prec byte — the CSD4 layout
+  is UNCHANGED and old files load as (auto).
 - **The edit field scrolls horizontally** (user-extended 2026-11): the
   caret is always at the buffer end, so `draw_editline_idle` /
   `place_cursor` show the SUFFIX that fits `cs_scrw() - EDITTEXT_X`,

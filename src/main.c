@@ -575,7 +575,7 @@ static void run_tests(void)
         Csn w;
         char b[128];
         csn_parse("1234567890.12", &w);
-        cs_fmt_num(&w, 3, 2, 0, b, (int) sizeof(b));
+        cs_fmt_num(&w, 3, 2, 0, 0, b, (int) sizeof(b));
         if (strcmp(b, "!n!")) { printf("FAIL !n! display got %s\n", b); fails++; }
         else printf("ok   narrow column displays !n!\n");
     }
@@ -888,15 +888,86 @@ static void run_tests(void)
     {
         Csn v;
         csn_parse("1.999", &v);
-        cs_fmt_num(&v, 10, 2, 0, buf, (int) sizeof(buf));
+        cs_fmt_num(&v, 10, 2, 0, 0, buf, (int) sizeof(buf));
         ckstr("fmt truncate", buf, "1.99");
         csn_parse("0", &v);
-        cs_fmt_num(&v, 10, 2, 1, buf, (int) sizeof(buf));
+        cs_fmt_num(&v, 10, 2, 1, 0, buf, (int) sizeof(buf));
         ckstr("?n?", buf, "?n?");
         /* narrow column: exponential fallback (manual's example style) */
         csn_parse("1234567.89", &v);
-        cs_fmt_num(&v, 8, 2, 0, buf, (int) sizeof(buf));
+        cs_fmt_num(&v, 8, 2, 0, 0, buf, (int) sizeof(buf));
         ckstr("exp form narrow", buf, "1.23E+6");
+    }
+
+    /* per-cell notation (flagged ext 2026-11): (sci) forces scientific,
+     * (dec) forces decimal with the head kept and a trailing '*' */
+    {
+        Csn v;
+        csn_parse("1234.5", &v);
+        cs_fmt_num(&v, 10, 2, 0, 0, buf, (int) sizeof(buf));
+        ckstr("notat auto", buf, "1234.50");
+        cs_fmt_num(&v, 10, 2, 0, 1, buf, (int) sizeof(buf));
+        ckstr("notat sci", buf, "1.2345E+3");
+        cs_fmt_num(&v, 10, 2, 0, 2, buf, (int) sizeof(buf));
+        ckstr("notat dec", buf, "1234.50");
+        csn_parse("0.0000735", &v);
+        cs_fmt_num(&v, 10, 2, 0, 0, buf, (int) sizeof(buf));
+        ckstr("notat auto tiny", buf, "0.00");     /* fixed fits: no fallback */
+        /* (dec) does not fall back where (auto) would: 1234.5 in a
+         * width-6 column goes exponential under (auto); (dec) keeps
+         * the decimal head and marks the cut (width-1 chars + '*') */
+        csn_parse("1234.5", &v);
+        cs_fmt_num(&v, 6, 2, 0, 0, buf, (int) sizeof(buf));
+        ckstr("notat auto fback", buf, "1E+3");
+        cs_fmt_num(&v, 6, 2, 0, 2, buf, (int) sizeof(buf));
+        ckstr("notat dec noback", buf, "1234.*");
+        /* (dec) at a wide precision: the head is kept, '*' marks the cut */
+        csn_parse("0.0000735", &v);
+        cs_fmt_num(&v, 10, 10, 0, 2, buf, (int) sizeof(buf));
+        ckstr("notat dec tiny", buf, "0.0000735*");
+        csn_parse("123456789012345.67", &v);
+        cs_fmt_num(&v, 10, 2, 0, 2, buf, (int) sizeof(buf));
+        ckstr("notat dec wide", buf, "123456789*");
+        cs_fmt_num(&v, 10, 2, 0, 1, buf, (int) sizeof(buf));
+        ckstr("notat sci wide", buf, "1.2345E+14");
+        /* (sci) too narrow even exponential: the manual's token */
+        csn_parse("1234.5", &v);
+        cs_fmt_num(&v, 3, 2, 0, 1, buf, (int) sizeof(buf));
+        ckstr("notat sci !n!", buf, "!n!");
+        /* (dec) with precision 0: plain integer digits */
+        csn_parse("1234.5", &v);
+        cs_fmt_num(&v, 10, 0, 0, 2, buf, (int) sizeof(buf));
+        ckstr("notat dec p0", buf, "1234");
+    }
+
+    /* notation survives the CSD4 round trip (packed in the prec byte) */
+    {
+        Cell *c;
+        Csn v2;
+        cs_clear_all();
+        csn_parse("1234.5", &v2);
+        c = cs_cell(2, 1);
+        cs_set_num(c, "1234.5", &v2, 0, NULL);
+        c->notation = 1;                /* (sci) */
+        csn_parse("7.5", &v2);
+        c = cs_cell(3, 1);
+        cs_set_num(c, "7.5", &v2, 0, NULL);
+        c->notation = 2;                /* (dec) */
+        c->prec = 4;
+        if (!cs_save("t_not.CSD", 0, 0, CS_MAXCOL - 1, CS_MAXROW - 1, NULL))
+            { printf("FAIL notation save\n"); fails++; }
+        cs_clear_all();
+        if (!cs_load("t_not.CSD", 0, 0, 0))
+            { printf("FAIL notation load\n"); fails++; }
+        c = cs_cell(2, 1);
+        if (c->type != CE_NUM || c->notation != 1)
+            { printf("FAIL notat rt C3 (%d)\n", c->notation); fails++; }
+        else printf("ok   notation round trip: C2 (sci)\n");
+        c = cs_cell(3, 1);
+        if (c->type != CE_NUM || c->notation != 2 || c->prec != 4)
+            { printf("FAIL notat rt D2 (%d,%d)\n", c->notation, c->prec); fails++; }
+        else printf("ok   notation round trip: D2 (dec) prec 4\n");
+        remove("t_not.CSD");
     }
 
     /* cs_name_to_col */

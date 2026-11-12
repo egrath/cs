@@ -541,16 +541,32 @@ static void format_cmd(void)
 {
     int ch;
     char pw[24], tmpb[24];
-    char label[72];
+    char label[88];
     Cell *cur = cs_cell(curCol, curRow);
 
     sprintf(pw, "%d", colw[curCol]);
-    sprintf(label, "P)recision (%d) or W)idth (%d) or F)orm mode (%s)",
-            colp[curCol], colw[curCol], cur->formf ? "set" : "clear");
+    sprintf(label,
+        "P)recision (%d) or N)otation (%s) or W)idth (%d) or F)orm mode (%s)",
+        colp[curCol],
+        cur->notation == 1 ? "sci" : cur->notation == 2 ? "dec" : "auto",
+        colw[curCol], cur->formf ? "set" : "clear");
     ch = cs_prompt_char(label);
     redraw();
     if (ch == 27) return;
-    if (ch == 'W' || ch == 'w') {
+    if (ch == 'N' || ch == 'n') {
+        /* the notation cycle (flagged ext 2026-11):
+         * (auto) -> (dec) -> (sci) -> (auto) ...; the encoding is
+         * 0=auto 1=sci 2=dec, so the step is +2 mod 3 */
+        cur->notation = (cur->notation + 2) % 3;
+        if (cur->notation != 0 && cur->type == CE_EMPTY) {
+            /* the attribute lives on the cell (like the per-cell
+             * precision): manual "can't create - not enough memory" */
+            if (!cs_ensure_room()) { cs_msg("can't create"); return; }
+            cur->type = CE_ALLOC;
+            cs_recount_entries();
+        }
+        redraw();
+    } else if (ch == 'W' || ch == 'w') {
         int w;
         if (cs_prompt_str(collab("Column", curCol, "width(3 - 63)"), pw, tmpb, 20) < 0) return;
         w = atoi(tmpb);
@@ -656,7 +672,8 @@ static void what_heading(const Cell *c, int col, char *out, int outn)
         int prec;
         if (cs_is_inputf(c)) { strcpy(out, "In!"); return; }
         prec = (c->prec >= 0) ? c->prec : colp[col];
-        cs_fmt_num(&c->val, 20, prec, c->iserr, buf, (int) sizeof(buf));
+        cs_fmt_num(&c->val, 20, prec, c->iserr, c->notation, buf,
+                    (int) sizeof(buf));
         strncpy(out, buf, outn - 1);
         out[outn - 1] = '\0';
         return;

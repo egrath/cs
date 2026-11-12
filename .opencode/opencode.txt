@@ -1,6 +1,52 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "notation": per-cell (auto)/(dec)/(sci) — 2026-11-12):
+- USER SPEC: a numeric cell's notation settable via ;F: the menu gains
+  N)otation (auto)/(dec)/(sci) — small letters, the cell's state; N
+  cycles auto -> dec -> sci -> auto.  (sci) = always scientific ("!n!"
+  when even exponential does not fit); (dec) = always decimal, too
+  wide: keep the first width-1 chars and show '*' as the LAST symbol
+  (the user looks the full value up in the contents line); (auto) =
+  the manual's default behavior.  State saved with the cell.
+- IMPLEMENTATION: Cell.notation (0=auto,1=sci,2=dec); cs_fmt_num gains
+  a notation param (the dec branch re-checks `need` against bufn and
+  falls to "!n!" for pathologically huge values; the sci branch fits
+  exponential then "!n!"); callers: cell_render (the cell's notation),
+  what_heading, print.c reports — the contents line stays
+  notation-INDEPENDENT (the lookup view).  ;F: label
+  "P)recision (%d) or N)otation (%s) or W)idth (%d) or F)orm mode (%s)"
+  with "auto"/"dec"/"sci" words; N cycles (n+2)%3 (encoding order!);
+  an empty cell is allocated (CE_ALLOC, "can't create" budget) so the
+  attribute sticks like the per-cell prec.  cs_free_cell keeps
+  notation (like prec/formf, per the survival policy); cs_clear_all
+  resets.  Copy rides along (struct clone).  SAVE/LOAD: 2 bits packed
+  into bits 5-6 of the per-cell prec byte ((prec+1)&31 | notat<<5) —
+  the CSD4 layout is UNCHANGED, old files load as (auto); the load
+  unpacks in BOTH the text and numeric branches.
+- VERIFIED: --test +13 (exact strings: auto/sci/dec fits, dec's '*'
+  truncation "123456789*" and "0.0000735*", dec does NOT fall back
+  where auto does ("1E+3" vs "1234.*" at width 6), sci's "!n!",
+  dec prec 0, the CSD4 round trip for (sci) and (dec)+prec);
+  pty: the menu shows (auto) -> N -> (dec) with the window rendering
+  "123456789*", N -> (sci), N -> (auto), and an isolated save/load
+  round trip keeps (dec) ("SAVED", reload, menu (dec), window
+  "123456789*").  cs1.txt idle EXACT.  On branch "notation".
+- CRASH LESSON: my first label sprintf DOUBLED the parentheses
+  ("N)otation ((auto))" — format string + parenthesized words) and
+  overflowed label[72] -> macOS FORTIFY __chk_fail (EXC_BREAKPOINT,
+  silent app death).  The crash report
+  (~/Library/Logs/DiagnosticReports/calcstar-*.ips) named
+  __sprintf_chk + format_cmd +336 — check there FIRST for silent
+  curses-app deaths.  Buffer widened to 88.
+- HARNESS: (a) `expect -exact "X"` immediately followed by `send` is
+  UNSAFE — expect stops reading at the match while the app keeps
+  painting (the panel!) -> pty write-deadlock; ALWAYS `expect timeout`
+  between a match and the next send.  (b) Repeated anchors
+  ("Command > ") match STALE buffer content in long multi-stage
+  scripts -> keystrokes cascade into entries (the dialogs "never
+  opened"); keep each concern in its OWN short script.
+
 ## BATCH (master: ;W heading display fix — 2026-11-12):
 - USER CORRECTION (two rounds): (1) the ;W fields were SWAPPED — at an
   empty A7 with A1="A1" it printed "row, column  = A1,-"; the ROW

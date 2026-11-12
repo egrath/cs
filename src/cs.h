@@ -27,6 +27,9 @@ typedef struct {
     char *strres;   /* string result of a formula, or NULL */
     int formf;      /* form mode set (for ;A Auto) */
     int prec;       /* per-entry precision override, -1 = none */
+    int notation;   /* display notation (flagged ext 2026-11): 0=auto,
+                     * 1=scientific (too narrow: "!n!"), 2=decimal
+                     * (too narrow: head kept, trailing '*') */
 } Cell;
 
 #define EDIT_IDLE 0
@@ -105,7 +108,8 @@ void   cs_set_errpend(int on);             /* main.c: sticky-message walker */
 
 void   cs_reg_reset(void);   /* zero the REGR() state */
 int    cs_commit_entry(int col, int rw, const char *entry);
-void   cs_fmt_num(const Csn *v, int width, int prec, int iserr, char *buf, int bufn);
+void   cs_fmt_num(const Csn *v, int width, int prec, int iserr, int notation,
+                  char *buf, int bufn);
 int    cs_ensure_room(void);
 void   cs_recount_entries(void);
 int    cs_is_inputf(const Cell *c);

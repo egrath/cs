@@ -170,7 +170,8 @@ void cs_free_cell(Cell *c)
     /* NOTE: formf deliberately survives - the user's form course must
      * keep its stop-cells across data re-entry (manual: ";A ... is very
      * useful when certain entries are subject to frequent changes").
-     * cs_clear_all() resets the flags explicitly. */
+     * prec and notation (per-cell format attributes) survive the same
+     * way.  cs_clear_all() resets the flags explicitly. */
     c->prec = -1;
 }
 
@@ -185,7 +186,10 @@ void cs_clear_all(void)
             cells[r][c].formf = 0;
     for (c = 0; c < CS_MAXCOL; c++) { colw[c] = CS_DEF_W; colp[c] = CS_DEF_P; }
     for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++) cells[r][c].prec = -1;
+        for (c = 0; c < CS_MAXCOL; c++) {
+            cells[r][c].prec = -1;
+            cells[r][c].notation = 0;   /* (auto) */
+        }
 }
 
 int cs_ensure_room(void)
@@ -393,11 +397,53 @@ char *cs_shift_refs_n(const char *s, int iscol, int at, int delta)
 /* ------------------------------------------------------------+
  | numeric formatting: truncate (not round) to prec decimals;   |
  | fall back to exponential form if it does not fit the width   |
- | (all digit work handled by the BCD engine)                   |
+ | (all digit work handled by the BCD engine).                  |
+ | notation (flagged ext 2026-11): 0 = auto (the manual's       |
+ | behavior above), 1 = always scientific ("!n!" when even that |
+ | does not fit), 2 = always decimal (too wide: keep the head,  |
+ | a '*' as the last symbol marks the visual truncation)        |
  +----------------------------------------------------------- */
-void cs_fmt_num(const Csn *v, int width, int prec, int iserr, char *buf, int bufn)
+void cs_fmt_num(const Csn *v, int width, int prec, int iserr, int notation,
+                char *buf, int bufn)
 {
     if (iserr) { sprintf(buf, "?n?"); return; }
+    if (notation == 1) {
+        /* forced scientific: fit the exponential form to the width */
+        int frac = width - 6;
+        if (frac < 0) frac = 0;
+        while (frac > 0) {
+            char e[64];
+            csn_fmt_sci(v, frac, e, (int) sizeof(e));
+            if ((int) strlen(e) <= width) break;
+            frac--;
+        }
+        csn_fmt_sci(v, frac, buf, bufn);
+        if ((int) strlen(buf) <= width) return;
+        if (width > 0 && width >= 3 && width < bufn) strcpy(buf, "!n!");
+        else buf[0] = '\0';
+        return;
+    }
+    if (notation == 2) {
+        /* forced decimal: never fall back; a too-wide value keeps its
+         * head and ends in '*' (the user sees the truncation) */
+        int lead = v->exp10 - 1;
+        int ipart = (v->ndig && lead >= 0) ? lead + 1 : 1;
+        int need = ipart + (prec > 0 ? 1 + prec : 0) + 2;
+        if (need > bufn - 1) {
+            /* the fixed form cannot even be built (pathologically huge
+             * value): the manual's "not wide enough" token */
+            if (width >= 3 && width < bufn) strcpy(buf, "!n!");
+            else buf[0] = '\0';
+            return;
+        }
+        csn_fmt_fixed(v, prec, buf, bufn);
+        if (buf[0] != '\0' && (int) strlen(buf) <= width) return;
+        if (width >= 2 && width < bufn) {
+            memcpy(buf + width - 1, "*", (size_t) 1);
+            buf[width] = '\0';
+        }
+        return;
+    }
     /* integer digits of the fixed form; if too wide for the buffer, go
      * straight to the exponential fallback */
     {

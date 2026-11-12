@@ -76,7 +76,8 @@ static void print_render(int col, int row, char *out, int width)
     {
         char buf[64];
         int prec = (c->prec >= 0) ? c->prec : colp[col];
-        cs_fmt_num(&c->val, width, prec, 0, buf, (int) sizeof(buf));
+        cs_fmt_num(&c->val, width, prec, 0, c->notation, buf,
+                        (int) sizeof(buf));
         sprintf(out, "%*s", width, buf);
     }
 }

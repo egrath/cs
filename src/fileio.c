@@ -19,7 +19,10 @@
  *   unsigned short cellCount (little endian)
  *   cells: unsigned char col, unsigned short row(0-based LE),
  *          unsigned char type (2=text,3=num), unsigned char just,
- *          unsigned char prec+1 (0=none), unsigned char formf,
+ *          unsigned char prec+1 (0=none, bits 0-4) | notation<<5
+ *            (bits 5-6: 0=auto,1=sci,2=dec - flagged ext 2026-11;
+ *            old CSD4 files have zero high bits and load as (auto)),
+ *          unsigned char formf,
  *          unsigned short contlen + bytes (u16 LE),
  *          [type==3] BCD number of value:
  *               unsigned char sign (0/1),
@@ -137,7 +140,9 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
             fputc((int) cl->type, f);
             just = cl->just;
             fputc((int) (unsigned char) just, f);
-            fputc(cl->prec + 1, f);
+            /* prec+1 occupies 0..25, so bits 5-6 carry the notation
+             * (0=auto,1=sci,2=dec) - the format stays CSD4-compatible */
+            fputc(((cl->prec + 1) & 31) | ((cl->notation & 3) << 5), f);
             fputc(cl->formf, f);
             len = cl->cont ? (int) strlen(cl->cont) : 0;
             wr16(f, len);
@@ -194,14 +199,16 @@ int cs_load(const char *name, int c0, int r0, int merge)
     count = rd16(f);
     if (count < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
     for (i = 0; i < count; i++) {
-        int cc, rr, ty, just, prc, frm, len;
+        int cc, rr, ty, just, prc, frm, nta, len;
         int dr, dc, drop;
         Cell *cl, scratch;
         cc = fgetc(f);
         rr = rd16(f);
         ty = fgetc(f);
         just = (char) fgetc(f);
-        prc = fgetc(f) - 1;
+        nta = fgetc(f);
+        prc = (nta & 31) - 1;           /* bits 0-4: prec+1 (0=none) */
+        nta = (nta >> 5) & 3;           /* bits 5-6: notation */
         frm = fgetc(f);
         if (cc == EOF || rr < 0 || cc >= CS_MAXCOL || rr >= CS_MAXROW) break;
         /* Load position (manual 14-9: "If the upper left corner is to
@@ -228,6 +235,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->just = just;
             cl->formf = frm;
             cl->prec = prc;
+            cl->notation = nta;
             csn_zero(&cl->val);
             cl->iserr = 0;
             cl->strres = NULL;
@@ -251,6 +259,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->just = just;
             cl->formf = frm;
             cl->prec = prc;
+            cl->notation = nta;
             csn_copy(&cl->val, &v);
             cl->iserr = 0;
             cl->strres = NULL;

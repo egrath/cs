@@ -211,7 +211,8 @@ static void cell_render(int col, int row, char *out, int width)
             if (len > width) { memcpy(out, s, (size_t) width); out[width] = '\0'; }
             else sprintf(out, "%*s", width, s);
         } else {
-            cs_fmt_num(&c->val, width, prec, 0, buf, (int) sizeof(buf));
+            cs_fmt_num(&c->val, width, prec, 0, c->notation, buf,
+                       (int) sizeof(buf));
             sprintf(out, "%*s", width, buf);
         }
     }
@@ -412,7 +413,7 @@ static void draw_typecont(void)
         cont_is_number(c->cont)) {
         char buf[64];
         int prec = (c->prec >= 0) ? c->prec : colp[curCol];
-        cs_fmt_num(&c->val, 20, prec, 0, buf, (int) sizeof(buf));
+        cs_fmt_num(&c->val, 20, prec, 0, 0, buf, (int) sizeof(buf));
         cput(line_cont, 22, buf);
     } else if (c && c->cont) {
         cput(line_cont, 22, c->cont);   /* formula / input formula as typed */
