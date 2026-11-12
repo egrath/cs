@@ -34,15 +34,19 @@ division) and every system function work on digits:
   natural log through `ln((1+z)/(1-z))` with `z = (m-1)/(m+1)` (one
   `sqrt(10)` half-step of the exponent); `LOG` computed directly, so
   integral powers of ten come out exactly (`LOG(0.001) = -3`).
-- **Trigonometry in degrees** (SIN COS TAN ASIN ACOS ATAN — plus `PI()` at
-  the full 40-digit internal precision — not documented in the manual,
-  reconstructed from the original's feature set; the unit convention is
-  degrees, matching Sorcim-era products): Maclaurin series
-  of the reduced angle (≤ 22.5° after quadrant+halving mapping), `atan`
-  via the half-angle identity `atan(x) = 2*atan(x/(1+sqrt(1+x²)))` and
-  `asin/acos` through atan.  All series results are **rounded at the
-  30th digit** so boundary-exact values (SIN(30°) = 0.5) come out clean;
-  the cell display still truncates, per the manual.
+- **Trigonometry in RADIANS, in and out** (SIN COS TAN ASIN ACOS ATAN —
+  plus `PI()` at the full 40-digit internal precision; the trig set is not
+  documented in the manual, reconstructed from the original's feature
+  set): Maclaurin series of the reduced angle (≤ π/2 after mod-2π folding),
+  `atan` via the complement identity `atan(x) = π/2 − atan(1/x)` for
+  |x| > 1 plus the half-angle identity `atan(x) = 2*atan(x/(1+sqrt(1+x²)))`,
+  and `asin/acos` through atan.  All series results are **rounded at the
+  30th digit** so boundary-exact values (SIN(PI()/6) = 0.5) come out clean;
+  the **inverse trigonometric family publishes at the 38th digit** so
+  `tan(atan(x))` round trips keep the argument's digits; the cell display
+  still truncates, per the manual.  **Degree converters:** `DEG(x)` /
+  `DEGREES(x)` (radians → degrees) and `RAD(x)` / `RADIANS(x)` (degrees →
+  radians).
 - The Evaluate (`?`) calculator prints **24 decimal places** (manual 4.1/4.2
   pinned 12; user-extended to match the worksheet), and a leading `+`/`-`
   is required for functions in entries (manual: "if a + or a — is not
@@ -64,16 +68,17 @@ division) and every system function work on digits:
 
   | entry | cell shows |
   |---|---|
-  | `+asin(acos(atan(tan(cos(sin(9))))))` | `9.000000000000000000000002` |
+  | `+asin(acos(atan(tan(cos(sin(9))))))` | `0.424777960769379715387930` (exactly 3π − 9) |
   | `+sqrt(2)` | `1.414213562373095048801688` |
   | `+pi()` | `3.141592653589793238462643` |
-  | `+sin(30)` | `0.500000000000000000000000` |
+  | `+sin(pi()/6)` | `0.500000000000000000000000` |
 
   `+2**0.5?` answers in the status bar with
-  `=1.414213562373095048801688`.  The first line is the classic
-  spreadsheet precision test: 23 correct decimals (the last shown digit
-  reflects the honest-core limit of the `1-x` amplification inside
-  `acos`/`asin`).
+  `=1.414213562373095048801688`.  Inverse-trig round trips keep the
+  argument: `+tan(atan(123456789.123456789))` returns
+  `123456789.123456789000000000000` (the published 38-digit inverse-trig
+  floor), and tiny arguments pass through exactly: `+sin(1e-20)` →
+  `0.000000000000000000010000`.
 - **Comparisons see all honest digits:** two values that were equal at 15
   digits but differ beyond now compare unequal (`=` in a conditional, and
   copy/delete dependency scans).

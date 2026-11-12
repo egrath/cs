@@ -593,33 +593,33 @@ static void run_tests(void)
     ckc("(-8)**3", "(-8)**3", "-5.1200000000000E+3");
     ckc("mcd", "(12*10**-3)", "+1.2000000000000E-1");
 
-    /* trigonometry (degrees, in and out) */
-    ckc("SIN(30)", "SIN(30)", "+5.0000000000000E+0");
-    ckc("COS(60)", "COS(60)", "+5.0000000000000E+0");
-    ckc("TAN(45)", "TAN(45)", "+1.0000000000000E+1");
-    ckc("SIN(90)", "SIN(90)", "+1.0000000000000E+1");
-    ckc("COS(90)", "COS(90)", "0");
-    ckc("SIN(-30)", "SIN(-30)", "-5.0000000000000E+0");
-    ckc("COS(120)", "COS(120)", "-5.0000000000000E+0");
-    ckc("SIN(200)", "SIN(200)", "-3.4202014332566E+0");
-    ckc("ASIN(0.5)", "ASIN(0.5)", "+3.0000000000000E+2");
-    ckc("ACOS(0.5)", "ACOS(0.5)", "+6.0000000000000E+2");
-    ckc("ATAN(1)", "ATAN(1)", "+4.5000000000000E+2");
-    ckc("ASIN(1)", "ASIN(1)", "+9.0000000000000E+2");
-    /* inverse-trig accuracy: the atan-halving reduction and the acos
-     * half-angle identity keep the 14-digit floor (round-trip chains
-     * produce 9.000000003..., NOT 6.25 as before the fix) */
-    ckc("ACOS(-0.5)", "ACOS(-0.5)", "+1.2000000000000E+3");   /* 120 */
-    ckc("ACOS(-1)", "ACOS(-1)", "+1.8000000000000E+3");       /* 180 */
-    ckc("ACOS(0)", "ACOS(0)", "+9.0000000000000E+2");         /* 90 */
+    /* trigonometry in RADIANS (user decision 2026-11; the trig set is
+     * not documented in the manuals - the earlier degree convention was
+     * a flagged assumption now retired; DEG/RAD/DEGREES/RADIANS convert) */
+    ckc("SIN(PI()/6)", "SIN(PI()/6)", "+5.0000000000000E+0");
+    ckc("COS(PI()/3)", "COS(PI()/3)", "+5.0000000000000E+0");
+    ckc("TAN(PI()/4)", "TAN(PI()/4)", "+1.0000000000000E+1");
+    ckc("SIN(-PI()/6)", "SIN(-PI()/6)", "-5.0000000000000E+0");
+    ckc("COS(2*PI()/3)", "COS(2*PI()/3)", "-5.0000000000000E+0");
+    ckc("SIN(PI())", "SIN(PI())", "0");
+    ckc("SIN(1)", "SIN(1)", "+8.4147098480789E+0");
+    ckc("COS(1)", "COS(1)", "+5.4030230586813E+0");
+    ckc("ASIN(0.5)", "ASIN(0.5)", "+5.2359877559829E+0");
+    ckc("ACOS(0.5)", "ACOS(0.5)", "+1.0471975511965E+1");
+    ckc("ATAN(1)", "ATAN(1)", "+7.8539816339744E+0");
+    ckc("ASIN(1)", "ASIN(1)", "+1.5707963267948E+1");
+    /* inverse-trig accuracy: the atan complement+halving reduction and
+     * the acos half-angle identity keep the honest floor; the inverse
+     * family publishes at 38 digits so tan(atan(x)) round trips keep
+     * the argument's digits (error was ~1e-22 at round30) */
+    ckc("ACOS(-0.5)", "ACOS(-0.5)", "+2.0943951023931E+1");   /* 2pi/3 */
+    ckc("ACOS(-1)", "ACOS(-1)", "+3.1415926535897E+1");       /* pi */
+    ckc("ACOS(0)", "ACOS(0)", "+1.5707963267948E+1");         /* pi/2 */
     ckc("ACOS(1)", "ACOS(1)", "0");
-    ckc("ACOS(-0.9999)", "ACOS(-0.9999)", "+1.7918970856293E+3");
-    /* true value 0.81029143706569954...: the old want (...6570) carried
-     * the old round15 carry into digit 14; round30 keeps the true
-     * truncation (...6569) */
-    ckc("ACOS(0.9999)", "ACOS(0.9999)", "+8.1029143706569E+0");
+    ckc("ACOS(-0.9999)", "ACOS(-0.9999)", "+3.1274504001122E+1");
+    ckc("ACOS(0.9999)", "ACOS(0.9999)", "+1.4142253477512E-1");
     ckc("ACOS(0.9999976)", "ACOS(0.9999976)",
-        "+1.2552878866239E+0");
+        "+2.1908906681989E-2");
     {
         Csn r;
         char g[48];
@@ -628,14 +628,14 @@ static void run_tests(void)
             "+ASIN(ACOS(ATAN(TAN(COS(SIN(9))))))", &r, &s2);
         if (s2) free(s2);
         csn_canon(&r, g, (int) sizeof(g));
-        /* 40-digit mantissa + round30: the chain lands on 9 through
-         * 23 decimals (9.0000000000000000000000028611); the canon
-         * floor is clean.  The pre-raise engine stopped at
-         * 9.0000000036813 (round15) */
-        if (e != 0 || strcmp(g, "+9.0000000000000E+1")) {
+        /* radians: the chain collapses to asin(sin(9)) with 9 rad in
+         * (pi/2, pi), so the exact value is 3*pi - 9
+         * = 0.4247779607693797153879301498... (the classic degree-mode
+         * variant landed on exactly 9) */
+        if (e != 0 || strcmp(g, "+4.2477796076937E+0")) {
             printf("FAIL trig round-trip chain e=%d got %s\n", e, g);
             fails++;
-        } else printf("ok   trig round-trip chain -> 9.0000000000000\n");
+        } else printf("ok   trig round-trip chain -> 3*pi - 9\n");
     }
 
     /* engineering-precision battery: fixed-decimal strings beyond the
@@ -648,9 +648,24 @@ static void run_tests(void)
         e = cs_eval_formula(
             "+ASIN(ACOS(ATAN(TAN(COS(SIN(9))))))", &r, NULL);
         csn_fmt_fixed(&r, 24, g, (int) sizeof(g));
-        if (e != 0 || strcmp(g, "9.000000000000000000000002"))
+        if (e != 0 || strcmp(g, "0.424777960769379715387930"))
             { printf("FAIL chain fixed-24 e=%d got %s\n", e, g); fails++; }
-        else printf("ok   chain fixed-24 keeps 23 digits\n");
+        else printf("ok   chain fixed-24 = 3*pi - 9\n");
+        /* tan(atan(x)) round trip: the argument's digits survive
+         * (was ...789000005056921 before the round38/complement fix) */
+        e = cs_eval_formula(
+            "+TAN(ATAN(123456789.123456789))", &r, NULL);
+        csn_fmt_fixed(&r, 24, g, (int) sizeof(g));
+        if (e != 0 || strcmp(g, "123456789.123456789000000000000000"))
+            { printf("FAIL tan-atan round trip e=%d got %s\n", e, g); fails++; }
+        else printf("ok   tan(atan(x)) round trip keeps the digits\n");
+        /* tiny sqrt: relative Newton convergence (was a one-step exit
+         * with the old absolute threshold) */
+        e = cs_eval_formula("+SQRT(1E-998)*1E498", &r, NULL);
+        csn_canon(&r, g, (int) sizeof(g));
+        if (e != 0 || strcmp(g, "+1.0000000000000E+0"))
+            { printf("FAIL sqrt(1e-998) e=%d got %s\n", e, g); fails++; }
+        else printf("ok   sqrt(1e-998) = 1e-499\n");
         csn_parse("2", &t);
         csn_sqrt(&r, &t);
         csn_fmt_fixed(&r, 28, g, (int) sizeof(g));
@@ -665,18 +680,19 @@ static void run_tests(void)
         else printf("ok   exp1 carries 30 digits\n");
         /* cos is even: negative input must NOT flip the sign
          * (pre-existing bug found by the 38-decimal differential) */
-        csn_parse("-60", &t);
+        csn_parse("-0.7", &t);
         csn_cos(&r, &t);
         csn_canon(&r, g, (int) sizeof(g));
-        if (strcmp(g, "+5.0000000000000E+0"))
-            { printf("FAIL cos(-60) got %s\n", g); fails++; }
-        else printf("ok   cos(-60) = 0.5 (even function)\n");
-        csn_parse("-0.9999", &t);
-        csn_cos(&r, &t);
-        csn_fmt_fixed(&r, 30, g, (int) sizeof(g));
-        if (strcmp(g, "0.999847725615063856701212110583"))
-            { printf("FAIL cos(-0.9999) got %s\n", g); fails++; }
-        else printf("ok   cos(-0.9999) sign + 30 digits\n");
+        if (strcmp(g, "+7.6484218728448E+0"))
+            { printf("FAIL cos(-0.7) got %s\n", g); fails++; }
+        else printf("ok   cos(-0.7) = cos(0.7) (even function)\n");
+        /* tiny trig arguments pass through exactly (radians) */
+        csn_parse("1e-20", &t);
+        csn_sin(&r, &t);
+        csn_canon(&r, g, (int) sizeof(g));
+        if (strcmp(g, "+1.0000000000000E-19"))
+            { printf("FAIL sin(1e-20) got %s\n", g); fails++; }
+        else printf("ok   sin(1e-20) = 1e-20\n");
 
         /* visible precision 24 (user-extended from the manual's 12):
          * fixed-form strings at CS_MAX_P, verified against the
@@ -731,6 +747,10 @@ static void run_tests(void)
     ckc("POWER(2,10)", "POWER(2,10)", "+1.0240000000000E+4");  /* E+3: 0.1024*10^4 */
     ckc("DEGREES(PI())", "DEGREES(PI())", "+1.8000000000000E+3");
     ckc("RADIANS(180)", "RADIANS(180)", "+3.1415926535897E+1");
+    ckc("DEG(PI())", "DEG(PI())", "+1.8000000000000E+3");   /* aliases */
+    ckc("RAD(180)", "RAD(180)", "+3.1415926535897E+1");
+    ckc("DEG(PI()/2)", "DEG(PI()/2)", "+9.0000000000000E+2");
+    ckc("RAD(90)", "RAD(90)", "+1.5707963267948E+1");
     ckc("FACT(5)", "FACT(5)", "+1.2000000000000E+3");
     ckc("FACT(0)", "FACT(0)", "+1.0000000000000E+1");
     { Csn r; char *sf = NULL;

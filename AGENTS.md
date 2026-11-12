@@ -192,20 +192,28 @@ Batch workflow (do all steps before reporting done):
    =36.6900...).  Precision-era reference strings (40-digit engine,
    round30, verified against 60-digit decimal arithmetic and the live
    binary — pin these, never re-derive):
-   - chain `+asin(acos(atan(tan(cos(sin(9))))))`: canon
-     `+9.0000000000000E+1`, fixed-24 `9.000000000000000000000002`
-     (23 correct decimals — the information floor of the `1-x`
-     amplification in acos/asin at a 30-digit honest core).
+   - chain `+asin(acos(atan(tan(cos(sin(9))))))` in RADIANS: collapses
+     to asin(sin(9)) with 9 rad in (pi/2, pi) → exactly 3*pi − 9 =
+     `0.4247779607693797153879301498...`; canon `+4.2477796076937E+0`,
+     fixed-24 `0.424777960769379715387930`.
+   - `tan(atan(x))` round trip: `+TAN(ATAN(123456789.123456789))`
+     fixed-24 `123456789.123456789000000000000000` (inverse trig
+     publishes at 38 digits; was ...789000005056921 at round30).
    - `sqrt(2)`: fixed-28 `1.4142135623730950488016887242`; at prec 24
      `1.414213562373095048801688`.
    - `exp(1)`: fixed-30 `2.718281828459045235360287471350`; at prec 24
      `2.718281828459045235360287`.
-   - π at prec 24 `3.141592653589793238462643`; `SIN(30)`/`COS(60)`:
-     exactly `0.5` (round30 boundary values stay clean).
-   - cos is EVEN: `COS(-60)` = `0.5` (regression for the fixed sign bug).
+   - π at prec 24 `3.141592653589793238462643`; `SIN(PI()/6)` /
+     `COS(PI()/3)`: exactly `0.5` (round30 boundary values stay clean).
+   - `SIN(1E-20)` = `ATAN(1E-20)` = `1E-20` exactly (radians; canon
+     `+1.0000000000000E-19`); `SQRT(1E-998)*1E498` = `1` (relative
+     Newton test).
+   - cos is EVEN: `COS(-0.7)` = `COS(0.7)` = `0.7648421872844884…`
+     (regression for the fixed sign bug).
    - Differential harness: `tests/precision_ref.c` + `tests/precision_ref.py`
      (25 inputs × 9 functions at 38 decimals vs a 150-digit decimal
-     reference; tolerance 2e-29 relative — see the file headers).
+     reference, RADIANS throughout; tolerance 2e-29 relative — see the
+     file headers).
 3. Interactive pty check of the affected UI paths with an `expect` script.
 4. The cs1.txt idle diff (see recipe in `.opencode/opencode.txt`).
 5. Update `.opencode/opencode.txt`.
@@ -235,8 +243,14 @@ Batch workflow (do all steps before reporting done):
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.
-- Trigonometry inputs/outputs are **degrees** (Sorcim-era convention; the
-  trig set is not documented in either manual).
+- Trigonometry inputs/outputs are **RADIANS** (user decision 2026-11,
+  replacing the earlier flagged degree assumption — the trig set is not
+  documented in either manual, and the user's precision suites assume
+  radians).  `DEG`/`DEGREES` and `RAD`/`RADIANS` convert.  The inverse
+  trig family publishes at the 38th digit (round_at 38; bias ~0.03 ulp,
+  boundary values still snap); sqrt's Newton uses a RELATIVE convergence
+  test (|Δy| < |y|·1e-40 — the old absolute 1e-40 exited after one step
+  for tiny arguments).
 - The `?`-calculator shows CS_MAX_P (24) decimals with no zero-stripping
   (manual 4.1 pinned 12 — user-extended 2026-11, see the standing policy).
 - Precision range is `0 - 24` (user-extended from Appendix C's `0 - 12`,
@@ -246,7 +260,7 @@ Batch workflow (do all steps before reporting done):
 
 | file | responsibility |
 |---|---|
-| `src/num.c/h` | BCD engine: Csn type, add/sub/mul/div/scale, parse/canon/fixed/sci formats, pow, trig (degrees), ln/exp/log/sqrt, round30 |
+| `src/num.c/h` | BCD engine: Csn type, add/sub/mul/div/scale, parse/canon/fixed/sci formats, pow, trig (radians; inverse trig at 38 digits), ln/exp/log/sqrt, round_at |
 | `src/parser.c` | expression grammar: numbers, refs/ranges, `SUM/CNT/AVG/MAX/MIN`, math+linear functions, conditionals, `%` postfix, `**`, `\` comments |
 | `src/cells.c` | cell store, coords, ref scanners, `cs_fmt_num`, REGR state |
 | `src/eval.c` | `cs_recalc_*` (manual-only), commit path incl. `?` calculator, comments |

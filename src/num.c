@@ -155,7 +155,7 @@ static void csn_truncate(Csn *r, const Csn *a, int keep)
 /* forward decls */
 static void csn_truncate(Csn *r, const Csn *a, int keep);
 static void trunc_int(Csn *r, const Csn *a);
-static void round30(Csn *r);
+static void round_at(Csn *r, int ndig);
 static int cmp_abs(const Csn *a, const Csn *b);
 
 void csn_zero(Csn *r)          { mkzero(r); }
@@ -565,13 +565,20 @@ static int sqrt_core(Csn *r, const Csn *a, int snap)
 
     for (i = 0; i < 40; i++) {
         int done;
+        Csn thr;
         csn_div(&ynext, &x, &y);
         if (csn_is_zero(&ynext) && !csn_is_zero(&x)) break;
         csn_add(&ynext, &ynext, &y);
         csn_div(&ynext, &ynext, &two);
         csn_sub(&d, &ynext, &y);
         if (d.sign) csn_neg(&d, &d);
-        done = (csn_cmp(&d, &RCG_TH) < 0);
+        /* RELATIVE convergence test: |ynext - y| < |ynext| * 1e-40.
+         * An absolute threshold (the old 1e-40) exits after ONE step
+         * for tiny arguments - sqrt(1e-998) stopped at 2.5e-498
+         * because every Newton delta near 1e-498 is "converged" by an
+         * absolute yardstick.  ynext > 0 here (x > 0, y > 0). */
+        csn_scale10(&thr, &ynext, -40);
+        done = (csn_cmp(&d, &thr) < 0);
         csn_copy(&y, &ynext);
         if (done) break;
     }
@@ -661,7 +668,7 @@ int csn_exp(Csn *r, const Csn *a)
         e2 = csn_div(r, &one, r);   /* e^-x = 1 / e^x */
         if (e2 != CSN_OK) return e2;
     }
-    round30(r);
+    round_at(r, 30);
     return CSN_OK;
 }
 
@@ -730,7 +737,7 @@ int csn_ln(Csn *r, const Csn *a)
         csn_copy(r, &res);
         err = CSN_OK;
     }
-    if (err == CSN_OK) round30(r);
+    if (err == CSN_OK) round_at(r, 30);
     return err;
 }
 
@@ -759,28 +766,31 @@ int csn_log10(Csn *r, const Csn *a)
         if (err != CSN_OK) return err;
     }
     csn_copy(r, &res);
-    round30(r);
+    round_at(r, 30);
     return CSN_OK;
 }
 
 /* ==================== powers and trigonometry ======================== */
 
-/* round the result at the 30th significant digit (half-up).  The
+/* round the result at the `ndig`-th significant digit (half-up).  The
  * manual promises internal accuracy of 14 places; multi-term BCD
  * series carry a small systematic truncation bias, and rounding the
  * final value keeps the working digits honest.  The round point is an
  * engineering extension: 30 honest digits instead of the original 15,
- * so long round-trip chains (asin(acos(atan(tan(cos(sin9)))))) keep
- * their digits.  The cell display still always truncates, per the
- * manual, and only shows 12 decimals - far inside the honest span. */
-static void round30(Csn *r)
+ * so long round-trip chains keep their digits; the INVERSE trig
+ * functions (atan/asin/acos) round at 38 - their results sit near
+ * pi/2 where tan(x) amplifies the published granularity by 1/x, and
+ * their series bias is ~0.03 ulp at 38, so boundary values still snap
+ * exactly (ATAN(1) = pi/4).  The cell display still always truncates,
+ * per the manual. */
+static void round_at(Csn *r, int ndig)
 {
     unsigned char ms[CSN_DIGS + 2];
     int i, n, carry;
-    if (r->ndig <= 30) return;      /* nothing beyond the kept digits */
-    n = 30;
+    if (r->ndig <= ndig) return;    /* nothing beyond the kept digits */
+    n = ndig;
     for (i = 0; i < n; i++) ms[i] = r->nd[i];
-    if (r->nd[30] >= 5) {
+    if (r->nd[ndig] >= 5) {
         carry = 1;
         for (i = n - 1; i >= 0 && carry; i--) {
             int d = ms[i] + carry;
@@ -794,8 +804,8 @@ static void round30(Csn *r)
         }
     }
     /* ms[0..n-1] = the first n significant digits; digit i carries
-     * place exp10 - i, so the last one sits at exp10 - 30 */
-    finish(r, ms, n, r->exp10 - 30, r->sign);
+     * place exp10 - i, so the last one sits at exp10 - ndig */
+    finish(r, ms, n, r->exp10 - ndig, r->sign);
 }
 
 /* is the value exactly an integer small enough to handle in a long? */
@@ -876,7 +886,7 @@ int csn_pow(Csn *r, const Csn *a, const Csn *b)
     if (err != CSN_OK) return err;
     err = csn_exp(r, r);
     if (err != CSN_OK) return err;
-    round30(r);
+    round_at(r, 30);
     return CSN_OK;
 }
 
@@ -953,115 +963,111 @@ static int ser_cos_rad(Csn *r, const Csn *rad)
     }
 }
 
-static Csn PI, D2R;                 /* pi and pi/180 */
-static Csn TR90, TR180, TR360;      /* 90 / 180 / 360 in degrees */
+static Csn PI, D2R;                 /* pi and pi/180 (DEG/RAD converters) */
+static Csn PIH, PI2;                /* pi/2 and 2*pi (angle reduction) */
 static int   got_trig;
 
 static void ensure_trig_set(void)
 {
+    Csn two_tmp;
     if (got_trig) return;
     ensure_const();
     csn_parse("3.14159265358979323846264338327950288419716939937510582097494459", &PI);
     csn_from_int(&D2R, 180);
     csn_div(&D2R, &PI, &D2R);          /* pi/180 */
-    csn_from_int(&TR90, 90);
-    csn_from_int(&TR180, 180);
-    csn_from_int(&TR360, 360);
+    csn_from_int(&two_tmp, 2);
+    csn_copy(&PIH, &PI);
+    csn_div(&PIH, &PIH, &two_tmp);     /* pi/2 */
+    csn_add(&PI2, &PI, &PI);           /* 2*pi (exact doubling) */
     got_trig = 1;
 }
 
-/* sin/cos at a reduced angle: deg in [0,90), or convert for cos */
-static int ser_at90(Csn *r, const Csn *deg, int want_cos)
+/* sin/cos at a reduced angle: rad in [0,pi/2) */
+static int ser_at90(Csn *r, const Csn *rad, int want_cos)
 {
-    Csn rad;
-    int err;
-    err = csn_mul(&rad, deg, &D2R);
-    if (err != CSN_OK) return err;
-    err = want_cos ? ser_cos_rad(&rad, &rad) : ser_sin_rad(&rad, &rad);
-    if (err != CSN_OK) return err;
-    csn_copy(r, &rad);
-    return CSN_OK;
+    return want_cos ? ser_cos_rad(r, rad) : ser_sin_rad(r, rad);
 }
 
-int csn_sin(Csn *r, const Csn *deg)
+/* trigonometry in RADIANS (user decision 2026-11; the trig set is not
+ * documented in the manuals, and the standard precision suites assume
+ * radians - the earlier degree convention was a flagged assumption).
+ * DEG()/RAD()/DEGREES()/RADIANS() convert for degree-based work. */
+
+int csn_sin(Csn *r, const Csn *rad)
 {
     Csn y;
     int neg = 0, err;
 
     ensure_trig_set();
-    csn_copy(&y, deg);
+    csn_copy(&y, rad);
     if (y.sign && !csn_is_zero(&y)) { csn_neg(&y, &y); neg = 1; }
-    mod_pos(&y, &TR360);            /* y in [0,360), y.sign cleared */
-    if (csn_cmp(&y, &TR180) >= 0) {
-        csn_sub(&y, &y, &TR180);
-        neg = !neg;                 /* sin(x + 180) = -sin(x) */
+    mod_pos(&y, &PI2);              /* y in [0,2*pi) */
+    if (csn_cmp(&y, &PI) >= 0) {
+        csn_sub(&y, &y, &PI);
+        neg = !neg;                 /* sin(x + pi) = -sin(x) */
     }
-    if (csn_cmp(&y, &TR90) >= 0) {
-        Csn mv;
-        csn_from_int(&mv, 90);
-        csn_sub(&y, &y, &mv);       /* y in [0,90): sin(90+a) = cos(a) */
+    if (csn_cmp(&y, &PIH) >= 0) {
+        csn_sub(&y, &y, &PIH);      /* sin(pi/2 + a) = cos(a) */
         err = ser_at90(r, &y, 1);
     } else {
         err = ser_at90(r, &y, 0);
     }
     if (err != CSN_OK) return err;
-    round30(r);
+    round_at(r, 30);
     if (neg && !csn_is_zero(r)) csn_neg(r, r);
     return CSN_OK;
 }
 
-int csn_cos(Csn *r, const Csn *deg)
+int csn_cos(Csn *r, const Csn *rad)
 {
-    Csn mv, y;
+    Csn y;
     int neg = 0, err;
 
     ensure_trig_set();
-    csn_copy(&y, deg);
+    csn_copy(&y, rad);
     /* cos is an EVEN function: a negative input flips nothing (unlike
-     * sin).  Only the 180/90-degree reductions may negate. */
+     * sin).  Only the pi / pi/2 reductions may negate. */
     if (y.sign && !csn_is_zero(&y)) csn_neg(&y, &y);
-    mod_pos(&y, &TR360);            /* y in [0,360) */
-    if (csn_cmp(&y, &TR180) >= 0) {
-        csn_sub(&y, &y, &TR180);
-        neg = !neg;                 /* cos(x + 180) = -cos(x) */
+    mod_pos(&y, &PI2);              /* y in [0,2*pi) */
+    if (csn_cmp(&y, &PI) >= 0) {
+        csn_sub(&y, &y, &PI);
+        neg = !neg;                 /* cos(x + pi) = -cos(x) */
     }
-    if (csn_cmp(&y, &TR90) >= 0) {
-        csn_from_int(&mv, 90);
-        csn_sub(&y, &y, &mv);       /* cos(90+a) = -sin(a) */
+    if (csn_cmp(&y, &PIH) >= 0) {
+        csn_sub(&y, &y, &PIH);      /* cos(pi/2 + a) = -sin(a) */
         neg = !neg; err = ser_at90(r, &y, 0);
     } else {
         err = ser_at90(r, &y, 1);
     }
     if (err != CSN_OK) return err;
-    round30(r);
+    round_at(r, 30);
     if (neg && !csn_is_zero(r)) csn_neg(r, r);
     return CSN_OK;
 }
 
-int csn_tan(Csn *r, const Csn *deg)
+int csn_tan(Csn *r, const Csn *rad)
 {
     Csn s, c;
     int err;
 
     ensure_trig_set();
-    err = csn_sin(&s, deg);
+    err = csn_sin(&s, rad);
     if (err != CSN_OK) return err;
-    err = csn_cos(&c, deg);
+    err = csn_cos(&c, rad);
     if (err != CSN_OK) return err;
     if (csn_is_zero(&c)) return CSN_ER_DIVZERO;
     err = csn_div(r, &s, &c);
     if (err != CSN_OK) return err;
-    round30(r);
+    round_at(r, 30);
     return CSN_OK;
 }
 
 int csn_asin(Csn *r, const Csn *x)
 {
-    Csn one, xsq, omx, t, m90, ax, s;
+    Csn one, xsq, omx, t, ax, s;
     int err;
 
     ensure_trig_set();
-    csn_from_int(&m90, 90);
     csn_from_int(&one, 1);
     csn_abs(&ax, x);
     if (csn_cmp(&ax, &one) > 0) return CSN_ER_DOMAIN;
@@ -1071,8 +1077,8 @@ int csn_asin(Csn *r, const Csn *x)
     if (err != CSN_OK) return err;
     err = sqrt_core(&s, &omx, 0);   /* unsnapped: precision, not display */
     if (err != CSN_OK) return err;
-    if (csn_is_zero(&s)) {         /* x = +1 or -1: 90 / -90 */
-        csn_copy(r, &m90);
+    if (csn_is_zero(&s)) {         /* x = +1 or -1: pi/2 / -pi/2 */
+        csn_copy(r, &PIH);
         if (x->sign) csn_neg(r, r);
         return CSN_OK;
     }
@@ -1080,7 +1086,7 @@ int csn_asin(Csn *r, const Csn *x)
     if (err != CSN_OK) return err;
     err = csn_atan(r, &t);
     if (err != CSN_OK) return err;
-    round30(r);
+    round_at(r, 38);    /* inverse trig: publish past the tan blow-up */
     return CSN_OK;
 }
 
@@ -1095,10 +1101,9 @@ int csn_acos(Csn *r, const Csn *x)
     csn_abs(&ax, x);
     if (csn_cmp(&ax, &one) > 0) return CSN_ER_DOMAIN;
     /* acos(x) = 2*asin(sqrt((1-x)/2))  (exact identity, x in [-1,1]).
-     * Theatan form "90 - asin(x)" subtracts two nearly equal 14-digit
-     * values for x near 1 and loses the resolution of the small
-     * remainder (the +ASIN(ACOS(ASIN(TAN...))) round-trip chain lost 2
-     * digits there).  The half-angle form keeps (1-x)'s digits. */
+     * The atan form "pi/2 - asin(x)" subtracts two nearly equal values
+     * for x near 1 and loses the resolution of the small remainder.
+     * The half-angle form keeps (1-x)'s digits. */
     err = csn_sub(&omx, &one, x);
     if (err != CSN_OK) return err;
     err = csn_div(&omx, &omx, &two);
@@ -1109,25 +1114,39 @@ int csn_acos(Csn *r, const Csn *x)
     if (err != CSN_OK) return err;
     err = csn_add(r, &as, &as);
     if (err != CSN_OK) return err;
-    round30(r);
+    round_at(r, 38);    /* inverse trig: publish past the tan blow-up */
     return CSN_OK;
 }
 
 int csn_atan(Csn *r, const Csn *x)
 {
-    Csn t, s, term, sq, th, one;
-    int k, n, err;
+    Csn t, s, term, sq, th, one, half, inv, res;
+    int k, n, err, neg, comp;
 
     ensure_trig_set();
     csn_from_int(&one, 1);
-    csn_copy(&t, x);
-    /* range reduction via the identity
+    csn_parse("0.5", &half);
+    neg = (x->sign && !csn_is_zero(x)) ? 1 : 0;
+    csn_abs(&t, x);                 /* atan(-x) = -atan(x) */
+    /* argument reduction, step 1: the complement identity
+     *    atan(x) = pi/2 - atan(1/x)   for x > 1
+     * One division puts the argument below 1, and for large x the tiny
+     * atan(1/x) is resolved by a 2-term series (x^3/3 already ~1e-25
+     * for x ~ 1e8) instead of the halving chain - 1/x carries its full
+     * 40 digits, so the pi/2-deficit keeps them after the subtraction. */
+    comp = (csn_cmp(&t, &one) > 0);
+    if (comp) {
+        err = csn_div(&inv, &one, &t);
+        if (err != CSN_OK) return err;
+        csn_copy(&t, &inv);
+    }
+    /* argument reduction, step 2: the halving identity
      *    atan(x) = 2*atan(x/(1+sqrt(1+x^2)))
      * halve while |t| >= 0.5 so the series always converges FAST:
-     * stopping only below 1 (Possible with |t| ~ 0.997) leaves terms
-     * contracting by t^2 ~ 0.995 -> 200 terms are NOT enough and the
-     * result drifts (the +ASIN(ACOS(ACOS)) accuracy bug).  Each halving
-     * is an exact identity, so repeating it is harmless precision-wise */
+     * stopping only below 1 (possible with |t| ~ 0.997 for x just
+     * above 1) leaves terms contracting by t^2 ~ 0.995 -> 200 terms
+     * are NOT enough and the result drifts.  Each halving is an exact
+     * identity, so repeating it is harmless precision-wise */
     {
         Csn half;
         csn_parse("0.5", &half);
@@ -1169,22 +1188,20 @@ int csn_atan(Csn *r, const Csn *x)
             if (err != CSN_OK) return err;
         }
     }
-    /* undo the halvings: multiply by 2^n then radians -> degrees */
+    /* undo the halvings: multiply by 2^n (exact doublings) */
     for (k = 0; k < n; k++) {
         err = csn_add(&s, &s, &s);
         if (err != CSN_OK) return err;
     }
-    /* radians -> degrees: multiply by 180 / pi */
-    {
-        Csn rad2deg, d180;
-        csn_from_int(&d180, 180);
-        err = csn_div(&rad2deg, &d180, &PI);
+    if (comp) {
+        err = csn_sub(&res, &PIH, &s);   /* pi/2 - atan(1/x) */
         if (err != CSN_OK) return err;
-        err = csn_mul(r, &s, &rad2deg);
-        if (err != CSN_OK) return err;
-        round30(r);
-        return CSN_OK;
+        csn_copy(&s, &res);
     }
+    csn_copy(r, &s);
+    round_at(r, 38);    /* inverse trig: publish past the tan blow-up */
+    if (neg && !csn_is_zero(r)) csn_neg(r, r);
+    return CSN_OK;
 }
 
 /* pi at maximum internal precision (the same constant the trig
@@ -1244,7 +1261,7 @@ int csn_degrees(Csn *r, const Csn *rad)
     }
     err = csn_mul(r, rad, &RAD2DEG);
     if (err != CSN_OK) return err;
-    round30(r);
+    round_at(r, 30);
     return CSN_OK;
 }
 
@@ -1254,7 +1271,7 @@ int csn_radians(Csn *r, const Csn *deg)
     ensure_trig_set();                 /* D2R = pi/180 */
     err = csn_mul(r, deg, &D2R);
     if (err != CSN_OK) return err;
-    round30(r);
+    round_at(r, 30);
     return CSN_OK;
 }
 

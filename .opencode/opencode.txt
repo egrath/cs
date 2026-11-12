@@ -1,6 +1,46 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (trig -> RADIANS + inverse-trig round38 + sqrt relative Newton):
+- USER TEST TABLE (08-14) drove this: sin(1E-20), atan(1E-20) expected
+  1E-20 (radians!); sqrt(1E-998) returned garbage; tan(atan(123456789.
+  123456789)) was ...789000005056921.
+- TRIG SWITCHED TO RADIANS (user decision; the degree convention was a
+  flagged assumption, the trig set is not in the manuals): sin/cos reduce
+  mod 2*pi, fold at pi (sign) and pi/2 (cos/sin swap) - constants PI,
+  PIH = pi/2 (DIVISION - scale10(pi,-1) is pi/10, NOT pi/2! bit me hard),
+  PI2 = pi+pi. atan returns radians: complement identity FIRST
+  (atan(x) = pi/2 - atan(1/x) for x > 1: one division, 2-term series,
+  keeps (1/x)'s digits; halving only for 0.5 <= |t| <= 1), then the
+  halving chain; NO rad2deg tail. ASIN(+-1) = +-pi/2. acos/asin/atan
+  round_at 38 (others round_at 30) - round30 generalized to round_at.
+- DEG/RAD parser aliases of DEGREES/RADIANS (user request).
+- sqrt Newton: RELATIVE convergence |dy| < |y|*1e-40 (old absolute 1e-40
+  exited after ONE step for tiny args: sqrt(1e-998) = 2.5e-498).
+- RESULTS (all measured, pty-verified): sin(1e-20) = atan(1e-20) = 1e-20
+  EXACT; atan(1e20) = pi/2 - 1e-20 EXACT;
+  tan(atan(123456789.123456789)) = ...789000000000000 (was ...000005056921);
+  sqrt(1e-998) = 1e-499 (canon E-498); chain in radians = exactly
+  3*pi - 9 = 0.4247779607693797153879301... (asin(sin(9)), 9 rad in
+  (pi/2,pi)). ln(1+1e-20) = 9.999...e-21 is CORRECT (true value; the
+  truncating display shows ...9999 - documented, user accepted).
+  sqrt(1e-998) displays 0.00 at prec 2 (fixed form fits - faithful
+  truncation, user accepted; verify via *1e498).
+- TESTS: --test trig battery rewritten in radians (SIN(PI()/6) = 0.5,
+  TAN(PI()/4) = 1, ATAN(1) = PI()/4, ASIN(1) = PI()/2, ACOS family,
+  DEG/RAD aliases, tiny-arg pass-through, round trips) - 165 ok.
+  differential harness: tests/precision_ref.py now radians throughout;
+  ZERO over-tolerance; inverse-trig deviations collapsed to 1e-34..1e-36
+  (round38+complement). cs1.txt idle EXACT.
+- HARNESS LESSONS: (1) guess-based expect patterns desync pty scripts -
+  use loose drains while measuring, then re-run with MEASURED patterns;
+  (2) pty frames can lag one query (refresh timing) - align by VALUE, not
+  by frame count; (3) /tmp scratch binaries must be RELINKED after make -
+  a stale radprobe made the PIH bug look unfixed; (4) scale10(x,-1) is
+  x/10 - use division for pi/2!
+- Docs: README trig section + precision table now radians; AGENTS.md
+  invariants + reference strings updated (degree chain =9 retired).
+
 ## BATCH (precision documentation + permanent differential harness):
 - All doc examples verified against the LIVE binary via pty (docex.exp)
   before being written down: chain -> 9.000000000000000000000002, sqrt(2)

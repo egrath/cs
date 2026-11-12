@@ -138,6 +138,7 @@ typedef enum {
     FN_REGR, FN_PROJ, FN_DEPD, FN_SLOPE, FN_UNKNOWN,
     FN_SIN, FN_COS, FN_TAN, FN_ASIN, FN_ACOS, FN_ATAN, FN_PI,
     FN_SIGN, FN_MOD, FN_POWER, FN_LOG10, FN_DEGREES, FN_RADIANS,
+    FN_DEG, FN_RAD,
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC
 } FnId;
 
@@ -169,6 +170,8 @@ static int fnid(const char *name)
     if (!strcmp(name, "POWER")) return FN_POWER;
     if (!strcmp(name, "DEGREES")) return FN_DEGREES;
     if (!strcmp(name, "RADIANS")) return FN_RADIANS;
+    if (!strcmp(name, "DEG"))   return FN_DEG;    /* short alias, DEGREES */
+    if (!strcmp(name, "RAD"))   return FN_RAD;    /* short alias, RADIANS */
     if (!strcmp(name, "FACT"))  return FN_FACT;
     if (!strcmp(name, "COMBIN")) return FN_COMBIN;
     if (!strcmp(name, "PERMUT")) return FN_PERMUT;
@@ -550,7 +553,8 @@ static Val parse_primary(P *ps)
                 f == FN_SIN || f == FN_COS || f == FN_TAN ||
                 f == FN_ASIN || f == FN_ACOS || f == FN_ATAN ||
                 f == FN_SIGN || f == FN_DEGREES ||
-                f == FN_RADIANS || f == FN_FACT) {
+                f == FN_DEG || f == FN_RADIANS ||
+                f == FN_RAD || f == FN_FACT) {
                 ArgKind kind;
                 int c1, r1, c2, r2, err;
                 Val a = parse_arg(ps, &kind, &c1, &r1, &c2, &r2);
@@ -581,9 +585,11 @@ static Val parse_primary(P *ps)
                     err = csn_sign(&v.num, &a.num);
                     break;
                 case FN_DEGREES:
+                case FN_DEG:
                     err = csn_degrees(&v.num, &a.num);
                     break;
                 case FN_RADIANS:
+                case FN_RAD:
                     err = csn_radians(&v.num, &a.num);
                     break;
                 case FN_FACT:

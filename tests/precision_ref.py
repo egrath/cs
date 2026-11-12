@@ -98,28 +98,18 @@ def ln_r(x):
 def log10_r(x): return ln_r(x)/ln_r(D(10))
 
 def wrap_sin(x):
-    t = x % 360
-    neg = False
-    if t >= 180: t -= 180; neg = not neg
-    if t >= 90: v = cos_r(d2r(t-90))       # sin(90+a) = cos(a): no flip
-    else: v = sin_r(d2r(t))
-    return -v if neg else v
+    return sin_r(x)            # engine trig is in radians
 
 def wrap_cos(x):
-    t = x % 360
-    neg = False
-    if t >= 180: t -= 180; neg = not neg
-    if t >= 90: v = sin_r(d2r(t-90)); neg = not neg
-    else: v = cos_r(d2r(t))
-    return -v if neg else v
+    return cos_r(x)
 
-def wrap_tan(x): return wrap_sin(x)/wrap_cos(x)
-def wrap_atan(x): return r2d(atan_r(x))
+def wrap_tan(x): return tan_r(x)
+def wrap_atan(x): return atan_r(x)
 def wrap_asin(x):
-    if x == 1: return D(90)
-    if x == -1: return D(-90)
-    return r2d(asin_r(x))
-def wrap_acos(x): return r2d(acos_r(x))
+    if x == 1: return PI/2
+    if x == -1: return -PI/2
+    return asin_r(x)
+def wrap_acos(x): return acos_r(x)
 
 VALS = ["9","30","45","60","90","0.5","1","0.9999","-0.9999","0.99999",
         "0.9999976","0.156434465040230869010105319626",
