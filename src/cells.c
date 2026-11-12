@@ -124,6 +124,19 @@ int cs_parse_range(const char *s, int *c1, int *r1, int *c2, int *r2)
     return 1;
 }
 
+/* resolve dialog coordinate text (user-ext 2026-11, branch ref-val):
+ * the static parse first (plain coord, coord>coord), then the
+ * expression evaluator - a Reference or Range value, so REF()/VAL()
+ * work in the command prompts (delete/copy From-To, Goto, corners).
+ * 1 = ok; on failure the caller keeps its own message. */
+int cs_coord_text(const char *s, int *c1, int *r1, int *c2, int *r2)
+{
+    if (cs_parse_coord(s, c1, r1)) { *c2 = *c1; *r2 = *r1; return 1; }
+    if (strchr(s, '>') && cs_parse_range(s, c1, r1, c2, r2)) return 1;
+    if (cs_eval_range(s, c1, r1, c2, r2) == 0) return 1;
+    return 0;
+}
+
 void cs_range_norm(int *c1, int *r1, int *c2, int *r2)
 {
     int t;

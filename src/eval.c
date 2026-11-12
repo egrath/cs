@@ -12,6 +12,7 @@ int cs_is_inputf(const Cell *c);
  * RECALC(cell) during a formula evaluation; cs_sheet_changed is set
  * whenever a stored cell value changes (the stability criterion) */
 int cs_recalc_requested = 0;
+int cs_recalc_last_passes = 0;      /* passes of the last driver run */
 static int cs_sheet_changed;
 static int cs_eval_aborted;         /* KW_ABORT seen during a pass */
 
@@ -147,6 +148,7 @@ void cs_run_recalc_passes(int always_one)
 {
     int pass, iterating = 0;
     cs_limit_hit = 0;
+    cs_recalc_last_passes = 0;
     if (!always_one && !cs_recalc_requested) return;
     cs_recalc_requested = 0;
     cs_eval_aborted = 0;
@@ -177,6 +179,7 @@ void cs_run_recalc_passes(int always_one)
         }
     }
     cs_kb_nodelay_set(0);
+    cs_recalc_last_passes = pass;       /* diagnostics / tests */
     if (iterating && pass > CS_MAX_PASSES) {
         cs_limit_hit = 1;
         cs_msg("Recalculation limit reached");

@@ -1041,9 +1041,11 @@ static void exec_set_stmt(const char *args, int *err)
     const char *w;
     P sub;
     Val tgt, v;
-    char just;
+    char just, oldjust;
     Cell *cell;
-    int e;
+    int e, oldtype;
+    Csn oldval;
+    char *oldcont;
 
     *err = -1;
     /* the target: a general expression that must resolve to exactly
@@ -1088,6 +1090,14 @@ static void exec_set_stmt(const char *args, int *err)
         return;
     }
 
+    /* the change notification is HONEST (the stability criterion is
+     * "a pass changes no stored value"): snapshot the old state and
+     * mark the sheet dirty only when the stored state really differs */
+    oldtype = cell->type;
+    csn_copy(&oldval, &cell->val);
+    oldjust = cell->just;
+    oldcont = cell->cont ? cs_strdup(cell->cont) : NULL;
+
     if (v.type == VT_STR) {
         /* text: an optional \r / \l / \c prefix sets the justification */
         const char *txt = v.str;
@@ -1103,10 +1113,20 @@ static void exec_set_stmt(const char *args, int *err)
         if (!fb[0]) csn_fmt_sci(&v.num, 12, fb, (int) sizeof(fb));
         cs_set_num(cell, fb, &v.num, 0, NULL);
     }
+    /* idempotent writes do not keep the iteration alive */
+    if (oldtype == CE_EMPTY ||
+        oldtype != cell->type ||
+        (cell->type == CE_NUM && csn_cmp(&cell->val, &oldval) != 0) ||
+        (cell->type == CE_TEXT &&
+         (oldjust != cell->just ||
+          (oldcont ? !cell->cont || strcmp(oldcont, cell->cont) != 0
+                   : cell->cont != NULL)))) {
+        cs_mark_sheet_change();
+    }
+    if (oldcont) free(oldcont);
     val_free(&v);
     val_free(&tgt);
     cs_recount_entries();
-    cs_mark_sheet_change();
 }
 
 /* execute RECALC() / RECALC(cell): both mark the recalculation request
@@ -1329,11 +1349,12 @@ static Val parse_condexpr(P *ps)
     return cond;
 }
 
-int cs_eval_formula(const char *s, Csn *val, char **str)
+/* the shared evaluation core: parse one expression and return the
+ * TYPED value (a Reference or Range stays intact for the caller) */
+static int cs_eval_typed(const char *s, Val *out)
 {
     P ps;
     Val v;
-    const char *p;
     char buf[CS_EDITMAX + 4];
     int i, n = 0, inq = 0;
 
@@ -1348,20 +1369,34 @@ int cs_eval_formula(const char *s, Csn *val, char **str)
     }
     buf[n] = '\0';
 
-    memset(&v, 0, sizeof(v));
-    csn_zero(&v.num);
+    memset(out, 0, sizeof(*out));
+    csn_zero(&out->num);
     ps.p = buf;
     ps.depth = 0;
     v = parse_condexpr(&ps);
     if (!v.good) {
         int e = v.err;
         val_free(&v);
-        csn_zero(val);
+        val_err(out, e);
         return e ? e : -1;    /* -1 == CalcStar "Error 0" (value-range) */
     }
-    p = ps.p;
-    while (*p == ' ') p++;
-    if (*p) { val_free(&v); csn_zero(val); return 7; }        /* trailing junk */
+    {
+        const char *p = ps.p;
+        while (*p == ' ') p++;
+        if (*p) { val_free(&v); val_err(out, 7); return 7; }  /* junk */
+    }
+    *out = v;
+    return 0;
+}
+
+int cs_eval_formula(const char *s, Csn *val, char **str)
+{
+    Val v;
+    int e = cs_eval_typed(s, &v);
+    if (e) {
+        csn_zero(val);
+        return e;
+    }
     /* a top-level Reference derefs (option 3); a Range is not a
      * storable result */
     if (v.type == VT_REF) {
@@ -1378,4 +1413,32 @@ int cs_eval_formula(const char *s, Csn *val, char **str)
     csn_copy(val, &v.num);
     if (str) *str = NULL;
     return 0;
+}
+
+/* evaluate an expression that designates a RANGE (user-ext 2026-11):
+ * the command dialogs use it when their static coordinate text does
+ * not parse.  Accepts a Range value or a single Reference (a
+ * one-cell range); the range arrives normalized and straight-line
+ * checked from parse_cmp. */
+int cs_eval_range(const char *s, int *c1, int *r1, int *c2, int *r2)
+{
+    Val v;
+    int e = cs_eval_typed(s, &v);
+    if (e) return e;
+    if (v.type == VT_REF) {
+        *c1 = *c2 = v.ref.col;
+        *r1 = *r2 = v.ref.row;
+        val_free(&v);
+        return 0;
+    }
+    if (v.type == VT_RANGE) {
+        *c1 = v.rng.start.col;
+        *r1 = v.rng.start.row;
+        *c2 = v.rng.end.col;
+        *r2 = v.rng.end.row;
+        val_free(&v);
+        return 0;
+    }
+    val_free(&v);
+    return 6;                           /* not a reference/range */
 }

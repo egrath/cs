@@ -1,6 +1,36 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "ref-val", follow-up: honest SET marking + dialog ranges):
+- USER REPORTS: (1) the always-true SET formula (1):SET(REF(C1,C2),
+  VAL(B7));0:1 works but spins ;R A to the 1000-pass limit — every SET
+  marked the sheet changed even when the value was identical; (2)
+  REF(...)>REF(...) typed into the ;D From-To dialog answered "bad
+  range coord" — the dialogs parsed STATIC coordinate text only.
+- FIX 1: exec_set_stmt snapshots the old cell state (type/value/just/
+  cont) and calls cs_mark_sheet_change() ONLY on a real change
+  (allocation, type flip, numeric value diff, text content/just diff).
+  cs_recalc_last_passes (extern) records the last driver run's pass
+  count.  --test: an idempotent SET settles (passes <= 2, refires when
+  the source changes), the countdown still iterates.
+- FIX 2: cs_eval_formula's core refactored into cs_eval_typed(); new
+  cs_eval_range(s, &c1,&r1,&c2,&r2) accepts a Range or a single
+  Reference.  cs_coord_text() (cells.c): static parse first, then the
+  evaluator — wired into Goto, the copy from/to parses, ;D R/C (via
+  del_range_text: parse_del_range first, then the evaluator's wanted
+  part) and ;D F, the print corners, the fileio write/load corners.
+  Failure keeps each dialog's own message.  CAVEAT (documented): the
+  dialog expressions run the full evaluator — a conditional with SETs
+  typed into a prompt executes.
+- VERIFIED: --test 264 ok; pty: ;D R with REF(1,C2)>REF(1,C3) deletes
+  rows 2..3 (the victim value vanishes, no bad-range message), Goto
+  REF(2,4) lands on B4, the idempotent SET settles under ;R A with no
+  limit message; cs1.txt idle EXACT; warning-free build.
+- HARNESS: verify dialog flows by rendering ONE continuous log at the
+  end (the replay shows the final state) — log-switch snapshots keep
+  missing the state changes (the app paints in whichever window is
+  open when the keys are processed).
+
 ## BATCH (branch "ref-val": first-class references, VAL/REF, dynamic ranges):
 - USER SPEC (option 3 chosen after discussion): a bare cell identifier
   evaluates to a REFERENCE value; VAL(cell) retrieves the numeric

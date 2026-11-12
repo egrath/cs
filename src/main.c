@@ -667,6 +667,71 @@ static void run_tests(void)
             { printf("FAIL settle C4 strres='%s'\n",
                      c->strres ? c->strres : ""); fails++; }
         else printf("ok   iteration settles: C4 = done\n");
+        /* idempotent SETs do not keep the iteration alive (the change
+         * notification is honest): an always-true SET writing the SAME
+         * value every pass settles in at most two passes */
+        cs_clear_all();
+        setv(1, 0, "7");                        /* B1 = 7 */
+        cs_commit_entry(2, 0, "1:SET(A1,VAL(B1));0");   /* C1 */
+        cs_recalc_all();
+        {
+            char g2[48];
+            csn_canon(&cs_cell(0, 0)->val, g2, (int) sizeof(g2));
+            if (cs_recalc_last_passes > 2 ||
+                strcmp(g2, "+7.0000000000000E+1"))
+                { printf("FAIL idempotent SET passes=%d val=%s\n",
+                         cs_recalc_last_passes, g2); fails++; }
+            else printf("ok   idempotent SET settles in %d pass(es)\n",
+                        cs_recalc_last_passes);
+        }
+        /* the SET still fires when the source changes */
+        setv(1, 0, "9");
+        cs_recalc_all();
+        {
+            char g2[48];
+            csn_canon(&cs_cell(0, 0)->val, g2, (int) sizeof(g2));
+            if (strcmp(g2, "+9.0000000000000E+1"))
+                { printf("FAIL idempotent SET refires (%s)\n", g2); fails++; }
+            else printf("ok   idempotent SET refires on change\n");
+        }
+        /* a value-CHANGING SET keeps iterating (countdown regression) */
+        cs_clear_all();
+        setv(0, 0, "3");
+        cs_commit_entry(1, 0, "(VAL(A1)>0):SET(A1,VAL(A1)-1);RECALC();0:0");
+        cs_recalc_all();
+        {
+            char g2[48];
+            csn_canon(&cs_cell(0, 0)->val, g2, (int) sizeof(g2));
+            if (strcmp(g2, "0") && strcmp(g2, "+0.0000000000000E+0"))
+                { printf("FAIL countdown-after-fix (%s)\n", g2); fails++; }
+            else printf("ok   value-changing SET still iterates\n");
+        }
+        /* cs_eval_range: the dialog entry point for dynamic ranges */
+        cs_clear_all();
+        setv(2, 0, "3");                        /* C1 = 3 */
+        setv(2, 1, "7");                        /* C2 = 7 */
+        {
+            int a1, b1, a2, b2;
+            if (cs_eval_range("REF(C1,C2)>REF(C1,C2)", &a1, &b1, &a2, &b2) == 0 &&
+                a1 == 2 && b1 == 6 && a2 == 2 && b2 == 6)
+                printf("ok   cs_eval_range REF pair\n");
+            else { printf("FAIL cs_eval_range REF pair\n"); fails++; }
+            if (cs_eval_range("A1>A5", &a1, &b1, &a2, &b2) == 0 &&
+                a1 == 0 && b1 == 0 && a2 == 0 && b2 == 4)
+                printf("ok   cs_eval_range A1>A5\n");
+            else { printf("FAIL cs_eval_range A1>A5\n"); fails++; }
+            if (cs_eval_range("A5>A1", &a1, &b1, &a2, &b2) == 0 &&
+                a1 == 0 && b1 == 0 && a2 == 0 && b2 == 4)
+                printf("ok   cs_eval_range reversed normalizes\n");
+            else { printf("FAIL cs_eval_range reversed\n"); fails++; }
+            if (cs_eval_range("SUM(1,2)", &a1, &b1, &a2, &b2) != 0)
+                printf("ok   cs_eval_range rejects non-ranges\n");
+            else { printf("FAIL cs_eval_range accepts junk\n"); fails++; }
+            if (cs_eval_range("REF(128,1)", &a1, &b1, &a2, &b2) != 0)
+                printf("ok   cs_eval_range rejects out-of-limits\n");
+            else { printf("FAIL cs_eval_range limits\n"); fails++; }
+        }
+        cs_clear_all();
     }
 
     /* percent postfix + arithmetic */

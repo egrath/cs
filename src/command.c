@@ -22,9 +22,9 @@ static const char *collab(const char *w, int col, const char *rest);
 void cs_goto_cmd(void)
 {
     char buf[32];
-    int c, r;
+    int c, r, gc2, gr2;
     if (cs_prompt_coord("Goto>", "A1", buf, (int) sizeof(buf), 1) < 0) return;
-    if (!cs_parse_coord(buf, &c, &r)) { cs_msg("Bad coord"); return; }
+    if (!cs_coord_text(buf, &c, &r, &gc2, &gr2)) { cs_msg("Bad coord"); return; }
     curCol = c; curRow = r;
     cs_stay_visible();   /* scrolls only when the target is off-window
                             (real CalcStar verified: in-window Goto
@@ -108,10 +108,10 @@ static void copy_cmd(void)
     /* rep: 1x1 source repeated across a destination range (manual 5.9
      * "from one cell into a range of cells") */
     rep = 0; nfill = 0;
-    if (cs_parse_range(from, &c1, &r1, &c2, &r2)) {
+    if (cs_coord_text(from, &c1, &r1, &c2, &r2) && (c2 != c1 || r2 != r1)) {
         sw = c2 - c1 + 1; sh = r2 - r1 + 1;
         if (strchr(to, '>')) {
-            if (!cs_parse_range(to, &d1, &e1, &d2, &e2)) { cs_msg("bad range coord"); return; }
+            if (!cs_coord_text(to, &d1, &e1, &d2, &e2)) { cs_msg("bad range coord"); return; }
             dw = d2 - d1 + 1; dh = e2 - e1 + 1;
             if (sw == 1 && sh == 1) {
                 rep = 1;
@@ -131,14 +131,14 @@ static void copy_cmd(void)
             d2 = d1 + sw - 1; e2 = e1 + sh - 1;
             nfill = sw * sh;
         }
-    } else if (cs_parse_coord(from, &c1, &r1)) {
+    } else if (cs_coord_text(from, &c1, &r1, &c2, &r2) && c2 == c1 && r2 == r1) {
         c2 = c1; r2 = r1; sw = 1; sh = 1;
         if (strchr(to, '>')) {
-            if (!cs_parse_range(to, &d1, &e1, &d2, &e2)) { cs_msg("bad range coord"); return; }
+            if (!cs_coord_text(to, &d1, &e1, &d2, &e2)) { cs_msg("bad range coord"); return; }
             rep = 1;
             nfill = (d2 - d1 + 1) * (e2 - e1 + 1);
         } else {
-            if (!cs_parse_coord(to, &d1, &e1)) { cs_msg("bad coord"); return; }
+            if (!cs_coord_text(to, &d1, &e1, &d2, &e2)) { cs_msg("bad coord"); return; }
             d2 = d1; e2 = e1; nfill = 1;
         }
     } else { cs_msg("bad coord"); return; }
@@ -418,7 +418,23 @@ static int parse_del_side(const char *s, int want, int *col, int *row)
 /* a delete-range answer for the R)ow / C)olumn prompts: one side or a
  * full "x>y" range; each side yields the WANTED part (rows: a number
  * or a coordinate's row; columns: a letter or a coordinate's column),
- * normalized so a1 <= a2.  Returns 1 on success. */
+ * normalized so a1 <= a2.  On failure the expression evaluator is
+ * tried (user-ext 2026-11): a Reference/Range value provides the
+ * wanted part.  Returns 1 on success. */
+static int parse_del_range(const char *s, int want, int *a1, int *a2);
+
+static int del_range_text(const char *s, int want, int *a1, int *a2)
+{
+    int c1, r1, c2, r2;
+    if (parse_del_range(s, want, a1, a2)) return 1;
+    if (cs_eval_range(s, &c1, &r1, &c2, &r2) == 0) {
+        *a1 = want ? r1 : c1;
+        *a2 = want ? r2 : c2;
+        return 1;
+    }
+    return 0;
+}
+
 static int parse_del_range(const char *s, int want, int *a1, int *a2)
 {
     int v1, v2, c, r;
@@ -482,7 +498,7 @@ static void delete_cmd(void)
         sprintf(dflt, "%d", curRow + 1);
         if (cs_prompt_range("Delete rows (From>To)", dflt, inp, (int) sizeof(inp)) < 0) return;
         redraw();
-        if (!parse_del_range(inp, 1, &r1, &r2))
+        if (!del_range_text(inp, 1, &r1, &r2))
             { cs_msg("bad range coord"); return; }
         dep_check_range(0, r1, r2, list, (int) sizeof(list));
         hit = (list[0] != '\0');
@@ -497,7 +513,7 @@ static void delete_cmd(void)
         cs_col_name(curCol, dflt);
         if (cs_prompt_range("Delete columns (From>To)", dflt, inp, (int) sizeof(inp)) < 0) return;
         redraw();
-        if (!parse_del_range(inp, 0, &c1, &c2))
+        if (!del_range_text(inp, 0, &c1, &c2))
             { cs_msg("bad range coord"); return; }
         dep_check_range(1, c1, c2, list, (int) sizeof(list));
         hit = (list[0] != '\0');
@@ -512,9 +528,8 @@ static void delete_cmd(void)
         sprintf(dflt + strlen(dflt), "%d", curRow + 1);
         if (cs_prompt_coord("Delete (From>To)", dflt, inp, (int) sizeof(inp), 2) < 0) return;
         redraw();
-        if (!cs_parse_range(inp, &c1, &r1, &c2, &r2)) {
-            if (!cs_parse_coord(inp, &c1, &r1)) { cs_msg("bad range coord"); return; }
-            c2 = c1; r2 = r1;
+        if (!cs_coord_text(inp, &c1, &r1, &c2, &r2)) {
+            cs_msg("bad range coord"); return;
         }
         cs_range_norm(&c1, &r1, &c2, &r2);
         /* the manual's E)ntry case checks no dependencies and asks no

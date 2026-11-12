@@ -78,6 +78,7 @@ int    cs_name_to_col(const char *s);
 void   cs_col_name(int col, char *buf);
 int    cs_parse_coord(const char *s, int *col, int *row);
 int    cs_parse_range(const char *s, int *c1, int *r1, int *c2, int *r2);
+int    cs_coord_text(const char *s, int *c1, int *r1, int *c2, int *r2);
 void   cs_range_norm(int *c1, int *r1, int *c2, int *r2);
 void   cs_set_text(Cell *c, const char *cont, char just);
 void   cs_set_num(Cell *c, const char *cont, const Csn *val, int iserr, const char *strres);
@@ -96,6 +97,7 @@ void   cs_mark_sheet_change(void);  /* eval.c: a stored value changed */
 extern int cs_recalc_requested;     /* RECALC() seen during evaluation */
 int    cs_recalc_limit_hit(void);   /* 1 = the last driver run overran */
 void   cs_recalc_limit_reset(void); /* clear before a new driver context */
+extern int cs_recalc_last_passes;   /* passes of the last driver run */
 
 /* error-cell queue (filled by the last Recalculate, in recalc order):
  * main.c replays the sticky "Error ... hit space [coord]" messages one
@@ -117,6 +119,7 @@ int    cs_is_inputf(const Cell *c);
 /* parser.c  (returns 0 on success; nonzero = CalcStar evaluation error
    code; -1 = CalcStar "Error 0" value-range error such as ?n?) */
 int    cs_eval_formula(const char *s, Csn *val, char **str);
+int    cs_eval_range(const char *s, int *c1, int *r1, int *c2, int *r2);
 
 /* screen.c */
 void   cs_compute_layout(void);

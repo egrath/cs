@@ -191,7 +191,7 @@ gotcol:
         if (c2 < c1) c2 = c1;
     } else if (strchr(br, '>')) {
         int a1, b1, a2, b2;
-        if (!cs_parse_range(br, &a1, &b1, &a2, &b2)) { cs_msg("bad range coord"); goto fail; }
+        if (!cs_coord_text(br, &a1, &b1, &a2, &b2)) { cs_msg("bad range coord"); goto fail; }
         c1 = a1; r1 = b1; c2 = a2; r2 = b2;
     } else if (!cs_parse_coord(br, &c2, &r2)) {
         cs_msg("bad coord"); goto fail;

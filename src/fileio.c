@@ -392,12 +392,12 @@ int cs_save_dialog(void)
         if (pc == 27) return 0;
         if (pc == 'P' || pc == 'p') {
             char b[24];
-            int c1, r1, c2, r2;
+            int c1, r1, c2, r2, t1, t2;
             if (cs_prompt_str("top left corner:", "A1", b, (int) sizeof(b)) < 0) return 0;
-            if (!cs_parse_coord(b, &c1, &r1)) { cs_msg("write error bad coord"); return 0; }
+            if (!cs_coord_text(b, &c1, &r1, &t1, &t2)) { cs_msg("write error bad coord"); return 0; }
             sprintf(b, "%c%d", 'A' + curCol, curRow + 1);
             if (cs_prompt_str("bottom right corner:", "", b, (int) sizeof(b)) < 0) return 0;
-            if (!cs_parse_coord(b, &c2, &r2)) { cs_msg("write error bad coord"); return 0; }
+            if (!cs_coord_text(b, &c2, &r2, &t1, &t2)) { cs_msg("write error bad coord"); return 0; }
             if (c2 < c1 || r2 < r1) {
                 /* manual: "write error end>start - in saving a partial
                  * file, the top left coordinate must come before the
@@ -433,7 +433,10 @@ int cs_load_dialog(int merge)
     if (!name[0]) return 0;
     if (cs_prompt_coord(merge ? "Load position:" : "Load position:", "A1", b, (int) sizeof(b), 1) < 0)
         return 0;
-    if (!cs_parse_coord(b, &c0, &r0)) { cs_msg("bad coord"); return 0; }
+    {
+        int t1, t2;
+        if (!cs_coord_text(b, &c0, &r0, &t1, &t2)) { cs_msg("bad coord"); return 0; }
+    }
     cs_msg("...");
     ok = cs_load(name, c0, r0, merge);
     cs_draw();

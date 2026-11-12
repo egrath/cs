@@ -211,6 +211,21 @@ follow the original. Read this file before changing anything.
     unchanged in shape; `side_effect_stmt` now PROPAGATES exec errors
     (returns 2 + *err — a long-dead `r == 2` check in run_branch came
     alive; failed SETs no longer silently do nothing).
+  - SET's change notification is HONEST: the old cell state is
+    snapshotted and `cs_mark_sheet_change()` fires only when the
+    stored state really differs (an idempotent SET no longer keeps an
+    iterated recalculation alive — an always-true SET branch settles
+    under `;R A` instead of running to the 1000-pass limit).
+    `cs_recalc_last_passes` records the last driver run's pass count
+    (diagnostics/tests).
+  - **Dynamic ranges in the command dialogs**: the static coordinate
+    parse is tried first; on failure the dialogs evaluate the text as
+    an expression via the new `cs_eval_range()` (a Reference or Range
+    value) — `REF(1,C2)>REF(1,C3)` works in `;D R/C/F` From-To, the
+    copy corners, Goto and the print/load corners (helper
+    `cs_coord_text()`; failure keeps the dialog's own message).
+    Caveat: the dialog expressions run the full evaluator, so a
+    conditional with side effects typed into a prompt executes.
   - Every operand/argument dereference happens at the point of use
     (lazy) — never eagerly after parse — so references survive to the
     operators.  Error mapping: type mismatch 6, diagonal range 2,
