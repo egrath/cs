@@ -19,3 +19,5 @@ CALCSTAR.PRN
 /tfr*
 /t_rp*
 /"PRINTER :.TXT"
+.DS_Store
+/test.CSD
