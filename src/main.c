@@ -1255,6 +1255,27 @@ static void run_tests(void)
         fails += f2;
     }
 
+    /* coordinate parsing accepts either case (Goto/TAB/copy fields;
+     * stored coordinates stay uppercase via the parser's normalizer) */
+    {
+        int cc, rr;
+        if (!cs_parse_coord("b3", &cc, &rr) || cc != 1 || rr != 2)
+            { printf("FAIL lower b3\n"); fails++; }
+        else printf("ok   cs_parse_coord accepts lowercase\n");
+        if (!cs_parse_coord("aB7", &cc, &rr) || cc != 27 || rr != 6)
+            { printf("FAIL mixed aB7\n"); fails++; }
+        else printf("ok   cs_parse_coord accepts mixed case\n");
+        if (!cs_parse_coord("t10", &cc, &rr) || cc != 19 || rr != 9)
+            { printf("FAIL lower t10\n"); fails++; }
+        else printf("ok   cs_parse_coord lower two-letter column\n");
+        if (cs_parse_coord("abc1", &cc, &rr))
+            { printf("FAIL abc1 accepted\n"); fails++; }
+        else printf("ok   three-letter coord still rejected\n");
+        if (cs_parse_coord("b0", &cc, &rr))
+            { printf("FAIL b0 accepted\n"); fails++; }
+        else printf("ok   lowercase out-of-range still rejected\n");
+    }
+
     if (fails == 0) printf("\nAll tests passed.\n");
     else printf("\n%d test(s) FAILED.\n", fails);
     exit(fails != 0);

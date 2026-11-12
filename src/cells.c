@@ -75,19 +75,31 @@ int cs_name_to_col(const char *s)
 }
 
 /* parse "B7" -> col 1 row 6.  returns 1 ok, 0 bad */
+/* the column letter 'A'..'Z' / 'a'..'z' as 0..25, or -1 */
+static int col_letter(char ch)
+{
+    if (ch >= 'A' && ch <= 'Z') return ch - 'A';
+    if (ch >= 'a' && ch <= 'z') return ch - 'a';
+    return -1;
+}
+
 int cs_parse_coord(const char *s, int *col, int *row)
 {
-    int c = 0, r = 0, n = 0;
+    int c = 0, r = 0, n = 0, v;
     if (!s || !*s) return 0;
-    if (s[0] >= 'A' && s[0] <= 'Z') {
-        c = s[0] - 'A';
+    /* letters accept either case - coordinate fields (Goto, TAB, copy
+     * ranges, save/load corners) fold like the formula parser and the
+     * reference scanners already do (user request 2026-11) */
+    v = col_letter(s[0]);
+    if (v < 0) return 0;
+    c = v;
+    s++;
+    v = col_letter(s[0]);
+    if (v >= 0) {
+        c = 26 + c * 26 + v;
         s++;
-        if (s[0] >= 'A' && s[0] <= 'Z') {
-            c = 26 + c * 26 + (s[0] - 'A');
-            s++;
-        }
-        if (s[0] >= 'A' && s[0] <= 'Z') return 0;
-    } else return 0;
+    }
+    if (col_letter(s[0]) >= 0) return 0;   /* three or more letters */
     while (*s >= '0' && *s <= '9') { r = r * 10 + (*s - '0'); s++; n++; }
     if (!n || *s) return 0;
     if (r < 1 || r > CS_MAXROW || c < 0 || c >= CS_MAXCOL) return 0;

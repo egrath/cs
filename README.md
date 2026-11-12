@@ -227,6 +227,10 @@ column/row headers move up and the whole layout still fits 24 lines.
 | RETURN     | commit entry, cursor stays (move right when idle) |
 | TAB        | Goto  (`Goto> coord`)                             |
 | `;`        | command menu (see below)                          |
+
+Coordinates accept **upper or lower case** everywhere they are typed —
+`Goto>`/TAB, copy ranges (`a1>b9`), save/load corners, and formulas
+(`+b2*10` evaluates; stored coordinates are uppercased for display).
 | `=`        | Lock: `R)ow C)ol B)oth` — pin rows/cols; rows show `label*` |
 | `^B`       | Data toggle (formula/value view)                  |
 | ESC        | cancel entry / hide prompts                       |

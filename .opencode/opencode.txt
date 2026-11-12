@@ -1,6 +1,26 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (case-insensitive coordinates; docs):
+- USER REQUEST: ;G/TAB should accept lowercase ("most users don't care
+  to type uppercase"). FINDING: the formula parser and all reference
+  scanners ALREADY folded case (is_coord_ahead matches a-z,
+  parse_coord_tok uppercases into cont); cs_parse_coord was the lone
+  uppercase-only holdout - and it gates Goto/TAB, copy ranges and the
+  save/load corners.
+- FIX: cs_parse_coord folds a-z via a col_letter() helper (third-letter
+  rejection uppercase-checked too; "abc1"/"b0" still rejected).
+  Stored coordinates stay UPPERCASE (the formula normalizer already
+  uppercases coordinate words into cont - display/files unaffected).
+- TESTS: --test +5 direct cs_parse_coord cases (b3, aB7 = AB7 = col 27,
+  t10, abc1 rejected, b0 rejected). Ran ONLY --test per user request
+  (no pty/idle-diff cycle this batch).
+- DOCS: README key-table note (coordinates accept either case
+  everywhere: Goto/TAB, copy ranges, save/load corners, formulas);
+  AGENTS.md invariants bullet (case-insensitive coordinate input).
+- GOTCHA: my first aB7 expectation was wrong - "aB" is the two-letter
+  column AB (col 27), not A+mixed-case.
+
 ## BATCH (three user-reported bugs fixed; CSD4):
 - BUG 1 (ghost digits when scrolled right): cell_x() positions columns
   LEFT of winCol at the screen margin (x=5) and draw_rows rendered them -

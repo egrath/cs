@@ -54,6 +54,11 @@ follow the original. Read this file before changing anything.
   manuals are allowed when they stay faithful in spirit and clearly
   benefit the user — flag every one (here or in the flagged-extension
   lists), never silently.**
+- **Coordinate input is case-insensitive** (user request 2026-11):
+  `cs_parse_coord` folds `a-z` (Goto, TAB, copy ranges, save/load
+  corners).  The formula parser and the reference scanners already
+  folded case; the formula normalizer stores coordinate words
+  UPPERCASED in `cont`, so the display and files are unaffected.
 - Extension functions (Batch A, flagged not from the 1982 manuals): `SIGN`,
   `MOD`, `POWER`, `FACT`, `COMBIN`, `PERMUT`, `GCD`, `LCM`, `DEGREES`,
   `RADIANS`, `ROUND`, `TRUNC`, `PI()` and the trig set. Integer caps
