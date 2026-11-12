@@ -167,6 +167,55 @@ follow the original. Read this file before changing anything.
   notation-independent value view.  SAVE: 2 bits packed into the spare
   high bits (5-6) of the existing per-cell prec byte — the CSD4 layout
   is UNCHANGED and old files load as (auto).
+- **First-class cell references, VAL/REF and dynamic ranges are
+  user-extended 2026-11 (branch "ref-val", merged)** — an architectural
+  change to the expression language, NOT backward compatible with the
+  old implicit-deref reading (the user waived compatibility; option 3
+  semantics were chosen by the user):
+  - The evaluator's `Val` carries an explicit type discriminator
+    (`VT_NUM / VT_STR / VT_BOOL / VT_REF / VT_RANGE`) plus lightweight
+    `CsRef {col,row}` / `CsRng {start,end}` values (0-based; no heap).
+  - **A bare cell identifier evaluates to a REFERENCE value** (e.g.
+    `A1`, `AA20`).  References coerce to values where a value is
+    consumed (option-3 semantics, `val_deref()`): numeric cell -> its
+    number, TEXT cell -> its content as a string (the old behavior),
+    empty/allocated/error cell -> Error 1 (never silently 0).  `VAL()`
+    is the explicit numeric accessor: VAL(numeric-cell) -> the value,
+    VAL(empty/text/error) -> Error 1; VAL must receive exactly one
+    Reference (a Range is Error 6).
+  - `REF(col,row)` builds a reference from one-based numeric
+    expressions (option-3: `REF(A1,5)` uses A1's value).  Rejects
+    fractional (Error 0), zero/negative and out-of-limits (Error 1;
+    columns 1..127, rows 1..255), wrong types (Error 6) and wrong
+    argument counts (Error 3).
+  - **`>` is overloaded in parse_cmp (one place)**: reference > reference
+    constructs a Range (normalized; diagonal -> Error 2) decided BEFORE
+    any dereference; numbers/bools compare.  `< <= = <>` compare values
+    (references deref).  A chained `a>b>c` and a Range in a
+    value/reference position are Error 6.  NOTE: a top-level formula
+    derefs its result, so `+A1>A5` compares (the leading '+' means a
+    numeric formula) while a range only survives as a function
+    argument; a two-reference `>` as a CONDITION needs VAL()
+    (`(VAL(A1)>VAL(A5)):x:y`) because `(A1>A5)` now builds a range.
+  - Range-consuming functions (SUM/CNT/AVG/MAX/MIN, REGR) take general
+    arguments through the one evaluator interface — the old per-function
+    range-parse special case (parse_arg/AK_RANGE) is DELETED.  A Range
+    argument walks its cells (numeric counted, error cell -> Error 0,
+    empties/text skipped); `REGR(range, ref)` takes a Range and a single
+    Reference anchor.  SET's target must resolve to exactly one
+    Reference (Range -> Error 6, no deref on the target position); the
+    value argument derefs (option 3: SET(A1,B2) copies B2's number or
+    text).  RECALC()/RECALC(ref) keep the request-flag driver and its
+    safeguards unchanged (the argument is advisory).
+  - The statement machinery (`run_branch`/`side_effect_stmt`) is
+    unchanged in shape; `side_effect_stmt` now PROPAGATES exec errors
+    (returns 2 + *err — a long-dead `r == 2` check in run_branch came
+    alive; failed SETs no longer silently do nothing).
+  - Every operand/argument dereference happens at the point of use
+    (lazy) — never eagerly after parse — so references survive to the
+    operators.  Error mapping: type mismatch 6, diagonal range 2,
+    REF out-of-limits/bad coordinate 1, fractional REF coordinate 0,
+    unknown function 4, malformed call 3/7.
 - **The edit field scrolls horizontally** (user-extended 2026-11): the
   caret is always at the buffer end, so `draw_editline_idle` /
   `place_cursor` show the SUFFIX that fits `cs_scrw() - EDITTEXT_X`,

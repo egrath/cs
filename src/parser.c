@@ -16,11 +16,28 @@
    4 unknown function, 6 illegal terminal expr, 7 trailing junk,
    8 bad number, 9 regression error, 12 paren depth, 255 regr value) */
 
+/* first-class references and ranges (user-ext 2026-11): lightweight,
+ * no dynamic memory - a bare cell identifier evaluates to a VT_REF
+ * and VAL() retrieves its value (option-3 semantics: references
+ * coerce to values where a value is consumed) */
+typedef struct {
+    int col;       /* 0-based, fits cs_cell(col,row) */
+    int row;
+} CsRef;
+
+typedef struct {
+    CsRef start;
+    CsRef end;
+} CsRng;
+
+enum { VT_NUM = 0, VT_STR, VT_BOOL, VT_REF, VT_RANGE };
+
 typedef struct {
     Csn num;
-    char  *str;    /* malloc'd when isstr */
-    int    isstr;
-    int    isbool;
+    char  *str;    /* malloc'd when type==VT_STR */
+    int    type;   /* VT_* explicit discriminator (user-ext 2026-11) */
+    CsRef  ref;    /* VT_REF */
+    CsRng  rng;    /* VT_RANGE */
     int    err;
     int    good;
 } Val;
@@ -38,9 +55,37 @@ static void val_free(Val *v)
 static void val_err(Val *v, int code)
 {
     val_free(v);
-    v->str = NULL; v->isstr = 0; v->isbool = 0;
+    v->str = NULL;
+    v->type = VT_NUM;
     v->err = code; v->good = 0;
     csn_zero(&v->num);
+}
+
+/* dereference a Reference where a value is consumed (option-3
+ * semantics, user-ext 2026-11): numeric cell -> its number, TEXT cell
+ * -> its content as a string (today's behavior), empty/allocated/
+ * error cell -> Error 1 (cellnum's convention - never silently 0).
+ * Returns -1 when *v holds a value afterwards, else the error code. */
+static int val_deref(Val *v)
+{
+    Cell *cl;
+    if (v->type == VT_NUM || v->type == VT_BOOL || v->type == VT_STR)
+        return -1;
+    if (v->type != VT_REF) return 6;    /* a Range is not a value here */
+    cl = cs_cell(v->ref.col, v->ref.row);
+    if (cl && cl->type == CE_TEXT && cl->cont && !cl->iserr) {
+        v->str = cs_strdup(cl->cont);
+        if (!v->str) { val_err(v, 0); return 0; }
+        v->type = VT_STR;
+        return -1;
+    }
+    v->type = VT_NUM;
+    csn_zero(&v->num);
+    if (cl && cl->type == CE_NUM && !cl->iserr) {
+        csn_copy(&v->num, &cl->val);
+        return -1;
+    }
+    return 1;                           /* empty/allocated/error cell */
 }
 
 static Csn gInd[REGR_MAX], gDep[REGR_MAX];
@@ -72,16 +117,6 @@ static const char *parse_coord_tok(const char *p, int *col, int *row,
     return (*q == '!') ? q + 1 : q;
 }
 
-static void cellnum(Csn *out, int col, int row, int *err)
-{
-    Cell *c = cs_cell(col, row);
-    *err = 0;
-    csn_zero(out);
-    if (!c) { *err = 1; return; }
-    if (c->type == CE_NUM && !c->iserr) { csn_copy(out, &c->val); return; }
-    *err = 1;                      /* empty/allocated/text/error cells */
-}
-
 static const char *parse_num(const char *p, Val *v)
 {
     const char *q = p;
@@ -104,7 +139,7 @@ static const char *parse_num(const char *p, Val *v)
     if (pr == CSN_ER_SYNTAX) { val_err(v, 8); return NULL; }         /* malformed */
     if (pr == CSN_ER_OVERFLOW) { val_err(v, 0); return NULL; }       /* overflow */
     val_free(v);
-    v->isbool = 0; v->isstr = 0;
+    v->type = VT_NUM;
     v->good = 1;
     return q;
 }
@@ -124,12 +159,15 @@ static const char *parse_string(const char *p, Val *v)
     val_free(v);
     v->str = cs_strdup(out);
     if (!v->str) { val_err(v, 0); return NULL; }
-    v->good = 1; v->isstr = 1; v->isbool = 0;
+    v->good = 1; v->type = VT_STR;
     return q;
 }
 
 /* ---- function arguments --------------------------------------------- */
-typedef enum { AK_VAL, AK_RANGE } ArgKind;
+/* One argument is a general expression (the typed evaluator passes
+ * Reference/Range/Number/String/Bool values through; user-ext 2026-11).
+ * No separate range-parsing mechanism remains: `coord > coord` builds
+ * a Range value in parse_cmp like any other operator. */
 
 typedef enum {
     FN_SUM, FN_CNT, FN_AVG, FN_MAX, FN_MIN,
@@ -138,7 +176,8 @@ typedef enum {
     FN_SIN, FN_COS, FN_TAN, FN_ASIN, FN_ACOS, FN_ATAN, FN_PI,
     FN_SIGN, FN_MOD, FN_POWER, FN_LOG10, FN_DEGREES, FN_RADIANS,
     FN_DEG, FN_RAD,
-    FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC
+    FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
+    FN_REF, FN_VAL
 } FnId;
 
 static int fnid(const char *name)
@@ -179,94 +218,90 @@ static int fnid(const char *name)
     if (!strcmp(name, "ROUND")) return FN_ROUND;
     if (!strcmp(name, "TRUNC")) return FN_TRUNC;
     if (!strcmp(name, "AVERAGE")) return FN_AVG;
+    if (!strcmp(name, "REF"))   return FN_REF;
+    if (!strcmp(name, "VAL"))   return FN_VAL;
     return FN_UNKNOWN;
 }
 
-static Val parse_condexpr(P *ps);   /* forward */
-
-static Val parse_arg(P *ps, ArgKind *kind,
-                     int *c1, int *r1, int *c2, int *r2)
+/* the coordinate limits for REF(): 1..127 columns (A..DW), 1..255 rows */
+static int ref_coord_ok(const Csn *t, int lo, int hi)
 {
-    const char *p = ps->p;
-    int l, d;
-    while (*p == ' ') p++;
-    if (is_coord_ahead(p, &l, &d)) {
-        int a1, b1, ee = 0;
-        const char *q = parse_coord_tok(p, &a1, &b1, &ee, NULL);
-        if (!q) { Val v; memset(&v, 0, sizeof(v)); val_err(&v, ee); return v; }
-        {
-            const char *q2 = q;
-            while (*q2 == ' ') q2++;
-            if (*q2 == '>') {
-                int a2, b2, ee2 = 0;
-                const char *q3;
-                const char *s = q2 + 1;
-                while (*s == ' ') s++;
-                q3 = parse_coord_tok(s, &a2, &b2, &ee2, NULL);
-                if (!q3) { Val v; memset(&v, 0, sizeof(v)); val_err(&v, ee2); return v; }
-                *c1 = a1; *r1 = b1; *c2 = a2; *r2 = b2;
-                cs_range_norm(c1, r1, c2, r2);
-                if (*c1 != *c2 && *r1 != *r2) { Val v; memset(&v, 0, sizeof(v)); val_err(&v, 2); return v; }
-                *kind = AK_RANGE;
-                ps->p = q3;
-                { Val v; memset(&v, 0, sizeof(v)); v.good = 1; return v; }
-            }
-        }
-        /* single coordinate as a value: numeric cells yield their
-         * number; TEXT cells yield their content as a string \"cell
-         * text\", so conditionals can produce/reference text */
-        {
-            Val v;
-            Cell *cl;
-            memset(&v, 0, sizeof(v));
-            cl = cs_cell(a1, b1);
-            if (cl && cl->type == CE_TEXT && cl->cont && !cl->iserr) {
-                v.str = cs_strdup(cl->cont);
-                if (!v.str) { val_err(&v, 0); return v; }
-                v.isstr = 1;
-                v.good = 1;
-            } else {
-                int err;
-                cellnum(&v.num, a1, b1, &err);
-                if (err) { val_err(&v, err); return v; }
-                v.good = 1;
-            }
-            *c1 = a1; *r1 = b1;
-            *kind = AK_VAL;
-            ps->p = q;
-            return v;
-        }
-    }
-    /* full expression */
-    {
-        Val t = parse_condexpr(ps);
-        if (t.good && t.isstr) { val_free(&t); val_err(&t, 6); return t; }
-        *kind = AK_VAL;
-        return t;
-    }
+    Csn one, mx;
+    csn_from_int(&one, lo);
+    csn_from_int(&mx, hi);
+    return (csn_cmp(t, &one) >= 0 && csn_cmp(t, &mx) <= 0);
 }
+
+/* 1 when the value is an exact integer; the integer part in *out */
+static int csn_integer_part(const Csn *v, Csn *out)
+{
+    Csn zero, t, d;
+    csn_zero(&zero);
+    if (csn_trunc(&t, v, &zero)) return 0;
+    if (csn_sub(&d, v, &t)) return 0;
+    if (!csn_is_zero(&d)) return 0;
+    csn_copy(out, &t);
+    return 1;
+}
+
+/* the integer as a plain long (coordinates are small) */
+static long csn_to_long_val(const Csn *v)
+{
+    char fb[80];
+    csn_fmt_fixed(v, 0, fb, (int) sizeof(fb));
+    if (!fb[0]) return 0;
+    return atol(fb);
+}
+
+static Val parse_condexpr(P *ps);   /* forward */
 
 static void skip_ws(const char **pp)
 {
     while (**pp == ' ') (*pp)++;
 }
 
+/* consume one argument and coerce it to a NUMBER (option-3 semantics:
+ * a Reference derefs; a String or Range is a type error).  Returns a
+ * good Number Val or the error Val. */
+static Val parse_numarg(P *ps)
+{
+    Val v;
+    int e;
+    memset(&v, 0, sizeof(v));
+    csn_zero(&v.num);
+    v = parse_condexpr(ps);
+    if (!v.good) return v;
+    e = val_deref(&v);
+    if (e >= 0) { val_free(&v); val_err(&v, e); return v; }
+    if (v.type == VT_STR || v.type == VT_RANGE) {
+        val_free(&v);
+        val_err(&v, 6);
+        return v;
+    }
+    return v;
+}
+
+/* collect an argument list for SUM/CNT/AVG/MAX/MIN: Numbers (also
+ * dereferenced References) and Bool values append, Strings are
+ * skipped, a Range walks its numeric cells (an error cell in the
+ * range is Error 0). */
 static Val parse_list(P *ps, Csn *list, int *cnt)
 {
     int n = 0;
     Val rv;
     memset(&rv, 0, sizeof(rv));
+    rv.type = VT_NUM;
     rv.good = 1;
     for (;;) {
-        ArgKind kind;
-        int c1 = 0, r1 = 0, c2 = 0, r2 = 0;
-        Val v = parse_arg(ps, &kind, &c1, &r1, &c2, &r2);
-        if (!v.good) { val_free(&v); return v; }   /* parse_arg error paths
-                                                      leave *kind unset */
-        if (kind == AK_RANGE) {
+        Val v;
+        memset(&v, 0, sizeof(v));
+        csn_zero(&v.num);
+        v = parse_condexpr(ps);
+        if (!v.good) { val_free(&v); return v; }
+        if (v.type == VT_RANGE) {
             int c, r;
-            for (r = r1; r <= r2; r++)
-                for (c = c1; c <= c2; c++) {
+            for (r = v.rng.start.row; r <= v.rng.end.row; r++)
+                for (c = v.rng.start.col; c <= v.rng.end.col; c++) {
                     Cell *cl = cs_cell(c, r);
                     if (!cl) continue;
                     if (cl->type == CE_NUM && !cl->iserr) {
@@ -274,7 +309,9 @@ static Val parse_list(P *ps, Csn *list, int *cnt)
                     } else if (cl->iserr) { val_err(&rv, 0); return rv; }
                 }
         } else {
-            if (v.isstr) continue;         /* text is ignored in arithmetic */
+            int e = val_deref(&v);
+            if (e >= 0) { val_free(&v); val_err(&rv, e); return rv; }
+            if (v.type == VT_STR) continue;    /* text is ignored */
             if (n < LISTMAX) csn_copy(&list[n++], &v.num);
         }
         val_free(&v);
@@ -323,25 +360,17 @@ static Val parse_primary(P *ps)
             int a1, b1, ee = 0;
             const char *q = parse_coord_tok(p, &a1, &b1, &ee, NULL);
             if (!q) { val_err(&v, ee); return v; }
-            {
-                Cell *cl;
-                val_free(&v);
-                cl = cs_cell(a1, b1);
-                if (cl && cl->type == CE_TEXT && cl->cont && !cl->iserr) {
-                    /* TEXT cell yields its content as a string value */
-                    v.str = cs_strdup(cl->cont);
-                    if (!v.str) { val_err(&v, 0); return v; }
-                    v.isstr = 1;
-                    v.good = 1;
-                } else {
-                    int err;
-                    cellnum(&v.num, a1, b1, &err);
-                    if (err) { val_err(&v, err); return v; }
-                    v.good = 1;
-                }
-                ps->p = q;
-                return v;
-            }
+            /* a bare cell identifier is a REFERENCE value (user-ext
+             * 2026-11); the value comes out through val_deref() where
+             * the reference is consumed (option-3 semantics) */
+            val_free(&v);
+            memset(&v, 0, sizeof(v));
+            v.type = VT_REF;
+            v.ref.col = a1;
+            v.ref.row = b1;
+            v.good = 1;
+            ps->p = q;
+            return v;
         }
         /* word: function name */
         {
@@ -374,16 +403,78 @@ static Val parse_primary(P *ps)
                 csn_pi(&v.num); v.good = 1;
                 return v;
             }
+            if (f == FN_REF) {
+                /* REF(col,row): both coordinates are one-based numeric
+                 * expressions (option-3: a Reference argument derefs,
+                 * so REF(A1,5) uses A1's value).  Rejects fractional,
+                 * zero/negative and out-of-limits coordinates. */
+                Val a, b;
+                int cc, rr;
+                Csn tc, tr;
+                a = parse_numarg(ps);
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ',') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                b = parse_numarg(ps);
+                if (!b.good) { val_free(&a); val_free(&b); return b; }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); val_free(&b); return v; }
+                ps->p++;
+                if (!csn_integer_part(&a.num, &tc) ||
+                    !csn_integer_part(&b.num, &tr)) {
+                    val_free(&a); val_free(&b);
+                    val_err(&v, 0);            /* fractional coordinate */
+                    return v;
+                }
+                if (!ref_coord_ok(&tc, 1, CS_MAXCOL) ||
+                    !ref_coord_ok(&tr, 1, CS_MAXROW)) {
+                    val_free(&a); val_free(&b);
+                    val_err(&v, 1);            /* out of limits */
+                    return v;
+                }
+                cc = (int) csn_to_long_val(&tc);
+                rr = (int) csn_to_long_val(&tr);
+                val_free(&a); val_free(&b);
+                val_free(&v);
+                memset(&v, 0, sizeof(v));
+                csn_zero(&v.num);
+                v.type = VT_REF;
+                v.ref.col = cc - 1;
+                v.ref.row = rr - 1;
+                v.good = 1;
+                return v;
+            }
+            if (f == FN_VAL) {
+                /* VAL(cell): the value of a single referenced cell */
+                Val a = parse_condexpr(ps);
+                Cell *cl;
+                if (!a.good) return a;
+                if (a.type != VT_REF) { val_free(&a); val_err(&v, 6); return v; }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                cl = cs_cell(a.ref.col, a.ref.row);
+                val_free(&a);
+                val_free(&v);
+                memset(&v, 0, sizeof(v));
+                csn_zero(&v.num);
+                v.type = VT_NUM;
+                if (cl && cl->type == CE_NUM && !cl->iserr) {
+                    csn_copy(&v.num, &cl->val);
+                    v.good = 1;
+                    return v;
+                }
+                val_err(&v, 1);     /* empty/allocated/text/error cell */
+                return v;
+            }
             if (f == FN_PROJ || f == FN_DEPD) {
-                ArgKind kind;
-                int c1, r1, c2, r2;
-                Val a = parse_arg(ps, &kind, &c1, &r1, &c2, &r2);
+                Val a = parse_numarg(ps);
                 Val t;
                 int err;
                 if (!a.good) return a;
-                val_free(&a);
                 skip_ws(&ps->p);
-                if (*ps->p != ')') { val_err(&v, 3); return v; }
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
                 ps->p++;
                 if (!g_reg_ok) { val_err(&v, 9); return v; }
                 val_free(&v);
@@ -406,21 +497,17 @@ static Val parse_primary(P *ps)
             if (f == FN_MOD || f == FN_POWER || f == FN_COMBIN ||
                 f == FN_PERMUT || f == FN_GCD || f == FN_LCM ||
                 f == FN_ROUND || f == FN_TRUNC) {
-                ArgKind kind;
-                int c1, r1, c2, r2;
                 Val a2;
                 int err;
-                Val a = parse_arg(ps, &kind, &c1, &r1, &c2, &r2);
+                Val a = parse_numarg(ps);
                 if (!a.good) return a;
-                val_free(&a);
                 skip_ws(&ps->p);
-                if (*ps->p != ',') { val_err(&v, 3); return v; }
+                if (*ps->p != ',') { val_err(&v, 3); val_free(&a); return v; }
                 ps->p++;
-                a2 = parse_arg(ps, &kind, &c1, &r1, &c2, &r2);
-                if (!a2.good) { val_free(&a2); return a2; }
-                val_free(&a2);
+                a2 = parse_numarg(ps);
+                if (!a2.good) { val_free(&a); val_free(&a2); return a2; }
                 skip_ws(&ps->p);
-                if (*ps->p != ')') { val_err(&v, 3); return v; }
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); val_free(&a2); return v; }
                 ps->p++;
                 val_free(&v);
                 switch (f) {
@@ -460,23 +547,34 @@ static Val parse_primary(P *ps)
                 return v;
             }
             if (f == FN_REGR) {
-                ArgKind k1, k2;
-                int c1, r1, c2, r2, c3, r3, c4, r4;
-                Val a = parse_arg(ps, &k1, &c1, &r1, &c2, &r2);
+                Val a = parse_condexpr(ps);
+                Val b;
+                int c1, r1, c2, r2, c3, r3;
                 if (!a.good) return a;
+                if (a.type != VT_RANGE) { val_free(&a); val_err(&v, 2); return v; }
+                c1 = a.rng.start.col; r1 = a.rng.start.row;
+                c2 = a.rng.end.col;   r2 = a.rng.end.row;
                 val_free(&a);
                 skip_ws(&ps->p);
                 if (*ps->p != ',') { val_err(&v, 3); return v; }
                 ps->p++;
-                a = parse_arg(ps, &k2, &c3, &r3, &c4, &r4);
-                if (!a.good) return a;
-                val_free(&a);
+                memset(&b, 0, sizeof(b));
+                csn_zero(&b.num);
+                b = parse_condexpr(ps);
+                if (!b.good) { val_free(&b); return b; }
+                /* the dependency anchor: exactly one Reference */
+                if (b.type == VT_REF) {
+                    c3 = b.ref.col; r3 = b.ref.row;
+                } else {
+                    val_free(&b);
+                    val_err(&v, 2);
+                    return v;
+                }
+                val_free(&b);
                 skip_ws(&ps->p);
                 if (*ps->p != ')') { val_err(&v, 3); return v; }
                 ps->p++;
-                if (k1 != AK_RANGE) { val_err(&v, 2); return v; }
                 if (c1 != c2 && r1 != r2) { val_err(&v, 2); return v; }   /* straight line */
-                if (k2 == AK_RANGE) { val_err(&v, 2); return v; }
                 if (c3 >= CS_MAXCOL || r3 >= CS_MAXROW) { val_err(&v, 255); return v; }
                 {
                     int vertical = (c1 == c2);
@@ -554,13 +652,11 @@ static Val parse_primary(P *ps)
                 f == FN_SIGN || f == FN_DEGREES ||
                 f == FN_DEG || f == FN_RADIANS ||
                 f == FN_RAD || f == FN_FACT) {
-                ArgKind kind;
-                int c1, r1, c2, r2, err;
-                Val a = parse_arg(ps, &kind, &c1, &r1, &c2, &r2);
+                int err;
+                Val a = parse_numarg(ps);
                 if (!a.good) return a;
-                val_free(&a);
                 skip_ws(&ps->p);
-                if (*ps->p != ')') { val_err(&v, 3); return v; }
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
                 ps->p++;
                 val_free(&v);
                 switch (f) {
@@ -689,15 +785,21 @@ static Val parse_unary(P *ps)
     if (*p == '-' || *p == '+') {
         Val t;
         int neg = (*p == '-');
+        int e;
         ps->p = p + 1;
         t = parse_unary(ps);
         if (!t.good) return t;
-        if (t.isstr) { val_free(&t); val_err(&t, 6); return t; }
+        e = val_deref(&t);
+        if (e >= 0) { val_free(&t); val_err(&t, e); return t; }
+        if (t.type == VT_STR) { val_free(&t); val_err(&t, 6); return t; }
         if (neg) csn_neg(&t.num, &t.num);
         return t;
     }
     v = parse_primary(ps);
     if (!v.good) return v;
+    /* NOTE: no eager dereference here - a Reference must survive to
+     * the operators (the '>' range construction sees raw references);
+     * each operator dereferences its operands at the point of use */
     /* '**' power (manual 4.7): right-associative, binds tighter than
      * '*' and '/' so that 12*10**-3 is 12*(10**-3) */
     for (;;) {
@@ -705,11 +807,16 @@ static Val parse_unary(P *ps)
         skip_ws(&p2);
         if (*p2 == '*' && p2[1] == '*') {
             Val b;
-            int err;
+            int err, e;
             ps->p = p2 + 2;
             b = parse_unary(ps);
             if (!b.good) { val_free(&v); val_free(&b); return b; }
-            if (v.isstr || b.isstr) { val_free(&v); val_free(&b); val_err(&v, 6); return v; }
+            e = val_deref(&v);
+            if (e >= 0) { val_free(&v); val_free(&b); val_err(&v, e); return v; }
+            e = val_deref(&b);
+            if (e >= 0) { val_free(&v); val_free(&b); val_err(&v, e); return v; }
+            if (v.type == VT_STR || b.type == VT_STR) { val_free(&v); val_free(&b); val_err(&v, 6); return v; }
+            if (v.type == VT_RANGE || b.type == VT_RANGE) { val_free(&v); val_free(&b); val_err(&v, 6); return v; }
             err = csn_pow(&v.num, &v.num, &b.num);
             val_free(&b);
             if (err) { val_err(&v, 0); return v; }
@@ -721,11 +828,13 @@ static Val parse_unary(P *ps)
         const char *p2 = ps->p;
         skip_ws(&p2);
         if (*p2 == '%') {
-            int err;
-            if (v.isstr) { val_free(&v); val_err(&v, 6); return v; }
+            int err, e;
+            e = val_deref(&v);
+            if (e >= 0) { val_free(&v); val_err(&v, e); return v; }
+            if (v.type == VT_STR || v.type == VT_RANGE) { val_free(&v); val_err(&v, 6); return v; }
             err = csn_scale10(&v.num, &v.num, -2);   /* v / 100 exactly */
             if (err) { val_err(&v, 0); return v; }
-            v.isbool = 0;
+            v.type = VT_NUM;
             ps->p = p2 + 1;
             /* "140%E4": a percent followed by a term multiplies it by
                the term (140% x E4 = 1.4 x E4) */
@@ -737,7 +846,12 @@ static Val parse_unary(P *ps)
                     ((*q2 >= 'A' && *q2 <= 'Z') || (*q2 >= 'a' && *q2 <= 'z'))) {
                     Val b = parse_unary(ps);
                     if (!b.good) { val_free(&v); val_free(&b); return b; }
-                    if (v.isstr || b.isstr) { val_free(&v); val_free(&b); val_err(&v, 6); return v; }
+                    {
+                        int e = val_deref(&b);
+                        if (e >= 0) { val_free(&v); val_free(&b); val_err(&v, e); return v; }
+                    }
+                    if (v.type == VT_STR || b.type == VT_STR) { val_free(&v); val_free(&b); val_err(&v, 6); return v; }
+                    if (v.type == VT_RANGE || b.type == VT_RANGE) { val_free(&v); val_free(&b); val_err(&v, 6); return v; }
                     err = csn_mul(&v.num, &v.num, &b.num);
                     val_free(&b);
                     if (err) { val_err(&v, 0); return v; }
@@ -757,10 +871,12 @@ static Val parse_mul(P *ps)
     memset(&a, 0, sizeof(a));
     a = parse_unary(ps);
     if (!a.good) return a;
+    /* no eager dereference: 'a' stays raw (possibly a Reference) until
+     * an operator actually consumes it */
     for (;;) {
         const char *p = ps->p;
         Val b;
-        int op, err;
+        int op, err, e;
         memset(&b, 0, sizeof(b));
         skip_ws(&p);
         if (*p == ':') break;
@@ -769,8 +885,14 @@ static Val parse_mul(P *ps)
         ps->p = p + 1;
         b = parse_unary(ps);
         if (!b.good) { val_free(&a); val_free(&b); return b; }
-        if (a.isstr || b.isstr) { val_free(&a); val_free(&b); val_err(&a, 6); return a; }
-        if (a.isbool && b.isbool && op == 0) {
+        /* both operands are consumed here: deref (option 3) */
+        e = val_deref(&a);
+        if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        e = val_deref(&b);
+        if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        if (a.type == VT_STR || b.type == VT_STR) { val_free(&a); val_free(&b); val_err(&a, 6); return a; }
+        if (a.type == VT_RANGE || b.type == VT_RANGE) { val_free(&a); val_free(&b); val_err(&a, 6); return a; }
+        if (a.type == VT_BOOL && b.type == VT_BOOL && op == 0) {
             /* logical AND */
             csn_from_int(&a.num,
                          (!csn_is_zero(&a.num) && !csn_is_zero(&b.num)) ? 1 : 0);
@@ -793,10 +915,11 @@ static Val parse_add(P *ps)
     memset(&a, 0, sizeof(a));
     a = parse_mul(ps);
     if (!a.good) return a;
+    /* no eager dereference: 'a' stays raw until an operator consumes it */
     for (;;) {
         const char *p = ps->p;
         Val b;
-        int op, err;
+        int op, err, e;
         memset(&b, 0, sizeof(b));
         skip_ws(&p);
         if (*p == ':') break;
@@ -806,20 +929,25 @@ static Val parse_add(P *ps)
         ps->p = p + 1;
         b = parse_mul(ps);
         if (!b.good) { val_free(&a); val_free(&b); return b; }
+        /* both operands are consumed here: deref (option 3) */
+        e = val_deref(&a);
+        if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        e = val_deref(&b);
+        if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
         if (op == '+') {
-            if (a.isbool && b.isbool) {
+            if (a.type == VT_BOOL && b.type == VT_BOOL) {
                 /* logical OR */
                 csn_from_int(&a.num,
                              (!csn_is_zero(&a.num) || !csn_is_zero(&b.num)) ? 1 : 0);
             } else {
                 err = csn_add(&a.num, &a.num, &b.num);
                 if (err) { val_free(&a); val_free(&b); val_err(&a, 0); return a; }
-                a.isbool = 0;
+                a.type = VT_NUM;
             }
         } else {
             err = csn_sub(&a.num, &a.num, &b.num);
             if (err) { val_free(&a); val_free(&b); val_err(&a, 0); return a; }
-            a.isbool = 0;
+            a.type = VT_NUM;
         }
         val_free(&b);
     }
@@ -835,7 +963,7 @@ static Val parse_cmp(P *ps)
     {
         const char *p = ps->p;
         Val b;
-        int op, r;
+        int op, r, e;
         memset(&b, 0, sizeof(b));
         skip_ws(&p);
         if (*p == ':') return a;
@@ -847,9 +975,41 @@ static Val parse_cmp(P *ps)
         else if (*p == '=') op = 3;
         else return a;
         ps->p = p + ((op == 2 || op == 4) ? 2 : (op == 5 ? 1 : 1));
+        memset(&b, 0, sizeof(b));
+        csn_zero(&b.num);
         b = parse_add(ps);
         if (!b.good) { val_free(&a); val_free(&b); return b; }
-        if (a.isstr || b.isstr) { val_free(&a); val_free(&b); val_err(&a, 6); return a; }
+        /* range construction: reference > reference (user-ext 2026-11)
+         * - decided BEFORE any dereference, so it never competes with
+         * the numeric comparison */
+        if (op == 5 && a.type == VT_REF && b.type == VT_REF) {
+            CsRng rg;
+            rg.start = a.ref;
+            rg.end = b.ref;
+            cs_range_norm(&rg.start.col, &rg.start.row,
+                          &rg.end.col, &rg.end.row);
+            val_free(&b);
+            val_free(&a);
+            memset(&a, 0, sizeof(a));
+            csn_zero(&a.num);
+            /* the existing convention: a range must lie along one row
+             * or one column (diagonals are Error 2) */
+            if (rg.start.col != rg.end.col && rg.start.row != rg.end.row) {
+                val_err(&a, 2);
+                return a;
+            }
+            a.type = VT_RANGE;
+            a.rng = rg;
+            a.good = 1;
+            return a;
+        }
+        /* comparisons consume values: references deref (option 3) */
+        e = val_deref(&a);
+        if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        e = val_deref(&b);
+        if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        if (a.type == VT_STR || b.type == VT_STR) { val_free(&a); val_free(&b); val_err(&a, 6); return a; }
+        if (a.type == VT_RANGE || b.type == VT_RANGE) { val_free(&a); val_free(&b); val_err(&a, 6); return a; }
         r = csn_cmp(&a.num, &b.num);
         switch (op) {
         case 1: r = (r < 0); break;
@@ -859,7 +1019,7 @@ static Val parse_cmp(P *ps)
         default: r = (r > 0); break;
         }
         csn_from_int(&a.num, r ? 1 : 0);
-        a.isbool = 1;
+        a.type = VT_BOOL;
         val_free(&b);
         return a;
     }
@@ -878,45 +1038,35 @@ extern int cs_poll_escape(void);
  * the target is written (SET(A1,A1+1) uses A1's previous value) */
 static void exec_set_stmt(const char *args, int *err)
 {
-    char tbuf[CS_EDITMAX + 4], vbuf[CS_EDITMAX + 4];
-    const char *p;
-    int depth = 0, inq = 0, tl, ln, tcol, trow;
+    const char *w;
+    P sub;
+    Val tgt, v;
     char just;
     Cell *cell;
-    P sub;
-    Val v;
+    int e;
 
     *err = -1;
-    /* split the two arguments at the top-level ',' (quote-aware) */
-    p = args;
-    while (*p == ' ') p++;
-    ln = -1; depth = 0; inq = 0;
-    for (; *p; p++) {
-        if (*p == '"') inq = !inq;
-        else if (!inq && *p == '(') depth++;
-        else if (!inq && *p == ')') depth--;
-        else if (!inq && depth == 0 && *p == ',') { ln = (int) (p - args); break; }
+    /* the target: a general expression that must resolve to exactly
+     * one Reference (a Range target is Error 6); NO dereference - the
+     * reference is the cell to write */
+    w = args;
+    while (*w == ' ') w++;
+    memset(&sub, 0, sizeof(sub));
+    sub.p = w;
+    tgt = parse_condexpr(&sub);
+    if (!tgt.good) {
+        *err = tgt.err;
+        val_free(&tgt);
+        return;
     }
-    if (ln < 0) { *err = 7; return; }   /* SET needs exactly two arguments */
-    tl = ln;
-    p = args + ln + 1;
-    while (*p == ' ') p++;
-    ln = (int) strlen(p);
-    while (ln > 0 && p[ln - 1] == ' ') ln--;
-    if (tl >= (int) sizeof(tbuf) || ln >= (int) sizeof(vbuf)) { *err = 7; return; }
-    memcpy(tbuf, args, (size_t) tl);
-    tbuf[tl] = '\0';
-    memcpy(vbuf, p, (size_t) ln);
-    vbuf[ln] = '\0';
-
-    /* the target is a plain cell specifier */
-    if (!cs_parse_coord(tbuf, &tcol, &trow)) { *err = 1; return; }
-    cell = cs_cell(tcol, trow);
-    if (!cell) { *err = 1; return; }
+    if (tgt.type != VT_REF) { val_free(&tgt); *err = 6; return; }
+    cell = cs_cell(tgt.ref.col, tgt.ref.row);
+    if (!cell) { val_free(&tgt); *err = 1; return; }
+    skip_ws(&sub.p);
+    if (*sub.p != ',') { val_free(&tgt); *err = 7; return; }
+    sub.p++;
 
     /* the value: fully evaluated BEFORE the target is modified */
-    memset(&sub, 0, sizeof(sub));
-    sub.p = vbuf;
     v = parse_condexpr(&sub);
     if (!v.good) {
         *err = v.err;                   /* 0 = the value-range class */
@@ -924,17 +1074,21 @@ static void exec_set_stmt(const char *args, int *err)
         return;
     }
     while (*sub.p == ' ') sub.p++;
-    if (*sub.p) { val_free(&v); *err = 7; return; }
+    if (*sub.p) { val_free(&v); val_free(&tgt); *err = 7; return; }
+    e = val_deref(&v);                  /* option 3: a value derefs */
+    if (e >= 0) { val_free(&v); val_free(&tgt); *err = e; return; }
+    if (v.type == VT_RANGE) { val_free(&v); val_free(&tgt); *err = 6; return; }
 
     /* the entry-pool budget for a newly allocated cell */
     if (cell->type == CE_EMPTY && !cs_ensure_room()) {
         cs_msg("MEMORY IS TOO LOW");
         *err = 0;                       /* the value-range class */
         val_free(&v);
+        val_free(&tgt);
         return;
     }
 
-    if (v.isstr) {
+    if (v.type == VT_STR) {
         /* text: an optional \r / \l / \c prefix sets the justification */
         const char *txt = v.str;
         just = 'L';
@@ -950,6 +1104,7 @@ static void exec_set_stmt(const char *args, int *err)
         cs_set_num(cell, fb, &v.num, 0, NULL);
     }
     val_free(&v);
+    val_free(&tgt);
     cs_recount_entries();
     cs_mark_sheet_change();
 }
@@ -959,12 +1114,25 @@ static void exec_set_stmt(const char *args, int *err)
  * cell is included - flagged deviation from the letter of the spec) */
 static void exec_recalc_stmt(const char *args, int *err)
 {
-    const char *p = args;
-    int tcol, trow;
+    const char *w;
+    P sub;
+    Val a;
+
     *err = -1;
-    while (*p == ' ') p++;
-    if (*p) {
-        if (!cs_parse_coord(p, &tcol, &trow)) { *err = 1; return; }
+    w = args;
+    while (*w == ' ') w++;
+    if (*w) {
+        memset(&sub, 0, sizeof(sub));
+        sub.p = w;
+        a = parse_condexpr(&sub);
+        if (!a.good) {
+            *err = a.err;
+            val_free(&a);
+            return;
+        }
+        /* the argument is a single Reference */
+        if (a.type != VT_REF) { val_free(&a); *err = 6; return; }
+        val_free(&a);
     }
     cs_recalc_requested = 1;
 }
@@ -1001,7 +1169,10 @@ static int side_effect_stmt(const char *piece, int *err)
     buf[sl - 1] = '\0';                 /* drop the closing ')' */
     if (isset) exec_set_stmt(kw + 1, err);
     else exec_recalc_stmt(kw + 1, err);
-    return 1;
+    /* the exec errors propagate: run_branch treats a return of 2 with
+     * *err >= 0 as a failing side-effect call (0 = the value-range
+     * class is a real error too) */
+    return (*err == -1) ? 1 : 2;
 }
 
 /* a conditional branch as a statement list: pieces split at ';'
@@ -1107,6 +1278,13 @@ static Val parse_condexpr(P *ps)
         const char *p = ps->p;
         skip_ws(&p);
         if (*p == ':') {
+            /* the condition is consumed HERE: dereference it (option 3)
+             * before the truth test - a bare Reference cond reads its
+             * cell; a Range cond is a type error */
+            int de = val_deref(&cond);
+            if (de >= 0) { val_free(&cond); val_err(&cond, de); return cond; }
+        }
+        if (*p == ':') {
             /* DEFERRED branch execution: the branch texts are copied
              * and only the SELECTED one is parsed and executed - the
              * unselected branch must not run its side effects */
@@ -1131,8 +1309,8 @@ static Val parse_condexpr(P *ps)
                 fbuf[0] = '\0';
                 ps->p = q;
             }
-            ctrue = cond.isstr ? (cond.str && cond.str[0])
-                               : !csn_is_zero(&cond.num);
+            ctrue = cond.type == VT_STR ? (cond.str && cond.str[0])
+                                        : !csn_is_zero(&cond.num);
             memset(&t, 0, sizeof(t)); csn_zero(&t.num);
             memset(&f, 0, sizeof(f)); csn_zero(&f.num);
             t.good = 1; f.good = 1;     /* empty branches assign 0 */
@@ -1184,7 +1362,14 @@ int cs_eval_formula(const char *s, Csn *val, char **str)
     p = ps.p;
     while (*p == ' ') p++;
     if (*p) { val_free(&v); csn_zero(val); return 7; }        /* trailing junk */
-    if (v.isstr) {
+    /* a top-level Reference derefs (option 3); a Range is not a
+     * storable result */
+    if (v.type == VT_REF) {
+        int e = val_deref(&v);
+        if (e >= 0) { val_free(&v); csn_zero(val); return e; }
+    }
+    if (v.type == VT_RANGE) { val_free(&v); csn_zero(val); return 6; }
+    if (v.type == VT_STR) {
         csn_zero(val);
         if (str) *str = v.str; else free(v.str);
         return 0;

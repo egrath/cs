@@ -126,6 +126,35 @@ recalculation = loops).  Flagged extensions:
   a branch need parentheses; an unparenthesized `:` always belongs to
   the outermost conditional.  `;` inside an entry types a statement
   separator (the `;` command menu stays available when idle).
+
+## First-class references, VAL/REF and dynamic ranges (user-extended 2026-11)
+
+The expression language treats cell identifiers as **references**, not
+values.  This is the flagged `ref-val` semantics (the user chose
+"option 3": references coerce to values wherever a value is consumed,
+so existing formulas keep working):
+
+- **`A1`, `B5`, `AA20` are Reference values.**  `VAL(cell)` retrieves a
+  referenced cell's numeric value explicitly (`VAL(A1)+VAL(B1)`,
+  `SQRT(VAL(A1))`); `VAL` of an empty, text or error cell is Error 1 —
+  never a silent 0.
+- **`REF(col,row)`** builds a reference from one-based numbers —
+  `REF(1,1)` is A1, and dynamic coordinates work: `REF(VAL(B1)+1,5)`.
+  Coordinates must be integers in 1..127 (columns A..DW) / 1..255.
+- **Dynamic ranges**: `>` between two references builds a Range —
+  `A1>A5`, `REF(1,1)>REF(1,5)`, `A1>REF(1,5)`.  Between numbers `>`
+  compares as before.  Ranges must lie along one row/column
+  (diagonals are Error 2); reversed ranges normalize.
+- **Range functions** take ranges through the same evaluator:
+  `SUM(A1>A5)`, `AVG(REF(2,1)>REF(2,10))`, `CNT(A1>REF(1,10))`,
+  `REGR(A1>A10,B2)`.
+- **`SET(cell,value)`** takes a Reference target — `SET(A1,100)`,
+  `SET(REF(2,5),200)`, `SET(REF(VAL(B1),VAL(B2)),200)` — and the value
+  argument coerces (`SET(A2,VAL(B1)*2)`, `SET(A1,B2)` copies B2's
+  number or text).  `RECALC()` / `RECALC(ref)` unchanged.
+- Type errors are reported as `Error 6` (wrong type), `Error 2`
+  (diagonal range), `Error 1` (bad coordinates, VAL of a non-numeric
+  cell), `Error 0` (fractional REF coordinate).
 - **Differential harness:** `tests/precision_ref.c` + `tests/precision_ref.py`
   dump every transcendental function at 38 decimals and compare against a
   150-digit Python-decimal reference (`python3 tests/precision_ref.py

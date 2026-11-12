@@ -970,6 +970,123 @@ static void run_tests(void)
         remove("t_not.CSD");
     }
 
+    /* ---- first-class references, VAL/REF, dynamic ranges (user-ext
+     * 2026-11, branch ref-val): a bare identifier is a REFERENCE value;
+     * references coerce to values where a value is consumed (option 3);
+     * '>' between references builds a Range, between numbers it
+     * compares ----------------------------------------------- */
+    {
+        Cell *c;
+        /* A: reference construction; a top-level formula derefs, so
+         * REF(1,1) on an empty A1 is Error 1, on a filled one the value */
+        cke("REF empty deref", "REF(1,1)", 1);
+        setv(0, 0, "42");                       /* A1 = 42 */
+        setv(1, 0, "17");                       /* B1 = 17 */
+        setv(0, 4, "5");                        /* A5 = 5 */
+        ckc("VAL(A1)", "VAL(A1)", "+4.2000000000000E+2");
+        ckc("VAL(REF(1,1))", "VAL(REF(1,1))", "+4.2000000000000E+2");
+        cke("VAL(REF(1+1,2+3))", "VAL(REF(1+1,2+3))", 1);  /* B5 empty */
+        ckc("VAL(A1)+VAL(B1)", "VAL(A1)+VAL(B1)", "+5.9000000000000E+2");
+        ckc("VAL(A1)*10", "VAL(A1)*10", "+4.2000000000000E+3");
+        ckc("SQRT(VAL(A1))", "SQRT(VAL(A1))", "+6.4807406984078E+1");
+        ckc("coerced A1+B1", "A1+B1", "+5.9000000000000E+2");
+        cke("REF(A1,5) coerced", "REF(A1,5)", 1);   /* AP5 empty */
+        ckc("REF(1,5) deref", "REF(1,5)", "+5.0000000000000E+1");
+        /* B: invalid references */
+        cke("REF(0,1)", "REF(0,1)", 1);
+        cke("REF(1,0)", "REF(1,0)", 1);
+        cke("REF(-1,1)", "REF(-1,1)", 1);
+        cke("REF(1,1.5)", "REF(1,1.5)", -1);
+        cke("REF(128,1)", "REF(128,1)", 1);
+        cke("REF(1,256)", "REF(1,256)", 1);
+        cke("REF(1)", "REF(1)", 3);
+        cke("REF(1,2,3)", "REF(1,2,3)", 3);
+        cke("REF(\"x\",1)", "REF(\"x\",1)", 6);
+        /* C: VAL of empty, text and error cells */
+        cke("VAL empty", "VAL(C9)", 1);
+        cs_free_cell(cs_cell(0, 1));
+        cs_set_text(cs_cell(0, 1), "hello", 'L');
+        cke("VAL text", "VAL(A2)", 1);
+        setv(0, 2, "3");                        /* A3 = 3 */
+        cs_commit_entry(0, 8, "+1/0");           /* A9 = ?n? (outside the ranges) */
+        cke("VAL error cell", "VAL(A9)", 1);
+        /* D: range construction */
+        ckc("range sum", "SUM(A1>A5)", "+5.0000000000000E+2");  /* 42+3+5 */
+        ckc("range REF", "SUM(REF(1,1)>REF(1,5))", "+5.0000000000000E+2");
+        ckc("range mix1", "SUM(A1>REF(1,5))", "+5.0000000000000E+2");
+        ckc("range mix2", "SUM(REF(1,1)>A5)", "+5.0000000000000E+2");
+        cke("range diagonal", "SUM(A1>B5)", 2);
+        ckc("range reversed ok", "SUM(A5>A1)", "+5.0000000000000E+2");
+        /* E: range-consuming functions */
+        setv(1, 1, "2");                        /* B2 = 2 */
+        setv(1, 2, "4");                        /* B3 = 4 */
+        setv(1, 3, "6");                        /* B4 = 6 */
+        ckc("AVG(REF)", "AVG(REF(2,2)>REF(2,4))", "+4.0000000000000E+1");
+        ckc("CNT(REF mix)", "CNT(B2>REF(2,4))", "+3.0000000000000E+1");
+        ckc("MIN(REF mix)", "MIN(B2>B4)", "+2.0000000000000E+1");
+        ckc("MAX(REF mix)", "MAX(A1>REF(1,5))", "+4.2000000000000E+2");
+        /* F: numerical comparisons are not ranges */
+        ckc("cmp >", "VAL(A1)>VAL(B1)", "+1.0000000000000E+1");
+        ckc("cmp <", "VAL(A1)<VAL(B1)", "0");
+        ckc("cmp =", "VAL(A1)=VAL(A1)", "+1.0000000000000E+1");
+        ckc("cmp refs deref", "A1=A5", "0");
+        /* G: SET with reference targets */
+        cs_clear_all();
+        setv(1, 0, "21");                       /* B1 = 21 */
+        setv(1, 1, "7");                        /* B2 = 7 */
+        cke("SET stmt", "1:SET(A1,100);1", 0);
+        c = cs_cell(0, 0);
+        csn_canon(&c->val, buf, (int) sizeof(buf));
+        if (c->type != CE_NUM || strcmp(buf, "+1.0000000000000E+3"))
+            { printf("FAIL SET wrote A1 (%s)\n", buf); fails++; }
+        else printf("ok   SET(A1,100) writes 100\n");
+        cke("SET REF target", "1:SET(REF(2,5),200);1", 0);
+        c = cs_cell(1, 4);
+        csn_canon(&c->val, buf, (int) sizeof(buf));
+        if (c->type != CE_NUM || strcmp(buf, "+2.0000000000000E+3"))
+            { printf("FAIL SET REF target (%s)\n", buf); fails++; }
+        else printf("ok   SET(REF(2,5),200) writes B5\n");
+        cke("SET dyn target", "1:SET(REF(VAL(B1),VAL(B2)),3);1", 0);
+        c = cs_cell(20, 6);
+        if (c->type != CE_NUM)
+            { printf("FAIL SET dyn target\n"); fails++; }
+        else printf("ok   SET(REF(21,7),3) writes U7\n");
+        cke("SET value expr", "1:SET(A2,VAL(B1)*2);1", 0);
+        c = cs_cell(0, 1);
+        csn_canon(&c->val, buf, (int) sizeof(buf));
+        if (c->type != CE_NUM || strcmp(buf, "+4.2000000000000E+2"))
+            { printf("FAIL SET value expr (%s)\n", buf); fails++; }
+        else printf("ok   SET(A2,B1*2) writes 42\n");
+        /* a failed SET must not partially modify the sheet */
+        cke("SET bad target", "1:SET(A1>A2,5);1", 6);
+        c = cs_cell(0, 1);
+        csn_canon(&c->val, buf, (int) sizeof(buf));
+        if (strcmp(buf, "+4.2000000000000E+2"))
+            { printf("FAIL SET partial write (%s)\n", buf); fails++; }
+        else printf("ok   failed SET left A2 untouched\n");
+        /* H: conditionals with references in both branches */
+        cke("cond VAL", "VAL(B1)>0:100:0", 0);
+        cke("cond branch refs", "VAL(B1)>0:SET(A3,VAL(B2));5:9", 0);
+        c = cs_cell(0, 2);
+        csn_canon(&c->val, buf, (int) sizeof(buf));
+        if (c->type != CE_NUM || strcmp(buf, "+7.0000000000000E+1"))
+            { printf("FAIL cond branch SET (%s)\n", buf); fails++; }
+        else printf("ok   conditional ran SET(A3,B2)\n");
+        /* I: recalculation and side effects with references */
+        cs_clear_all();
+        setv(0, 0, "6");                        /* A1 = 6 */
+        cke("SET RECALC refs", "1:SET(REF(2,1),VAL(A1)*2);RECALC(REF(2,1));0:\"done\"", 0);
+        c = cs_cell(1, 0);
+        csn_canon(&c->val, buf, (int) sizeof(buf));
+        if (c->type != CE_NUM || strcmp(buf, "+1.2000000000000E+2"))
+            { printf("FAIL SET/RECALC refs (%s)\n", buf); fails++; }
+        else printf("ok   SET(REF(2,1),A1*2) + RECALC(ref)\n");
+        /* the side-effect guards keep working */
+        cke("SET as operand", "SET(A1,5)*2", 4);
+        cke("two value pieces", "1:1;2:0", 7);
+        cs_clear_all();
+    }
+
     /* cs_name_to_col */
     {
         int dc;

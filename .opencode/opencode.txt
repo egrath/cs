@@ -1,6 +1,51 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "ref-val": first-class references, VAL/REF, dynamic ranges):
+- USER SPEC (option 3 chosen after discussion): a bare cell identifier
+  evaluates to a REFERENCE value; VAL(cell) retrieves the numeric
+  value explicitly; REF(col,row) builds one from one-based numbers
+  (dynamic: REF(VAL(B1)+1,5), REF(A1,5) works via coercion); '>' between
+  two references builds a Range, between numbers compares; range
+  functions take ranges through the one evaluator (the parse_arg/
+  AK_RANGE special case is DELETED); SET's target must be exactly one
+  Reference; RECALC(ref) advisory.  OPTION 3 = references coerce to
+  values where a value is consumed (val_deref): numeric -> number,
+  TEXT -> string (old behavior), empty/error -> Error 1.  Backward
+  compat waived but option 3 keeps the whole existing suite alive.
+- IMPLEMENTATION: Val {num,str,type,ref,rng,err,good} + VT_NUM/STR/
+  BOOL/REF/RANGE + CsRef/CsRng (0-based).  val_deref() is THE coercion
+  helper; derefs are LAZY (at the operator/argument use, never eagerly
+  after parse — refs must survive to parse_cmp for the '>' overload).
+  parse_cmp builds the Range (normalize + straight-line check -> Error 2)
+  BEFORE any deref.  FN_REF/FN_VAL in the fn table (SET/RECALC stay
+  OUTSIDE it: as operands -> Error 4 unchanged).  csn_integer_part()
+  (csn_trunc+sub) for the REF integer checks; limits 1..127/1..255.
+  exec_set_stmt/exec_recalc_stmt sub-parse with the typed evaluator
+  (target = VT_REF, no deref; value derefs).  cs_eval_formula derefs
+  the top-level result and rejects a Range result (Error 6).
+  side_effect_stmt now returns 2 + *err on failure — run_branch's dead
+  `r == 2` check came alive (failed SETs previously silently no-op'd!).
+- ERROR MAP: type mismatch 6, diagonal 2, REF out-of-limits/bad coord 1,
+  fractional REF 0, unknown fn 4, malformed 3/7.  A top-level '+A1>A5'
+  COMPARES (the leading '+' is a numeric formula; the unary deref) —
+  two-ref '>' as a CONDITION needs VAL(); ranges only survive as
+  function arguments.
+- VERIFIED: --test 256 ok (203 pre-existing UNCHANGED + 53 new: refs,
+  REF errors incl. limits/fractional/arg-count, VAL empty/text/error,
+  all four range spellings, reversed normalize, diagonal 2, the range
+  fns, comparisons vs ranges, SET with REF/dynamic targets + no partial
+  writes, conditional branches with refs, SET/RECALC(ref) interaction,
+  SET-as-operand 4, two-value-pieces 7); pty: the countdown iterates
+  under the new language ((VAL(A1)>0):SET(A1,VAL(A1)-1);RECALC();...),
+  SUM(B1>B4)=100 live, two fighting SET formulas hit the 1000-pass
+  limit ("Recalculation limit reached"), VAL(empty) -> Error 1;
+  cs1.txt idle EXACT; warning-free C89 build.
+- HARNESS: the pty write-deadlock still bites on entry bursts — drains
+  before sends; the cursor-stays-after-commit rule put repeated values
+  in ONE cell (use ^Z/goto between entries); expect anchors on values
+  that appear in earlier paints match STALE content.
+
 ## BATCH (branch "notation": per-cell (auto)/(dec)/(sci) — 2026-11-12):
 - USER SPEC: a numeric cell's notation settable via ;F: the menu gains
   N)otation (auto)/(dec)/(sci) — small letters, the cell's state; N
