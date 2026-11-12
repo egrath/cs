@@ -193,14 +193,18 @@
   mis-derived expected string ("42.00,---" for a numeric in A1 read
   at A3, which is correctly "---,42.00").
 
-## STATE (2026-11-12): master = the feature line; "notation" merged
-- master = a40ba66..5a25222: side effects/iteration + stability +
-  hands-off iteration + live per-pass display + overrun message +
-  scrolling edit field + ;W heading fix + per-cell notation
-  ((auto)/(dec)/(sci) via ;F N, packed into the prec byte's spare
-  bits — CSD4 unchanged).  Pushed to origin.  The "turing" and
-  "notation" branches are kept as historical pointers (same commits).
-  Future batches branch from master.
+## STATE (2026-11-12): master = a40ba66..55a3e62
+- master now carries the FULL ref-val line: first-class references
+  (VAL/REF, rectangular '>' ranges, option-3 coercion), SET/RECALC
+  with conditionals, honest SET change marking, cs_eval_range in the
+  dialogs, the documentation pass (README chapter, help page 3), and
+  the column headers "A (1)".. (cs1.txt's Col> line regenerated for
+  it — flagged visual deviation).  Pushed to origin.  The "turing",
+  "notation" and "ref-val" branches are kept as historical pointers.
+- CLEANUP: 5827fba had accidentally committed .DS_Store and the
+  test.CSD scratch fixture (swept in by a git add -u); 55a3e62
+  untracked both and ignore-listed them.
+- Future batches branch from master.
 
 ## BATCH (branch "turing": overrun message + scrolling edit field — 2026-11-12):
 - USER REQUESTS: (1) when the 1000-pass iteration cap is reached, an
