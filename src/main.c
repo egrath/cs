@@ -544,7 +544,7 @@ static void run_tests(void)
     cke("err unknown function", "+XYZ(A1)", 4);
     cke("err missing paren", "(1+2", 3);
     cke("err illegal chars end", "1+2)", 7);
-    cke("err range not row/col", "SUM(A1>B2)", 2);
+    cke("err regr not row/col", "REGR(A1>B2,C3)", 2);   /* 1-D only */
     cke("err term expr illegal", "+A", 6);
     cke("err illegal coordinate", "+A99", 1);
     cke("err value range overflow", "+9E+999", -1);  /* displays Error 0 */
@@ -1080,7 +1080,9 @@ static void run_tests(void)
         ckc("range REF", "SUM(REF(1,1)>REF(1,5))", "+5.0000000000000E+2");
         ckc("range mix1", "SUM(A1>REF(1,5))", "+5.0000000000000E+2");
         ckc("range mix2", "SUM(REF(1,1)>A5)", "+5.0000000000000E+2");
-        cke("range diagonal", "SUM(A1>B5)", 2);
+        /* rectangles: A1>B5 is the whole block (user decision
+         * 2026-11); at this point A1=42, A2 text, A3=3, A5=5, B1=17 */
+        ckc("range rectangle", "SUM(A1>B5)", "+6.7000000000000E+2");
         ckc("range reversed ok", "SUM(A5>A1)", "+5.0000000000000E+2");
         /* E: range-consuming functions */
         setv(1, 1, "2");                        /* B2 = 2 */

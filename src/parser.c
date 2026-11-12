@@ -981,7 +981,9 @@ static Val parse_cmp(P *ps)
         if (!b.good) { val_free(&a); val_free(&b); return b; }
         /* range construction: reference > reference (user-ext 2026-11)
          * - decided BEFORE any dereference, so it never competes with
-         * the numeric comparison */
+         * the numeric comparison.  The range is a normalized
+         * RECTANGLE (user decision 2026-11: A1>E5 addresses the whole
+         * block; REGR keeps its own 1-D requirement) */
         if (op == 5 && a.type == VT_REF && b.type == VT_REF) {
             CsRng rg;
             rg.start = a.ref;
@@ -992,12 +994,6 @@ static Val parse_cmp(P *ps)
             val_free(&a);
             memset(&a, 0, sizeof(a));
             csn_zero(&a.num);
-            /* the existing convention: a range must lie along one row
-             * or one column (diagonals are Error 2) */
-            if (rg.start.col != rg.end.col && rg.start.row != rg.end.row) {
-                val_err(&a, 2);
-                return a;
-            }
             a.type = VT_RANGE;
             a.rng = rg;
             a.good = 1;

@@ -194,9 +194,10 @@ B1>B3                   a horizontal range
 ```
 
 All four spellings feed the range functions identically.  Reversed
-ranges normalize (`A5>A1` ≡ `A1>A5`).  A range must lie along one row
-or one column — diagonals are **Error 2** (`SUM(A1>B5)`).  A chain
-like `A1>A5>A9` is Error 6.
+ranges normalize (`A5>A1` ≡ `A1>A5`).  A range is a **rectangle** —
+`A1>E5` addresses the whole block (so `SUM(A1>B5)` sums the 5x2
+rectangle); only `REGR` demands a one-dimensional series (Error 2).
+A chain like `A1>A5>A9` is Error 6.
 
 ### Range functions
 
@@ -285,6 +286,8 @@ Goto, print corners, load position) try the plain coordinate text
 first and then evaluate an expression:
 
 ```text
+;D F   Delete (From>To):  A1>REF(A1,B1)
+       with A1=B1=5 this addresses the rectangle A1..E5 and clears it
 ;D R   Delete rows (From>To):  REF(1,C2)>REF(1,C3)
        deletes the rows of that range (C2, C3 hold the row numbers)
 Goto>  REF(2,4)                moves the cursor to B4
@@ -398,10 +401,16 @@ nothing), ESC cancels.
  ^S Left  ^D Right |C Copy   H Help    O Order  S Save   = Lock   |? Evaluate
  ^E Up    ^X Down  |D Delete I Insert  P Print  W What   ? Space  |^ Data Togl
  ^Z Col A next row |E Edge   L Load    Q Quit   G or <TAB> Goto   |<ESC>Cancel
-Col>|A         |B         |C         |D         |E         |F         |
+Col>|A (1)     |B (2)     |C (3)     |D (4)     |E (5)     |F (6)     |
 Row+--------------------------------------------------------------------------
   1| ... cell contents ... (> and < flank the current cell)
   2|
+
+The column headers show the `REF` index in parentheses — `A (1)`,
+`B (2)`, ..., `AA (27)` — a visual aid for `REF(col,row)`; narrow
+columns fall back to the plain name.  (Flagged visual deviation from
+the 1982 screen; the idle-screen reference `cs1.txt` was regenerated
+for it.)
    +--------------------------------------------------------------------------
 [filename  ]  cursor:    B3      current:    B3     L-R
 current||       type: numeric

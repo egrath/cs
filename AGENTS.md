@@ -189,8 +189,10 @@ follow the original. Read this file before changing anything.
     columns 1..127, rows 1..255), wrong types (Error 6) and wrong
     argument counts (Error 3).
   - **`>` is overloaded in parse_cmp (one place)**: reference > reference
-    constructs a Range (normalized; diagonal -> Error 2) decided BEFORE
-    any dereference; numbers/bools compare.  `< <= = <>` compare values
+    constructs a Range (a normalized RECTANGLE - user decision
+    2026-11: A1>E5 addresses the whole block; REGR keeps its own 1-D
+    requirement with Error 2) decided BEFORE any dereference;
+    numbers/bools compare.  `< <= = <>` compare values
     (references deref).  A chained `a>b>c` and a Range in a
     value/reference position are Error 6.  NOTE: a top-level formula
     derefs its result, so `+A1>A5` compares (the leading '+' means a
@@ -218,6 +220,12 @@ follow the original. Read this file before changing anything.
     under `;R A` instead of running to the 1000-pass limit).
     `cs_recalc_last_passes` records the last driver run's pass count
     (diagnostics/tests).
+  - **Column headers show the REF index** (user-ext 2026-11, visual
+    aid only): `cs_col_hdr()` renders "A (1)", "B (2)", ..., "AA (27)"
+    in the Col> row when it fits the column width (narrow columns
+    keep the plain name).  `cs_col_name` stays pure for everything
+    that READS coordinates.  FLAGGED visual deviation: the idle-screen
+    reference cs1.txt was REGENERATED for it (the Col> line only).
   - **Dynamic ranges in the command dialogs**: the static coordinate
     parse is tried first; on failure the dialogs evaluate the text as
     an expression via the new `cs_eval_range()` (a Reference or Range
@@ -236,7 +244,7 @@ follow the original. Read this file before changing anything.
     `SQRT(VAL(A1))`, `VAL(REF(1+1,2+3))`; `REF(1,1)`, `REF(2,5)`,
     `REF(1+1,2+3)`, `REF(A1,5)`, `REF(VAL(B1)+1,VAL(B2))`;
     `A1>A5`, `REF(1,1)>REF(1,5)`, `A1>REF(1,5)`, `REF(1,1)>A5`,
-    `A5>A1` (normalizes), `SUM(A1>B5)` -> Error 2 (diagonal);
+    `A5>A1` (normalizes), `SUM(A1>B5)` -> the 5x2 rectangle sum;
     `SUM(A1>A5)`, `SUM(REF(1,1)>REF(1,10))`, `AVG(REF(2,1)>REF(2,10))`,
     `CNT(A1>REF(1,10))`, `MIN(REF(1,1)>A10)`, `MAX(A1>REF(1,10))`,
     `SUM(A1>A5,B1>B3)` (multi-area), `REGR(REF(1,1)>REF(1,5),B1)`;

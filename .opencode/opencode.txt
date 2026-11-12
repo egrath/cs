@@ -1,6 +1,31 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "ref-val", follow-up 2: rectangles + column header indices):
+- USER REPORT: ;D F with A1>REF(A1,B1) (A1=B1=5) failed "bad coord" —
+  the expression path still enforced the inherited straight-line rule
+  (A1>E5 is diagonal) while the STATIC dialog text A1>E5 was already
+  accepted.  USER DECISION: ranges are RECTANGLES.  parse_cmp's range
+  construction dropped the diagonal check; the range walks were
+  already rectangular; REGR keeps its own 1-D requirement (Error 2 —
+  the old manual-table test re-anchored on REGR).  Tests flipped:
+  "err range not row/col" -> "err regr not row/col"
+  (REGR(A1>B2,C3)=2), "range diagonal" -> "range rectangle"
+  (SUM(A1>B5)=67 on that sheet).
+- USER REQUEST: the Col> header shows the REF index — "A (1)",
+  "B (2)", ..., "AA (27)" (1-based, with the space; visual aid only).
+  cs_col_hdr() (cells.c) renders it; draw_columns uses it when it
+  fits the column width (narrow columns fall back to the plain name,
+  clipped to 2 chars as before).  cs_col_name stays PURE for
+  everything that reads coordinates.  FLAGGED: cs1.txt was
+  REGENERATED (the Col> line only — computed as "Col>" + per-column
+  "|"+name(idx) ljust(colw) + G's separator '|', 71 bytes as before);
+  the README layout sample shows the new header.
+- VERIFIED: --test 277 ok; pty: ;D F with A1>REF(A1,B1) (A1=B1=5)
+  clears the rectangle A1..E5 (the E5 victim value gone, F5 outside
+  survives, no error); the idle diff EXACT against the regenerated
+  cs1.txt; warning-free build.
+
 ## BATCH (branch "ref-val", docs): documentation pass for the new language
 - README: the ref-val section is now a full chapter ("The expression
   language: references, values and ranges") with worked examples for

@@ -63,6 +63,16 @@ void cs_col_name(int col, char *buf)
     }
 }
 
+/* the column-header display with the REF index (user-ext 2026-11,
+ * visual aid only): "A (1)", "B (2)", ..., "AA (27)", ..., "DW (127)".
+ * cs_col_name stays pure for everything that READS coordinates. */
+void cs_col_hdr(int col, char *out, int outn)
+{
+    char nm[4];
+    cs_col_name(col, nm);
+    sprintf(out, "%s (%d)", nm, col + 1);
+}
+
 int cs_name_to_col(const char *s)
 {
     int c = -1;
