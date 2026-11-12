@@ -584,7 +584,13 @@ int cs_prompt_yn(const char *pr)
     }
 }
 
-int cs_prompt_str(const char *pr, const char *dflt, char *out, int maxlen)
+/* the plain prompt editor: dflt shows while nothing is typed, the
+ * first printable keystroke replaces it.  With keepgt != 0 a '>' as
+ * the FIRST keystroke instead seeds the buffer with dflt + '>' - the
+ * delete-range prompts use it so the prefilled row/column survives a
+ * range answer ("2>" + "5"). */
+static int prompt_str_core(const char *pr, const char *dflt, char *out,
+                           int maxlen, int keepgt)
 {
     char buf[80];
     int n, ch;
@@ -612,11 +618,32 @@ int cs_prompt_str(const char *pr, const char *dflt, char *out, int maxlen)
             if (n > 0) buf[--n] = '\0';
             continue;
         }
+        if (ch == '>' && keepgt && n == 0 && dflt && dflt[0]) {
+            /* keep the prefilled row/column as the left side */
+            int i;
+            for (i = 0; dflt[i] && n < (int) sizeof(buf) - 2; i++)
+                buf[n++] = dflt[i];
+            if (n < (int) sizeof(buf) - 2) buf[n++] = '>';
+            buf[n] = '\0';
+            continue;
+        }
         if (ch >= 32 && ch < 127 && n < (int) sizeof(buf) - 2) {
             buf[n++] = (char) ch;
             buf[n] = '\0';
         }
     }
+}
+
+int cs_prompt_str(const char *pr, const char *dflt, char *out, int maxlen)
+{
+    return prompt_str_core(pr, dflt, out, maxlen, 0);
+}
+
+/* the delete-range prompt: like cs_prompt_str but a leading '>' keeps
+ * the prefilled row/column (delete_cmd's R/C fields) */
+int cs_prompt_range(const char *pr, const char *dflt, char *out, int maxlen)
+{
+    return prompt_str_core(pr, dflt, out, maxlen, 1);
 }
 
 /* helper to paint the prompt cursor position (shared by the coord and
@@ -633,7 +660,10 @@ static void prompt_edit_paint(const char *pr, const char *shown)
  * its place), and the cursor KEYS move the sheet cursor while the
  * prompt is up.  setmode: 1 = the field holds ONE coordinate (@
  * replaces the input), 0 = append it (range fields: "B3" then ">" then
- * @).  Everything else behaves exactly like cs_prompt_str. */
+ * @), 2 = like 0 plus a '>' as the FIRST keystroke seeds the buffer
+ * with dflt + ">" (the delete From-To prompt keeps its prefilled
+ * coordinate as the left side).  Everything else behaves exactly like
+ * cs_prompt_str. */
 int cs_prompt_coord(const char *pr, const char *dflt, char *out,
                     int maxlen, int setmode)
 {
@@ -694,6 +724,15 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
         if (ch == 4) { cs_move_cursor(1, 0); cs_draw(); continue; }
         if (ch == KEY_BACKSPACE || ch == 8 || ch == 127) {
             if (n > 0) buf[--n] = '\0';
+            continue;
+        }
+        if (ch == '>' && setmode == 2 && n == 0 && dflt && dflt[0]) {
+            /* keep the prefilled coordinate as the left side */
+            int i;
+            for (i = 0; dflt[i] && n < (int) sizeof(buf) - 2; i++)
+                buf[n++] = dflt[i];
+            if (n < (int) sizeof(buf) - 2) buf[n++] = '>';
+            buf[n] = '\0';
             continue;
         }
         if (ch >= 32 && ch < 127 && n < (int) sizeof(buf) - 2) {

@@ -52,6 +52,8 @@ void   cs_delete_columns(int c1, int c2);
 void   cs_clear_range(int c1, int r1, int c2, int r2);  /* ;D F clear */
 int    cs_prompt_coord(const char *pr, const char *dflt, char *out,
                        int maxlen, int setmode);  /* @-aware coord prompt */
+int    cs_prompt_range(const char *pr, const char *dflt, char *out,
+                       int maxlen);   /* leading '>' keeps the prefill */
 
 extern int  entriesUsed;
 extern int  orderTB;            /* ;O recalculation order */

@@ -480,7 +480,7 @@ static void delete_cmd(void)
     if (ch == 'R' || ch == 'r') {
         int hit;
         sprintf(dflt, "%d", curRow + 1);
-        if (cs_prompt_str("Delete rows (1>5)", dflt, inp, (int) sizeof(inp)) < 0) return;
+        if (cs_prompt_range("Delete rows (From>To)", dflt, inp, (int) sizeof(inp)) < 0) return;
         redraw();
         if (!parse_del_range(inp, 1, &r1, &r2))
             { cs_msg("bad range coord"); return; }
@@ -495,7 +495,7 @@ static void delete_cmd(void)
     } else if (ch == 'C' || ch == 'c') {
         int hit;
         cs_col_name(curCol, dflt);
-        if (cs_prompt_str("Delete columns (A>D)", dflt, inp, (int) sizeof(inp)) < 0) return;
+        if (cs_prompt_range("Delete columns (From>To)", dflt, inp, (int) sizeof(inp)) < 0) return;
         redraw();
         if (!parse_del_range(inp, 0, &c1, &c2))
             { cs_msg("bad range coord"); return; }
@@ -510,7 +510,7 @@ static void delete_cmd(void)
     } else if (ch == 'F' || ch == 'f') {
         cs_col_name(curCol, dflt);
         sprintf(dflt + strlen(dflt), "%d", curRow + 1);
-        if (cs_prompt_coord("From-To (A1>C3)", dflt, inp, (int) sizeof(inp), 0) < 0) return;
+        if (cs_prompt_coord("Delete (From>To)", dflt, inp, (int) sizeof(inp), 2) < 0) return;
         redraw();
         if (!cs_parse_range(inp, &c1, &r1, &c2, &r2)) {
             if (!cs_parse_coord(inp, &c1, &r1)) { cs_msg("bad range coord"); return; }

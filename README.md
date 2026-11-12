@@ -276,12 +276,14 @@ E Edge    L Load      Q Quit      G/TAB Goto
   the row label, locked columns show `*` bars in the column header).
 - Delete (`;D`: `A)ll R)ow C)olumn F)rom-To E)ntry`) checks dependencies
   first: `ERROR: would delete ref(s) at ...`, with clear-all requiring
-  `verify Y/N`.  Rows and columns accept a RANGE, prefilled with the
-  current row/column: `1>5` deletes rows 1..5 inclusive, `A>D` deletes
-  columns A..D, and a full coordinate range also works (`A1>C3` = rows
-  1..3 / columns A..C — only the part relevant to the operation is
-  taken).  The new `F)rom-To` option clears every cell in a rectangle
-  (`A1>C3`, `@`-aware) like `;D E` per cell — no dependency check, but
+  `verify Y/N`.  Rows and columns prompt `Delete rows (From>To)` /
+  `Delete columns (From>To)`, prefilled with the current row/column: a
+  leading `>` keeps the prefill (`2>5` from prefill `2`), other keys
+  replace it; `1>5` deletes rows 1..5 inclusive, `A>D` deletes columns
+  A..D, and a full coordinate range also works (`A1>C3` = rows 1..3 /
+  columns A..C — only the part relevant to the operation is taken).
+  The `F)rom-To` option (`Delete (From>To)`) clears every cell in a
+  rectangle (`@`-aware) like `;D E` per cell — no dependency check, but
   it asks `verify Y/N` (user-extended 2026-11, not in the manual).
 - Print writes reports to files (`NAME.PRN`), to the `PRINTER:` device
   (written to `CALCSTAR.PRN`), to `>file` as comma-delimited export, or to
