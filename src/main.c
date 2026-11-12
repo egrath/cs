@@ -1207,6 +1207,22 @@ static void run_tests(void)
         setv(1, 0, "1");                        /* B1 = 1 */
         setv(1, 4, "8");                        /* B5 = 8 */
         ckc("dyn VAL lookup", "VAL(REF(VAL(B1)+1,5))", "+8.0000000000000E+1");
+        /* COLNUM: the 1-based column index (scoped designator parse) */
+        ckc("COLNUM string", "COLNUM(\"A\")", "+1.0000000000000E+1");
+        ckc("COLNUM AB", "COLNUM(\"AB\")", "+2.8000000000000E+2");
+        ckc("COLNUM DW", "COLNUM(\"DW\")", "+1.2700000000000E+3");
+        ckc("COLNUM bare", "COLNUM(AB)", "+2.8000000000000E+2");
+        ckc("COLNUM lowercase", "COLNUM(ab)", "+2.8000000000000E+2");
+        ckc("COLNUM ref", "COLNUM(REF(2,3))", "+2.0000000000000E+1");
+        ckc("COLNUM cell ref", "COLNUM(A1)", "+1.0000000000000E+1");
+        cke("COLNUM beyond DW", "COLNUM(\"DX\")", 1);
+        cke("COLNUM with digits", "COLNUM(\"A1\")", 1);
+        cke("COLNUM empty str", "COLNUM(\"\")", 1);
+        cke("COLNUM wrong type", "COLNUM(5)", 6);
+        cke("COLNUM no arg", "COLNUM()", 3);
+        /* combined with REF: the column of AC5 (set first) */
+        setv(28, 4, "8");                    /* AC5 = 8 */
+        ckc("COLNUM in REF", "VAL(REF(COLNUM(\"AB\")+1,5))", "+8.0000000000000E+1");
         cs_clear_all();
     }
 

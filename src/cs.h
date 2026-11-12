@@ -76,7 +76,6 @@ Cell  *cs_cell(int col, int rw);
 char  *cs_strdup(const char *s);
 int    cs_name_to_col(const char *s);
 void   cs_col_name(int col, char *buf);
-void   cs_col_hdr(int col, char *buf, int outn);
 int    cs_parse_coord(const char *s, int *col, int *row);
 int    cs_parse_range(const char *s, int *c1, int *r1, int *c2, int *r2);
 int    cs_coord_text(const char *s, int *c1, int *r1, int *c2, int *r2);

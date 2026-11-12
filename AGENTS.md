@@ -220,12 +220,17 @@ follow the original. Read this file before changing anything.
     under `;R A` instead of running to the 1000-pass limit).
     `cs_recalc_last_passes` records the last driver run's pass count
     (diagnostics/tests).
-  - **Column headers show the REF index** (user-ext 2026-11, visual
-    aid only): `cs_col_hdr()` renders "A (1)", "B (2)", ..., "AA (27)"
-    in the Col> row when it fits the column width (narrow columns
-    keep the plain name).  `cs_col_name` stays pure for everything
-    that READS coordinates.  FLAGGED visual deviation: the idle-screen
-    reference cs1.txt was REGENERATED for it (the Col> line only).
+  - **COLNUM(x)** (user-ext 2026-11): the 1-based column index.  The
+    argument parses SCOPED: a 1-2-letter word cleanly ended (not
+    followed by '(') is a column designator (`COLNUM(AB)`), else a
+    general expression — a quoted designator (`COLNUM("AB")`) or a
+    Reference (`COLNUM(REF(2,3))`, `COLNUM(A1)` — the row ignored).
+    colnum_word() validates 1..127 ("DX" -> Error 1; a designator with
+    digits/empty -> Error 1), wrong types -> 6, no arg -> 3.  NOTE: a
+    column-header display showing the index ("A (1)") was BRIEFLY
+    implemented and then UNDONE at the user's request ("more faithful
+    to the user interface") — cs_col_hdr is gone, cs1.txt's Col> line
+    is the ORIGINAL capture again.
   - **Dynamic ranges in the command dialogs**: the static coordinate
     parse is tried first; on failure the dialogs evaluate the text as
     an expression via the new `cs_eval_range()` (a Reference or Range

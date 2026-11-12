@@ -262,17 +262,7 @@ static void draw_headers(void)
         cchr(line_colhdr, x - 1, c < lockCols ? '*' : '|');
         if (x + colw[c] > cs_scrw()) break;   /* no clipped names */
         cs_col_name(c, nambuf);
-        {
-            /* the header shows the REF index ("A (1)") when it fits
-             * the column's width (user-ext 2026-11, visual only);
-             * narrow columns keep the plain name */
-            char hdr[12];
-            cs_col_hdr(c, hdr, (int) sizeof(hdr));
-            if ((int) strlen(hdr) <= colw[c])
-                cputn(line_colhdr, x, hdr, colw[c]);
-            else
-                cputn(line_colhdr, x, nambuf, 2);
-        }
+        cputn(line_colhdr, x, nambuf, 2);
     }
 }
 

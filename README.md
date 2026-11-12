@@ -180,6 +180,25 @@ fractional coordinates (`REF(1,1.5)` → Error 0), zero or negative
 rows 1..255 — `REF(128,1)`, `REF(1,256)` → Error 1), wrong types
 (`REF("x",1)` → Error 6), wrong argument counts (Error 3).
 
+### COLNUM(x) — the column index
+
+The 1-based column number (what `REF`'s first argument expects).  The
+argument is a column designator — a bare `A`..`DW` word, a quoted
+designator, or any reference:
+
+```text
+COLNUM("A")             1
+COLNUM("AB")            28
+COLNUM("DW")            127
+COLNUM(AB)              the bare designator (COLNUM only)
+COLNUM(REF(2,3))        2
+COLNUM(A1)              1   (the row is ignored)
+REF(COLNUM("AB")+1,5)   AC5 - arithmetic on the index
+```
+
+Unknown designators (`"DX"`, `"ZZ"`, `"A1"`, empty) are Error 1,
+wrong types Error 6, a missing argument Error 3.
+
 ### Dynamic ranges: `>` between references
 
 `>` builds a **Range** when both operands are references; between
@@ -401,16 +420,10 @@ nothing), ESC cancels.
  ^S Left  ^D Right |C Copy   H Help    O Order  S Save   = Lock   |? Evaluate
  ^E Up    ^X Down  |D Delete I Insert  P Print  W What   ? Space  |^ Data Togl
  ^Z Col A next row |E Edge   L Load    Q Quit   G or <TAB> Goto   |<ESC>Cancel
-Col>|A (1)     |B (2)     |C (3)     |D (4)     |E (5)     |F (6)     |
+Col>|A         |B         |C         |D         |E         |F         |
 Row+--------------------------------------------------------------------------
   1| ... cell contents ... (> and < flank the current cell)
   2|
-
-The column headers show the `REF` index in parentheses — `A (1)`,
-`B (2)`, ..., `AA (27)` — a visual aid for `REF(col,row)`; narrow
-columns fall back to the plain name.  (Flagged visual deviation from
-the 1982 screen; the idle-screen reference `cs1.txt` was regenerated
-for it.)
    +--------------------------------------------------------------------------
 [filename  ]  cursor:    B3      current:    B3     L-R
 current||       type: numeric
