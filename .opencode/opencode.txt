@@ -1,6 +1,41 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "turing": iteration stability fix — 2026-11-12):
+- USER BUG REPORT: the sheet A3=5, A4=10, C4=(A3<A4):SET(A3,A3+1);"counting";
+  RECALC(A3):"done" — ;R E counted fine, but ;R A spammed "DBG mark" (a
+  leftover debug fprintf in cs_mark_sheet_change) and ran ~1000 passes.
+- ROOT CAUSE (real bug): cs_recalc_entry compared the stability via
+  csn_cmp(&c->val,&old) AFTER csn_zero(&c->val) — i.e. it compared ZERO
+  against the old value, so EVERY nonzero stored cell (A3=10, A4=10)
+  reported a phantom change on every pass and the loop never broke.
+  The --test countdown passed only because its fixed point was all zeros.
+  FIX: capture old, evaluate, then compare the NEW value against OLD
+  (csn_cmp(&val,&old)) before storing; also track strres changes
+  (appeared/vanished/content-diff) so a loop whose only per-pass change
+  is the string result still keeps the pass dirty.  The --test pins the
+  user's exact sheet now ("iteration settles: A3 = 10" / "C4 = done").
+- DBG removal: ALL temporary fprintf traces are gone (checked grep DBG src/).
+- INTERACTIVE VERIFICATION (headless traces in the pty log): the commit of
+  the user's formula ran driver passes 1..6 (SET passes for 6,7,8,9,10,
+  pass 5 = the "counting"->"done" strres change, pass 6 changed=0 ->
+  STABILIZED, no ENTER pressing, clean screen); ;R A on the settled sheet
+  = exactly one pass (always_one=1), changed=0, returns by itself.
+- HARNESS GOTCHA (important): a pty WRITE deadlock — when the app's
+  output burst exceeds the pty buffer while nobody reads (script in
+  send/sleep/log_file switch), the app blocks on write and later sends
+  queue up unread: keys "vanish", screens freeze mid-repaint, later
+  keystrokes cascade into wrong states.  Recipes: (a) `expect timeout`
+  drain BEFORE every send; (b) log_file switches are dead zones — the
+  app can block there forever if it paints during the switch; (c) never
+  anchor on strings the app interleaves with inverse-video escapes
+  ("done<" never exists in the raw; "Calculating ... (pass N)" is one
+  inverse chunk and IS anchorable); (d) deterministic anchors beat
+  visual ones — the user's sheet settles at pass 6 by construction.
+  (e) expect connects child STDERR to the pty, so fprintf traces DO land
+  in log files — great for diagnosing, but they change the output volume
+  and hence the deadlock timing (remove traces before judging timings).
+
 ## BATCH (branch "turing": side effects + extended conditionals + iteration):
 - USER SPEC: SET(cell,value) / RECALC() / RECALC(cell) as side-effect
   functions (no value, only as statements in conditional branches);

@@ -639,6 +639,27 @@ static void run_tests(void)
             { printf("FAIL countdown marker type=%d strres='%s'\n",
                      c->type, c->strres ? c->strres : ""); fails++; }
         else printf("ok   countdown marker A12 = finished\n");
+        /* regression (2026-11): the stability check must compare the
+         * NEW value against the OLD one (it compared a zeroed value,
+         * so any nonzero fixed point kept the passes running to the
+         * limit); the user's exact sheet: A3=5, A4=10, C4 counts up
+         * and settles on the string "done" */
+        cs_clear_all();
+        csn_parse("5", &v);
+        cs_set_num(cs_cell(0, 2), "5", &v, 0, NULL);    /* A3 = 5 */
+        csn_parse("10", &v);
+        cs_set_num(cs_cell(0, 3), "10", &v, 0, NULL);   /* A4 = 10 */
+        cs_commit_entry(2, 3,
+            "(A3<A4):SET(A3,A3+1);\"counting\";RECALC(A3):\"done\"");
+        csn_canon(&cs_cell(0, 2)->val, g, (int) sizeof(g));
+        if (strcmp(g, "+1.0000000000000E+2"))
+            { printf("FAIL settle A3 got %s\n", g); fails++; }
+        else printf("ok   iteration settles: A3 = 10\n");
+        c = cs_cell(2, 3);
+        if (c->iserr || !c->strres || strcmp(c->strres, "done"))
+            { printf("FAIL settle C4 strres='%s'\n",
+                     c->strres ? c->strres : ""); fails++; }
+        else printf("ok   iteration settles: C4 = done\n");
     }
 
     /* percent postfix + arithmetic */

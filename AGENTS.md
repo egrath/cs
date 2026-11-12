@@ -89,8 +89,13 @@ follow the original. Read this file before changing anything.
   pass changes no stored value, the 1000-pass limit (CS_MAX_PASSES) or
   ESC (`User interrupted execution`; the limit shows
   `Recalculation limit reached`; the loop paints `Calculating ...
-  (pass N)`).  cs_recalc_entry tracks value changes for the stability
-  check; cs_mark_sheet_change marks SET writes.  SET's value is
+  (pass N)`).  cs_recalc_entry is the stability sensor: it compares the
+  NEW stored value against the OLD one (2026-11 bugfix — it once
+  compared a zeroed value, so any nonzero fixed point kept the passes
+  running to the 1000 limit) and counts a changed string result
+  (`strres`, e.g. "counting"→"done") as a change too.  The --test pins
+  the user's exact settling sheet (A3=5, A4=10, C4 counts to "done").
+  cs_mark_sheet_change marks SET writes.  SET's value is
   evaluated before the write; the justification escapes \r/\l/\c come
   inside the string; the target is a plain cell specifier and a normal
   reference (shifts on copy/insert/delete).  ';' typed inside an entry

@@ -17,7 +17,6 @@ static int cs_eval_aborted;         /* KW_ABORT seen during a pass */
 
 void cs_mark_sheet_change(void)
 {
-    fprintf(stderr, "DBG mark\n");
     cs_sheet_changed = 1;
 }
 
@@ -63,11 +62,12 @@ int cs_recalc_entry(int col, int rw)
 {
     Cell *c = cs_cell(col, rw);
     Csn val, old;
-    char *str = NULL;
-    int err;
+    char *str = NULL, *oldstr;
+    int err, changed;
     if (!c || c->type != CE_NUM || !c->cont) return 0;
     if (cs_is_inputf(c)) return 0;      /* recalculate does not apply */
     csn_copy(&old, &c->val);
+    oldstr = c->strres;                 /* kept for the change check */
     err = cs_eval_formula(c->cont, &val, &str);
     if (err == KW_ABORT) {
         /* user interrupt: the cell keeps its previous value, the
@@ -75,21 +75,28 @@ int cs_recalc_entry(int col, int rw)
         cs_eval_aborted = 1;
         return KW_ABORT;
     }
-    if (c->strres) { free(c->strres); c->strres = NULL; }
-    csn_zero(&c->val);
     if (err) {
+        if (oldstr) free(oldstr);
+        c->strres = NULL;
         if (!c->iserr) cs_sheet_changed = 1;    /* an error is a change */
         c->iserr = 1;
         errq_add(col, rw, err);         /* queue for ";R" replay */
-    } else {
-        /* stability: a stored value that differs marks the pass dirty */
-        if (c->iserr || csn_cmp(&c->val, &old) != 0)
-            cs_sheet_changed = 1;
-        csn_copy(&c->val, &val);
-        c->iserr = 0;
-        if (str) c->strres = str;
+        return err;
     }
-    return err;
+    /* stability: the NEW stored value (or string result) differing
+     * from the OLD one marks the pass dirty */
+    changed = c->iserr || csn_cmp(&val, &old) != 0;
+    if (!changed && ((oldstr != NULL) != (str != NULL)))
+        changed = 1;                    /* string result appeared/vanished */
+    else if (!changed && oldstr && str && strcmp(oldstr, str) != 0)
+        changed = 1;                    /* the string result changed */
+    if (oldstr) free(oldstr);
+    if (changed) cs_sheet_changed = 1;
+    csn_copy(&c->val, &val);
+    c->iserr = 0;
+    c->strres = NULL;
+    if (str) c->strres = str;
+    return 0;
 }
 
 /* the one-pass body of the recalculation (locked rows first) */
