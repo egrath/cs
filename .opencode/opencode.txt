@@ -1,6 +1,13 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## STATE (2026-11-12): "turing" was fast-forwarded into "master"
+- master = a40ba66..60f1101 (side effects + iteration + stability fix +
+  hands-off iteration + live per-pass display + overrun message +
+  scrolling edit field) — pushed to origin.  The "turing" branch is
+  kept as the historical pointer (same commit).  Future batches branch
+  from master.
+
 ## BATCH (branch "turing": overrun message + scrolling edit field — 2026-11-12):
 - USER REQUESTS: (1) when the 1000-pass iteration cap is reached, an
   error message must stay visible (success vs overrun must be
