@@ -28,7 +28,6 @@ typedef struct {
 typedef struct {
     const char *p;
     int depth;
-    int nocond;      /* inside a conditional branch: ':' is a terminator */
 } P;
 
 static void val_free(Val *v)
@@ -764,7 +763,7 @@ static Val parse_mul(P *ps)
         int op, err;
         memset(&b, 0, sizeof(b));
         skip_ws(&p);
-        if (*p == ':' && ps->nocond) break;
+        if (*p == ':') break;
         if (*p != '*' && *p != '/') break;
         op = (*p == '*') ? 0 : 1;
         ps->p = p + 1;
@@ -800,7 +799,7 @@ static Val parse_add(P *ps)
         int op, err;
         memset(&b, 0, sizeof(b));
         skip_ws(&p);
-        if (*p == ':' && ps->nocond) break;
+        if (*p == ':') break;
         if (*p != '+' && *p != '-') break;
         op = *p;
         if (p[1] == '\0') { val_free(&a); val_err(&a, 7); ps->p = p + 1; return a; }
@@ -839,7 +838,7 @@ static Val parse_cmp(P *ps)
         int op, r;
         memset(&b, 0, sizeof(b));
         skip_ws(&p);
-        if (*p == ':' && ps->nocond) return a;
+        if (*p == ':') return a;
         if (*p == '<') {
             if (p[1] == '=') op = 2;       /* <= */
             else if (p[1] == '>') op = 4;  /* <> */
@@ -866,6 +865,238 @@ static Val parse_cmp(P *ps)
     }
 }
 
+/* ---- conditional branches and side-effect statements ---------------- */
+
+/* the side-effect state (eval.c): RECALC()/RECALC(cell) request that
+ * the calling context iterates whole-sheet passes */
+extern int cs_recalc_requested;
+
+/* poll for an ESC keystroke (screen.c, non-blocking); 1 = ESC seen */
+extern int cs_poll_escape(void);
+
+/* execute SET(cell,value): the value is fully evaluated first, then
+ * the target is written (SET(A1,A1+1) uses A1's previous value) */
+static void exec_set_stmt(const char *args, int *err)
+{
+    char tbuf[CS_EDITMAX + 4], vbuf[CS_EDITMAX + 4];
+    const char *p;
+    int depth = 0, inq = 0, tl, ln, tcol, trow;
+    char just;
+    Cell *cell;
+    P sub;
+    Val v;
+
+    *err = -1;
+    /* split the two arguments at the top-level ',' (quote-aware) */
+    p = args;
+    while (*p == ' ') p++;
+    ln = -1; depth = 0; inq = 0;
+    for (; *p; p++) {
+        if (*p == '"') inq = !inq;
+        else if (!inq && *p == '(') depth++;
+        else if (!inq && *p == ')') depth--;
+        else if (!inq && depth == 0 && *p == ',') { ln = (int) (p - args); break; }
+    }
+    if (ln < 0) { *err = 7; return; }   /* SET needs exactly two arguments */
+    tl = ln;
+    p = args + ln + 1;
+    while (*p == ' ') p++;
+    ln = (int) strlen(p);
+    while (ln > 0 && p[ln - 1] == ' ') ln--;
+    if (tl >= (int) sizeof(tbuf) || ln >= (int) sizeof(vbuf)) { *err = 7; return; }
+    memcpy(tbuf, args, (size_t) tl);
+    tbuf[tl] = '\0';
+    memcpy(vbuf, p, (size_t) ln);
+    vbuf[ln] = '\0';
+
+    /* the target is a plain cell specifier */
+    if (!cs_parse_coord(tbuf, &tcol, &trow)) { *err = 1; return; }
+    cell = cs_cell(tcol, trow);
+    if (!cell) { *err = 1; return; }
+
+    /* the value: fully evaluated BEFORE the target is modified */
+    memset(&sub, 0, sizeof(sub));
+    sub.p = vbuf;
+    v = parse_condexpr(&sub);
+    if (!v.good) {
+        *err = v.err;                   /* 0 = the value-range class */
+        val_free(&v);
+        return;
+    }
+    while (*sub.p == ' ') sub.p++;
+    if (*sub.p) { val_free(&v); *err = 7; return; }
+
+    /* the entry-pool budget for a newly allocated cell */
+    if (cell->type == CE_EMPTY && !cs_ensure_room()) {
+        cs_msg("MEMORY IS TOO LOW");
+        *err = 0;                       /* the value-range class */
+        val_free(&v);
+        return;
+    }
+
+    if (v.isstr) {
+        /* text: an optional \r / \l / \c prefix sets the justification */
+        const char *txt = v.str;
+        just = 'L';
+        if (txt[0] == '\\' && (txt[1] == 'r' || txt[1] == 'R')) { just = 'R'; txt += 2; }
+        else if (txt[0] == '\\' && (txt[1] == 'l' || txt[1] == 'L')) { just = 'L'; txt += 2; }
+        else if (txt[0] == '\\' && (txt[1] == 'c' || txt[1] == 'C')) { just = 'C'; txt += 2; }
+        cs_set_text(cell, txt, just);
+    } else {
+        /* numeric: the cell becomes a plain value (no reference text) */
+        char fb[64];
+        csn_fmt_fixed(&v.num, 12, fb, (int) sizeof(fb));
+        if (!fb[0]) csn_fmt_sci(&v.num, 12, fb, (int) sizeof(fb));
+        cs_set_num(cell, fb, &v.num, 0, NULL);
+    }
+    val_free(&v);
+    cs_recount_entries();
+    cs_mark_sheet_change();
+}
+
+/* execute RECALC() / RECALC(cell): both mark the recalculation request
+ * (the whole-sheet passes re-evaluate every cell, so the requested
+ * cell is included - flagged deviation from the letter of the spec) */
+static void exec_recalc_stmt(const char *args, int *err)
+{
+    const char *p = args;
+    int tcol, trow;
+    *err = -1;
+    while (*p == ' ') p++;
+    if (*p) {
+        if (!cs_parse_coord(p, &tcol, &trow)) { *err = 1; return; }
+    }
+    cs_recalc_requested = 1;
+}
+
+/* execute one statement piece.  Returns 1 = the piece was a
+ * side-effect call (*err: -1 = ok, else the error code), 0 = not a
+ * side-effect call (a value piece). */
+static int side_effect_stmt(const char *piece, int *err)
+{
+    char buf[CS_EDITMAX + 4];
+    int sl, isset, isrec;
+    const char *kw;
+    *err = -1;
+    while (*piece == ' ') piece++;
+    sl = (int) strlen(piece);
+    while (sl > 0 && piece[sl - 1] == ' ') sl--;
+    if (sl < 4 || sl >= (int) sizeof(buf)) return 0;
+    memcpy(buf, piece, (size_t) sl);
+    buf[sl] = '\0';
+    if (buf[sl - 1] != ')') return 0;
+    isset = (toupper((unsigned char) buf[0]) == 'S' &&
+             toupper((unsigned char) buf[1]) == 'E' &&
+             toupper((unsigned char) buf[2]) == 'T' &&
+             buf[3] == '(');
+    isrec = (toupper((unsigned char) buf[0]) == 'R' &&
+             toupper((unsigned char) buf[1]) == 'E' &&
+             toupper((unsigned char) buf[2]) == 'C' &&
+             toupper((unsigned char) buf[3]) == 'A' &&
+             toupper((unsigned char) buf[4]) == 'L' &&
+             toupper((unsigned char) buf[5]) == 'C' &&
+             buf[6] == '(');
+    if (!isset && !isrec) return 0;
+    kw = isset ? buf + 3 : buf + 6;
+    buf[sl - 1] = '\0';                 /* drop the closing ')' */
+    if (isset) exec_set_stmt(kw + 1, err);
+    else exec_recalc_stmt(kw + 1, err);
+    return 1;
+}
+
+/* a conditional branch as a statement list: pieces split at ';'
+ * (depth- and quote-aware).  Exactly one piece is the value-producing
+ * expression; the others must be side-effect calls, executed in
+ * written order.  Returns 0 on success (the result in *rv), else the
+ * error code (13 = user interrupt). */
+static int run_branch(char *text, Val *rv)
+{
+    char *p = text;
+    int values = 0;
+    const char *w = text;
+    val_free(rv);
+    memset(rv, 0, sizeof(*rv));
+    csn_zero(&rv->num);
+    while (*w == ' ') w++;
+    if (!*w) {                          /* an empty branch assigns 0 */
+        rv->good = 1;
+        return 0;
+    }
+    for (;;) {
+        char *q = p;
+        int depth = 0, inq = 0, save, r, serr;
+        while (*q) {
+            if (*q == '"') inq = !inq;
+            else if (!inq && *q == '(') depth++;
+            else if (!inq && *q == ')') depth--;
+            else if (!inq && depth == 0 && *q == ';') break;
+            q++;
+        }
+        save = *q;
+        *q = '\0';
+        r = side_effect_stmt(p, &serr);
+        if (r == 2) {                       /* a failing side-effect call */
+            val_free(rv);
+            memset(rv, 0, sizeof(*rv));
+            csn_zero(&rv->num);
+            val_err(rv, serr);
+            return 1;
+        }
+        if (r == 0) {
+            /* the value piece: exactly one per branch */
+            P sub;
+            Val v;
+            if (values) { val_err(rv, 7); return 1; }
+            memset(&sub, 0, sizeof(sub));
+            sub.p = p;
+            v = parse_condexpr(&sub);
+            if (!v.good) {
+                int e = v.err;
+                val_free(&v);
+                val_err(rv, e);
+                return 1;
+            }
+            while (*sub.p == ' ') sub.p++;
+            if (*sub.p) { val_free(&v); val_err(rv, 7); return 1; }
+            *rv = v;
+            values++;
+        }
+        if (cs_poll_escape()) {             /* interrupt between statements */
+            val_free(rv);
+            memset(rv, 0, sizeof(*rv));
+            csn_zero(&rv->num);
+            val_err(rv, KW_ABORT);
+            cs_msg("User interrupted execution");
+            return 1;
+        }
+        *q = (char) save;
+        if (!save) break;
+        p = q + 1;
+    }
+    if (values != 1) { val_err(rv, 7); return 1; }
+    return 0;
+}
+
+/* the extent of a conditional branch starting at q: the matching ':'
+ * at paren depth 0 (outside quotes), or the enclosing ',' / ')', or
+ * the string end.  *term receives the terminator (or '\0'). */
+static const char *branch_end(const char *q, char *term)
+{
+    int depth = 0, inq = 0;
+    *term = '\0';
+    for (; *q; q++) {
+        if (*q == '"') inq = !inq;
+        else if (!inq && *q == '(') depth++;
+        else if (!inq && *q == ')') {
+            if (depth == 0) { *term = ')'; return q; }
+            depth--;
+        }
+        else if (!inq && depth == 0 && *q == ',') { *term = ','; return q; }
+        else if (!inq && depth == 0 && *q == ':') { *term = ':'; return q; }
+    }
+    return q;
+}
+
 static Val parse_condexpr(P *ps)
 {
     Val cond;
@@ -875,36 +1106,43 @@ static Val parse_condexpr(P *ps)
     {
         const char *p = ps->p;
         skip_ws(&p);
-        if (*p == ':' && !ps->nocond) {
+        if (*p == ':') {
+            /* DEFERRED branch execution: the branch texts are copied
+             * and only the SELECTED one is parsed and executed - the
+             * unselected branch must not run its side effects */
+            char tbuf[CS_EDITMAX + 4], fbuf[CS_EDITMAX + 4];
+            const char *q = p + 1, *fe;
+            char term;
+            int tl, fl, ctrue, r;
             Val t, f;
-            int ctrue;
-            const char *q;
-            memset(&t, 0, sizeof(t));
-            ps->nocond = 1;
-            ps->p = p + 1;
-            skip_ws(&ps->p);
-            q = ps->p;
-            if (*q == ':' || *q == '\0') {
-                t.good = 1;   /* empty true-branch assigns 0 */
-                csn_zero(&t.num);
+            q = branch_end(q, &term);
+            tl = (int) (q - (p + 1));
+            if (tl >= (int) sizeof(tbuf)) tl = (int) sizeof(tbuf) - 1;
+            memcpy(tbuf, p + 1, (size_t) tl);
+            tbuf[tl] = '\0';
+            if (term == ':') {
+                fe = branch_end(q + 1, &term);
+                fl = (int) (fe - (q + 1));
+                if (fl >= (int) sizeof(fbuf)) fl = (int) sizeof(fbuf) - 1;
+                memcpy(fbuf, q + 1, (size_t) fl);
+                fbuf[fl] = '\0';
+                ps->p = fe;             /* the enclosing context continues */
             } else {
-                t = parse_condexpr(ps);
+                fbuf[0] = '\0';
+                ps->p = q;
             }
-            if (!t.good) { ps->nocond = 0; val_free(&t); val_free(&cond); return t; }
-            skip_ws(&ps->p);
-            if (*ps->p == ':') {
-                ps->p++;
-                f = parse_condexpr(ps);
-                if (!f.good) { ps->nocond = 0; val_free(&f); val_free(&t); val_free(&cond); return f; }
-            } else {
-                memset(&f, 0, sizeof(f));
-                f.good = 1;                 /* missing else -> 0 */
-                csn_zero(&f.num);
-                f.isbool = 0;
-            }
-            ps->nocond = 0;
             ctrue = cond.isstr ? (cond.str && cond.str[0])
                                : !csn_is_zero(&cond.num);
+            memset(&t, 0, sizeof(t)); csn_zero(&t.num);
+            memset(&f, 0, sizeof(f)); csn_zero(&f.num);
+            t.good = 1; f.good = 1;     /* empty branches assign 0 */
+            r = run_branch(ctrue ? tbuf : fbuf, ctrue ? &t : &f);
+            if (r) {
+                /* the Val carries the error code (13 = user interrupt) */
+                if (ctrue) { val_free(&f); val_free(&cond); return t; }
+                val_free(&t); val_free(&cond);
+                return f;
+            }
             if (ctrue) { val_free(&f); val_free(&cond); return t; }
             val_free(&t); val_free(&cond);
             return f;
@@ -936,7 +1174,6 @@ int cs_eval_formula(const char *s, Csn *val, char **str)
     csn_zero(&v.num);
     ps.p = buf;
     ps.depth = 0;
-    ps.nocond = 0;
     v = parse_condexpr(&ps);
     if (!v.good) {
         int e = v.err;

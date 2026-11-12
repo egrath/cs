@@ -1,6 +1,64 @@
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 
+## BATCH (branch "turing": side effects + extended conditionals + iteration):
+- USER SPEC: SET(cell,value) / RECALC() / RECALC(cell) as side-effect
+  functions (no value, only as statements in conditional branches);
+  branches as ;-separated statement lists (0+ side effects, exactly one
+  value piece, executed in order, only the selected branch runs);
+  RECALC = a REQUEST: the drivers iterate whole-sheet passes until a
+  pass changes no stored value / 1000 passes (CS_MAX_PASSES) / ESC
+  ("User interrupted execution"; the limit: "Recalculation limit
+  reached"); the status: "Calculating ... (pass N)".  All decisions:
+  agreed (see the plan in the transcript).
+- IMPLEMENTATION:
+  * parse_condexpr REWRITTEN: DEFERRED branch execution (the parser is
+    a direct evaluator - the OLD code parsed BOTH branches; the
+    unselected branch must not run its side effects): branch_end()
+    scans the branch extents (the ':' / ',' / ')' at depth 0 outside
+    quotes); the branch texts are COPIED and sub-parsed in isolation
+    (P sub) - the nocond flag is GONE (nested conditionals now nest
+    properly inside parentheses; an unparenthesized ':' belongs to the
+    outermost conditional).
+  * run_branch(text, rv): the statement splitter (';' depth/quote
+    aware) + side_effect_stmt (SET/RECALC detection) + exec_set_stmt
+    (the value parsed first, then cs_set_num/cs_set_text with the
+    \r/\l/\c escapes; the target = cs_parse_coord; cs_ensure_room for
+    a new cell; cs_recount_entries + cs_mark_sheet_change) +
+    exec_recalc_stmt (the request flag).  Exactly one value piece per
+    branch else Error 7; a side effect as an operand: the fn table has
+    NO SET/RECALC entries -> Error 4 (unknown fn).
+  * eval.c: cs_run_recalc_passes(always_one): the driver (nodelay ESC
+    poll, cs_msg("Calculating ... (pass %d)") per pass, the stability =
+    a pass changing no stored value, the 1000-pass cap -> "Recalculation
+    limit reached", ESC -> "User interrupted execution");
+    cs_recalc_entry tracks the value changes (the stability) +
+    KW_ABORT (13) = the user interrupt (the cell keeps its old value,
+    no errq, no sticky).  Drivers: cs_recalc_all(always_one=1); the
+    commit's numeric path + the ?-calculator: cs_run_recalc_passes(0)
+    after the evaluation; the KW_ABORT commits return 0 (the cell
+    untouched, no sticky).  ';' typed INSIDE an entry now INSERTS the
+    separator (the menu stays available when idle - main.c).
+  * screen.c: cs_poll_escape (nodelay+getch, 1 = ESC) - the parser's
+    per-statement poll.
+- TESTS: --test +12 checks (SET eval-first, the text escapes, the
+  branch exclusivity, the error mapping, the parenthesized nesting,
+  the countdown iteration 5..0 via cs_recalc_all) - all pass (188 ok);
+  pty: the limit case (a never-stabilizing incrementer -> "Recalculation
+  limit reached"), a working countdown (B2 -> "finished"), the ESC
+  interrupt mid-loop ("User interrupted execution") - all matched.
+  cs1.txt idle EXACT. **On the branch "turing"** (not master).
+- HARNESS LESSONS: (1) expect timeout does NOT abort; exit 0 proves
+  nothing - match distinctive strings only; (2) the script's own ESC
+  keys RACE the loops (the driver's ESC-poll catches them mid-run -
+  the it2's "0.00" matched at pass 1 and the ESC killed the countdown
+  at pass 2): wait for the countdown's END marker (A1's "0.00" paints
+  only after the loop) before sending ESC; (3) add expect-timeout
+  drains before log_file switches (the final repaint otherwise lands
+  in the next window); (4) test data must not be coordinate-shaped
+  ("R1"/"T4" are real cells - the ref shifter/dep check treat them as
+  references); (5) log_file captures stderr too (DBG traces work).
+
 ## BATCH (;D prompt labels + the '>' keep-prefill rule):
 - USER SPEC: the ;D prompts read "Delete rows (From>To)" /
   "Delete columns (From>To)" / "Delete (From>To)" (no example hints),

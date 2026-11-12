@@ -349,7 +349,13 @@ void run_session(void)
             cs_goto_cmd();
             break;
         case ';':
-            cs_command_menu();
+            /* inside an entry the semicolon is the statement separator
+             * of extended conditionals (user-extended 2026-11); the
+             * command menu stays available when idle */
+            if (g_editstate == EDIT_EDITING)
+                entry_append(';');
+            else
+                cs_command_menu();
             break;
         case '=':
             if (g_editstate == EDIT_EDITING)
@@ -572,6 +578,68 @@ static void run_tests(void)
     ckc("cond false", "1>2:5:7", "+7.0000000000000E+1");
     ckc("empty true-branch", "1<2::9", "0");
     ckc("missing else", "1>2:5", "0");
+    ckc("nested cond", "(1<2):((2<3):8:9):7", "+8.0000000000000E+1");
+    ckc("nested false", "(1>2):7:((2>3):8:9)", "+9.0000000000000E+1");
+
+    /* side-effect statements in conditional branches (user-extended
+     * 2026-11): SET writes after fully evaluating its value, exactly
+     * one value piece per branch, the unselected branch must not run */
+    {
+        Csn v;
+        char g[64];
+        Cell *c;
+        int e;
+        /* SET: evaluate-first (A11's OLD value), numeric assign; the
+         * branch needs exactly one value piece */
+        csn_parse("5", &v);
+        cs_set_num(cs_cell(0, 10), "5", &v, 0, NULL);   /* A11 = 5 */
+        e = cs_eval_formula("+(1>0):SET(A11,A11+1);A11:0", &v, NULL);
+        csn_canon(&cs_cell(0, 10)->val, g, (int) sizeof(g));
+        if (e != 0 || strcmp(g, "+6.0000000000000E+1"))
+            { printf("FAIL SET eval-first e=%d got %s\n", e, g); fails++; }
+        else printf("ok   SET(A11,A11+1) evaluates then assigns 6\n");
+        /* SET text with the justification escape */
+        e = cs_eval_formula("+(1>0):SET(A11,\"\\rtest\");\"t\":0", &v, NULL);
+        c = cs_cell(0, 10);
+        if (e != 0 || c->type != CE_TEXT || c->just != 'R' ||
+            !c->cont || strcmp(c->cont, "test"))
+            { printf("FAIL SET text e=%d\n", e); fails++; }
+        else printf("ok   SET(A11,\"\\rtest\") right-aligned text\n");
+        /* the unselected branch must not execute its side effects */
+        cs_clear_all();
+        e = cs_eval_formula("+(1>0):0:SET(A11,9);1", &v, NULL);
+        if (e != 0 || cs_cell(0, 10)->type != CE_EMPTY)
+            { printf("FAIL unselected SET ran e=%d\n", e); fails++; }
+        else printf("ok   unselected branch did not execute\n");
+        /* exactly one value piece */
+        cs_clear_all();
+        e = cs_eval_formula("+(1>0):1;2:0", &v, NULL);
+        if (e != 7) { printf("FAIL two values err %d\n", e); fails++; }
+        else printf("ok   two value pieces -> Error 7\n");
+        e = cs_eval_formula("+(1>0):SET(A11,5):0", &v, NULL);
+        if (e != 7) { printf("FAIL zero values err %d\n", e); fails++; }
+        else printf("ok   zero value pieces -> Error 7\n");
+        /* side effects are not value-producing: as an operand -> Error 4 */
+        e = cs_eval_formula("+SET(A11,5)*2", &v, NULL);
+        if (e != 4) { printf("FAIL SET operand err %d\n", e); fails++; }
+        else printf("ok   SET as operand -> Error 4 (unknown fn)\n");
+        /* the iteration: a countdown driven by SET + RECALC through
+         * cs_recalc_all (A11 counts 5..0, A12 = the done-marker) */
+        cs_clear_all();
+        csn_parse("5", &v);
+        cs_set_num(cs_cell(0, 10), "5", &v, 0, NULL);   /* A11 = 5 */
+        cs_commit_entry(0, 12, "+(A11>0):SET(A11,A11-1);RECALC();0:\"finished\"");
+        csn_canon(&cs_cell(0, 10)->val, g, (int) sizeof(g));
+        if (strcmp(g, "0") && strcmp(g, "+0.0000000000000E+0"))
+            { printf("FAIL countdown A11 got %s\n", g); fails++; }
+        else printf("ok   RECALC iteration: A11 counts down to 0\n");
+        c = cs_cell(0, 12);
+        if (c->type != CE_NUM || c->iserr ||
+            !c->strres || strcmp(c->strres, "finished"))
+            { printf("FAIL countdown marker type=%d strres='%s'\n",
+                     c->type, c->strres ? c->strres : ""); fails++; }
+        else printf("ok   countdown marker A12 = finished\n");
+    }
 
     /* percent postfix + arithmetic */
     ckc("50%", "50%", "+5.0000000000000E+0");

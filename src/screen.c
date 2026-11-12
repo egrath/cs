@@ -742,6 +742,17 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
     }
 }
 
+/* poll for an ESC keystroke: non-blocking read, 1 = ESC seen, else 0.
+ * Used by the side-effect statement machinery for the user interrupt. */
+int cs_poll_escape(void)
+{
+    int ch;
+    nodelay(stdscr, TRUE);
+    ch = getch();
+    nodelay(stdscr, FALSE);
+    return (ch == 27);
+}
+
 /* position the physical (blinking) terminal cursor.  It always rests at
  * the bottom of the screen: while typing, just after the entry text; on
  * the "edit: " field when idle -- never inside the cell area. */

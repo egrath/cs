@@ -1,10 +1,28 @@
-/* eval.c - recalculation, entry commitment (BCD arithmetic) */
+/* eval.c - recalculation, entry commitment (BCD arithmetic), the
+ * side-effect execution driver (SET / RECALC / iterated passes) */
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <curses.h>
 #include "cs.h"
 
 int cs_is_inputf(const Cell *c);
+
+/* side-effect state: cs_recalc_requested is set by RECALC() /
+ * RECALC(cell) during a formula evaluation; cs_sheet_changed is set
+ * whenever a stored cell value changes (the stability criterion) */
+int cs_recalc_requested = 0;
+static int cs_sheet_changed;
+static int cs_eval_aborted;         /* KW_ABORT seen during a pass */
+
+void cs_mark_sheet_change(void)
+{
+    fprintf(stderr, "DBG mark\n");
+    cs_sheet_changed = 1;
+}
+
+/* the safeguard limits and the interruption message (flagged strings) */
+#define CS_MAX_PASSES 1000
 
 /* re-evaluate a single numeric cell (input-formula cells excluded) */
 /* error-cell queue: filled by the last Recalculate, in the same order
@@ -44,18 +62,29 @@ void cs_sticky_err(int code, const char *expr, int col, int rw)
 int cs_recalc_entry(int col, int rw)
 {
     Cell *c = cs_cell(col, rw);
-    Csn val;
+    Csn val, old;
     char *str = NULL;
     int err;
     if (!c || c->type != CE_NUM || !c->cont) return 0;
     if (cs_is_inputf(c)) return 0;      /* recalculate does not apply */
+    csn_copy(&old, &c->val);
     err = cs_eval_formula(c->cont, &val, &str);
+    if (err == KW_ABORT) {
+        /* user interrupt: the cell keeps its previous value, the
+         * message is already painted by the abort site */
+        cs_eval_aborted = 1;
+        return KW_ABORT;
+    }
     if (c->strres) { free(c->strres); c->strres = NULL; }
     csn_zero(&c->val);
     if (err) {
+        if (!c->iserr) cs_sheet_changed = 1;    /* an error is a change */
         c->iserr = 1;
         errq_add(col, rw, err);         /* queue for ";R" replay */
     } else {
+        /* stability: a stored value that differs marks the pass dirty */
+        if (c->iserr || csn_cmp(&c->val, &old) != 0)
+            cs_sheet_changed = 1;
         csn_copy(&c->val, &val);
         c->iserr = 0;
         if (str) c->strres = str;
@@ -63,7 +92,8 @@ int cs_recalc_entry(int col, int rw)
     return err;
 }
 
-void cs_recalc_all(void)
+/* the one-pass body of the recalculation (locked rows first) */
+static void recalc_pass(void)
 {
     int r, c;
     cs_nerrlist = 0;                    /* fresh queue per recalculation */
@@ -78,6 +108,50 @@ void cs_recalc_all(void)
     }
 }
 
+/* the side-effect execution driver: RECALC() during a formula marks a
+ * request; the CALLING context runs whole-sheet passes until the
+ * spreadsheet stabilizes (a pass changes no stored value), the pass
+ * limit is reached or the user interrupts with ESC.  always_one: run
+ * the first pass unconditionally (the ;R entry points) or only when a
+ * RECALC was requested (the entry-commit / calculator contexts).
+ * Status: an inverse "Calculating ... (pass N)" line while iterating
+ * (flagged strings). */
+void cs_run_recalc_passes(int always_one)
+{
+    int pass, iterating = 0;
+    if (!always_one && !cs_recalc_requested) return;
+    cs_recalc_requested = 0;
+    cs_eval_aborted = 0;
+    nodelay(stdscr, TRUE);              /* non-blocking ESC poll */
+    for (pass = 1; pass <= CS_MAX_PASSES; pass++) {
+        int ch;
+        if (iterating)
+            cs_msg("Calculating ... (pass %d)", pass);
+        cs_sheet_changed = 0;
+        recalc_pass();
+        if (cs_recalc_requested) cs_recalc_requested = 0;
+        if (cs_eval_aborted) {          /* interrupt inside a formula */
+            cs_eval_aborted = 0;
+            break;
+        }
+        if (!iterating && !cs_sheet_changed) break;   /* plain ;R: one pass */
+        iterating = 1;
+        if (!cs_sheet_changed) break;                 /* stabilized */
+        ch = getch();
+        if (ch == 27) {
+            cs_msg("User interrupted execution");
+            break;
+        }
+    }
+    nodelay(stdscr, FALSE);
+    if (iterating && pass > CS_MAX_PASSES)
+        cs_msg("Recalculation limit reached");
+}
+
+void cs_recalc_all(void)
+{
+    cs_run_recalc_passes(1);
+}
 /* does the cell hold an '!expr!' input formula? */
 int cs_is_inputf(const Cell *c)
 {
@@ -119,6 +193,7 @@ int cs_commit_entry(int col, int rw, const char *entry)
         strncpy(tmp, buf, (size_t) n - 1);
         tmp[n - 1] = '\0';
         err = cs_eval_formula(tmp, &val, &str);
+        if (err == KW_ABORT) return 0;      /* interrupt already reported */
         if (err) cs_msg("Error %d-> %s", err <= 0 ? 0 : err, tmp);
         else if (str) {
             cs_msg_plain("%s", str);
@@ -179,6 +254,7 @@ int cs_commit_entry(int col, int rw, const char *entry)
         int err;
         if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
         err = cs_eval_formula(buf, &val, &str);
+        if (err == KW_ABORT) return 0;      /* interrupt already reported */
         if (err) {
             csn_zero(&val);
             cs_set_num(c, buf, &val, 1, NULL);
@@ -187,6 +263,7 @@ int cs_commit_entry(int col, int rw, const char *entry)
             cs_set_num(c, buf, &val, 0, str);
             if (str) free(str);
         }
+        cs_run_recalc_passes(0);
         return err;
     }
     if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }

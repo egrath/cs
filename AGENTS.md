@@ -77,6 +77,31 @@ follow the original. Read this file before changing anything.
   `cs_delete_rows(r1,r2)` / `cs_delete_columns(c1,c2)` /
   `cs_clear_range(...)` are exported; `cs_shift_refs_n` is the
   delta-based ref shifter (refs beyond the range shift by −n).
+- **Side effects + extended conditionals + iteration are user-extended
+  2026-11** (the biggest deviation; not in the manuals): SET(cell,value)
+  / RECALC() / RECALC(cell) execute as statements in conditional
+  branches; branches are statement lists (`;` separators, exactly one
+  value piece, executed in order, only the selected branch runs — the
+  parser is a direct evaluator, so the unselected branch is
+  skip-scanned via branch_end() and parsed from its own sub-buffer).
+  RECALC is a REQUEST: the drivers (cs_run_recalc_passes in eval.c —
+  `;R`, entry commit, ?-calculator) iterate whole-sheet passes until a
+  pass changes no stored value, the 1000-pass limit (CS_MAX_PASSES) or
+  ESC (`User interrupted execution`; the limit shows
+  `Recalculation limit reached`; the loop paints `Calculating ...
+  (pass N)`).  cs_recalc_entry tracks value changes for the stability
+  check; cs_mark_sheet_change marks SET writes.  SET's value is
+  evaluated before the write; the justification escapes \r/\l/\c come
+  inside the string; the target is a plain cell specifier and a normal
+  reference (shifts on copy/insert/delete).  ';' typed inside an entry
+  inserts the separator (the menu stays available when idle).  Error
+  mapping: a side effect as an operand → Error 4 (unknown fn); wrong
+  statement lists → Error 7; KW_ABORT (13) = the internal user
+  interrupt (an aborted evaluation leaves the cell untouched, no
+  sticky display).  Nested conditionals in branches need parentheses;
+  the unparenthesized ':' belongs to the outermost conditional (the
+  old nocond mechanics are gone — branch texts are sub-parsed in
+  isolation).
 - Extension functions (Batch A, flagged not from the 1982 manuals): `SIGN`,
   `MOD`, `POWER`, `FACT`, `COMBIN`, `PERMUT`, `GCD`, `LCM`, `DEGREES`,
   `RADIANS`, `ROUND`, `TRUNC`, `PI()` and the trig set. Integer caps

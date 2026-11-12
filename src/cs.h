@@ -84,8 +84,13 @@ int    cs_scan_refs(const char *s, void (*cb)(int col, int row, void *), void *c
 char  *cs_adjust_refs(const char *s, int dc, int dr);
 char  *cs_shift_refs(const char *s, int iscol, int at, int insert);
 char  *cs_shift_refs_n(const char *s, int iscol, int at, int delta);
+/* side-effect functions + iteration (user-extended 2026-11, flagged) */
+#define KW_ABORT 13   /* internal "user interrupt" code */
 int    cs_recalc_entry(int col, int rw);   /* returns eval error code */
 void   cs_recalc_all(void);
+void   cs_run_recalc_passes(int always_one); /* side-effect driver */
+void   cs_mark_sheet_change(void);  /* eval.c: a stored value changed */
+extern int cs_recalc_requested;     /* RECALC() seen during evaluation */
 
 /* error-cell queue (filled by the last Recalculate, in recalc order):
  * main.c replays the sticky "Error ... hit space [coord]" messages one
@@ -115,6 +120,7 @@ int    cs_win_rows(void);
 void   cs_draw(void);
 void   cs_draw_prompt_text(const char *txt, const char *dots);
 void   cs_msg_plain(const char *fmt, ...);
+int    cs_poll_escape(void);   /* screen.c: non-blocking ESC poll */
 void   cs_msg(const char *fmt, ...);
 int    cs_get_key(void);
 int    cs_was_resize(int ch);           /* KEY_RESIZE -> full repaint */

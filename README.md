@@ -82,6 +82,50 @@ division) and every system function work on digits:
 - **Comparisons see all honest digits:** two values that were equal at 15
   digits but differ beyond now compare unequal (`=` in a conditional, and
   copy/delete dependency scans).
+
+## Side effects and iteration (user-extended 2026-11, not in the manuals)
+
+CalcStar formulas can now *execute*, making the spreadsheet itself the
+computation engine (cells = memory, conditionals = branches, iterated
+recalculation = loops).  Flagged extensions:
+
+- **Side-effect functions** — produce no value and are only valid as
+  statements inside conditional branches:
+  - `SET(cell, value)` — assigns `value` to `cell`, fully evaluated
+    *before* the write (`SET(A1,A1+1)` increments the previous value).
+    A numeric expression makes a numeric cell; a quoted string makes
+    text, with `\r` / `\l` / `\c` inside the string choosing the
+    justification (`SET(A1,"\rtest")` = right-aligned "test").
+  - `RECALC()` / `RECALC(cell)` — request recalculation passes.
+- **Extended conditionals**: a branch may be a statement list,
+  semicolon-separated — zero or more side-effect calls plus exactly one
+  value expression (its result is the branch value), executed in written
+  order; only the selected branch runs:
+
+  ```text
+  (A1<A2):SET(A1,A1+1);"increasing";RECALC():"finished"
+  ```
+
+- **Iteration**: `;R` (and an entry commit / the `?` calculator) run one
+  whole-sheet pass; when a `RECALC()` executed, passes repeat until a
+  pass changes no stored value (the spreadsheet stabilized), the
+  **1000-pass limit**, or the user presses **ESC**
+  (`User interrupted execution`; the limit shows
+  `Recalculation limit reached`).  While iterating the status line shows
+  `Calculating ... (pass N)`.
+
+  ```text
+  A11: 5          (a plain value)
+  A12: +(A11>0):SET(A11,A11-1);RECALC();0:"finished"
+
+  ;R A   ->  A11 counts 5..0, A12 shows 0 then "finished"
+  ```
+
+- Side effects as operands, top-level statements, or branches without a
+  value are formula errors (Error 7 / Error 4).  Nested conditionals in
+  a branch need parentheses; an unparenthesized `:` always belongs to
+  the outermost conditional.  `;` inside an entry types a statement
+  separator (the `;` command menu stays available when idle).
 - **Differential harness:** `tests/precision_ref.c` + `tests/precision_ref.py`
   dump every transcendental function at 38 decimals and compare against a
   150-digit Python-decimal reference (`python3 tests/precision_ref.py
