@@ -410,6 +410,14 @@ Batch workflow (do all steps before reporting done):
      Newton test).
    - cos is EVEN: `COS(-0.7)` = `COS(0.7)` = `0.7648421872844884…`
      (regression for the fixed sign bug).
+- **The help screens (`;H`) are the ORIGINAL CalcStar text** (the user
+  supplied the two pages verbatim, 2026-11-13; our extensions are NOT
+  in the in-app help — they live in this file and README.md).  The
+  pasted tab indentation is kept (curses expands it).  Flow: page 1 ->
+  RETURN -> page 2 -> RETURN -> the main screen — the 'H' command
+  case REPAINTS the main screen after cs_help_cmd returns (the original:
+  "Pressing return on the second page switches back to the applications
+  main screen"); without that repaint page 2 lingers until the next key.
    - Differential harness: `tests/precision_ref.c` + `tests/precision_ref.py`
      (25 inputs × 9 functions at 38 decimals vs a 150-digit decimal
      reference, RADIANS throughout; tolerance 2e-29 relative — see the
