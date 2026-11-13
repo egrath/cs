@@ -1,3 +1,12 @@
+## BATCH (branch "brainfuck", follow-up): leading-+ on strings (2026-11-13):
+- USER BUG REPORT: `CHR(65)` typed into a cell shows as text — the
+  1982 rule: system functions need a LEADING `+`/`-`; `+CHR(65)` then
+  hit parse_unary's mixing error 6 on the String operand.  FIX: a
+  unary `+` on a String is a no-op (affirmation); unary `-` stays
+  Error 6.  Pins: +CHR(65)="A", +CHR(72)&CHR(73)="HI", -CHR(65) err 6.
+  pty: A1=A, B1=HI, C1=65.00 after ^X moves between entries (the
+  cursor STAYS on commit — batched sends overwrite one cell).
+
 ## BATCH (branch "brainfuck" -> pushed to master): the typed string model + bf interpreter (2026-11-13):
 - STRING BATCH: VAL is the TYPED accessor (text cell -> String; empty/
   error -> Error 1); string comparisons (all six ops, strcmp byte

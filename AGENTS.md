@@ -520,7 +520,10 @@ Batch workflow (do all steps before reporting done):
   the one exception stays: text INSIDE a referenced range is ignored
   by the SUM/MED family.  GRAMMAR TRAP: `!` after a value is the
   factorial POSTFIX — `X!=0` parses as `(X!)=0`; inequality must be
-  spelled `<>` (three bf-machinery formulas bit this).  The ref
+  spelled `<>` (three bf-machinery formulas bit this).  A leading
+  unary `+` AFFIRMS a string (+CHR(65) is "A" — the standard entry
+  form; parse_unary first gave the mixing error 6, bugfixed
+  2026-11-13); a unary `-` on a string stays Error 6.  The ref
   shifter's delimiter lists gained `&` (4 sites in cells.c).
 - **SET preserves formulas** (user-ext 2026-11-13, flagged semantic
   refinement): a numeric SET into a cell whose entry is a FORMULA

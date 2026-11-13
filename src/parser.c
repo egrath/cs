@@ -1050,7 +1050,10 @@ static Val parse_unary(P *ps)
         if (!t.good) return t;
         e = val_deref(&t);
         if (e >= 0) { val_free(&t); val_err(&t, e); return t; }
-        if (t.type == VT_STR) { val_free(&t); val_err(&t, 6); return t; }
+        if (t.type == VT_STR) {
+            if (neg) { val_free(&t); val_err(&t, 6); return t; }
+            return t;      /* a leading '+' affirms: +CHR(65) is "A" */
+        }
         if (neg) csn_neg(&t.num, &t.num);
         return t;
     }

@@ -1519,6 +1519,28 @@ static void run_tests(void)
             else printf("ok   ORD(\"A\") = 65\n");
             if (sf) free(sf);
         }
+        /* a leading '+' AFFIRMS a string: +CHR(65) is the standard
+         * entry form (2026-11-13 bugfix - the unary path gave the
+         * mixing error 6) */
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("+CHR(65)", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "A"))
+                { printf("FAIL +CHR(65) (%s)\n", sf ? sf : "(null)"); fails++; }
+            else printf("ok   +CHR(65) = A (leading + affirms)\n");
+            if (sf) free(sf);
+        }
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("+CHR(72)&CHR(73)", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "HI"))
+                { printf("FAIL +CHR& (%s)\n", sf ? sf : "(null)"); fails++; }
+            else printf("ok   +CHR(72)&CHR(73) = HI\n");
+            if (sf) free(sf);
+        }
+        cke("-CHR(65)", "-CHR(65)", 6);     /* a unary '-' stays an error */
         cke("ORD ABC", "ORD(\"ABC\")", -1);
         cke("ORD empty", "ORD(\"\")", -1);
         cke("ORD number", "ORD(5)", 6);
