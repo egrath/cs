@@ -180,20 +180,20 @@ fractional coordinates (`REF(1,1.5)` → Error 0), zero or negative
 rows 1..255 — `REF(128,1)`, `REF(1,256)` → Error 1), wrong types
 (`REF("x",1)` → Error 6), wrong argument counts (Error 3).
 
-### COLNUM(x) — the column index
+### COLIDX(x) — the column index
 
 The 1-based column number (what `REF`'s first argument expects).  The
 argument is a column designator — a bare `A`..`DW` word, a quoted
 designator, or any reference:
 
 ```text
-COLNUM("A")             1
-COLNUM("AB")            28
-COLNUM("DW")            127
-COLNUM(AB)              the bare designator (COLNUM only)
-COLNUM(REF(2,3))        2
-COLNUM(A1)              1   (the row is ignored)
-REF(COLNUM("AB")+1,5)   AC5 - arithmetic on the index
+COLIDX("A")             1
+COLIDX("AB")            28
+COLIDX("DW")            127
+COLIDX(AB)              the bare designator (COLIDX only)
+COLIDX(REF(2,3))        2
+COLIDX(A1)              1   (the row is ignored)
+REF(COLIDX("AB")+1,5)   AC5 - arithmetic on the index
 ```
 
 Unknown designators (`"DX"`, `"ZZ"`, `"A1"`, empty) are Error 1,

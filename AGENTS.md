@@ -220,12 +220,13 @@ follow the original. Read this file before changing anything.
     under `;R A` instead of running to the 1000-pass limit).
     `cs_recalc_last_passes` records the last driver run's pass count
     (diagnostics/tests).
-  - **COLNUM(x)** (user-ext 2026-11): the 1-based column index.  The
+  - **COLIDX(x)** (user-ext 2026-11; briefly named COLNUM before the
+    user-preferred rename): the 1-based column index.  The
     argument parses SCOPED: a 1-2-letter word cleanly ended (not
-    followed by '(') is a column designator (`COLNUM(AB)`), else a
-    general expression — a quoted designator (`COLNUM("AB")`) or a
-    Reference (`COLNUM(REF(2,3))`, `COLNUM(A1)` — the row ignored).
-    colnum_word() validates 1..127 ("DX" -> Error 1; a designator with
+    followed by '(') is a column designator (`COLIDX(AB)`), else a
+    general expression — a quoted designator (`COLIDX("AB")`) or a
+    Reference (`COLIDX(REF(2,3))`, `COLIDX(A1)` — the row ignored).
+    colidx_word() validates 1..127 ("DX" -> Error 1; a designator with
     digits/empty -> Error 1), wrong types -> 6, no arg -> 3.  NOTE: a
     column-header display showing the index ("A (1)") was BRIEFLY
     implemented and then UNDONE at the user's request ("more faithful

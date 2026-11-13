@@ -177,7 +177,7 @@ typedef enum {
     FN_SIGN, FN_MOD, FN_POWER, FN_LOG10, FN_DEGREES, FN_RADIANS,
     FN_DEG, FN_RAD,
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
-    FN_REF, FN_VAL, FN_COLNUM
+    FN_REF, FN_VAL, FN_COLIDX
 } FnId;
 
 static int fnid(const char *name)
@@ -220,7 +220,7 @@ static int fnid(const char *name)
     if (!strcmp(name, "AVERAGE")) return FN_AVG;
     if (!strcmp(name, "REF"))   return FN_REF;
     if (!strcmp(name, "VAL"))   return FN_VAL;
-    if (!strcmp(name, "COLNUM")) return FN_COLNUM;
+    if (!strcmp(name, "COLIDX")) return FN_COLIDX;
     return FN_UNKNOWN;
 }
 
@@ -235,7 +235,7 @@ static int ref_coord_ok(const Csn *t, int lo, int hi)
 
 /* a column designator word ("A", "AB", ..., "DW"): 1-2 letters only.
  * Returns the 1-based index (1..127) or 0 when it is not one. */
-static int colnum_word(const char *w, int len)
+static int colidx_word(const char *w, int len)
 {
     int i, idx;
     if (len < 1 || len > 2) return 0;
@@ -488,10 +488,10 @@ static Val parse_primary(P *ps)
                 val_err(&v, 1);     /* empty/allocated/text/error cell */
                 return v;
             }
-            if (f == FN_COLNUM) {
-                /* COLNUM(x): the 1-based column index.  The argument is
+            if (f == FN_COLIDX) {
+                /* COLIDX(x): the 1-based column index.  The argument is
                  * a column designator (a 1-2-letter word NOT followed
-                 * by '(' - scoped to COLNUM, no global grammar change),
+                 * by '(' - scoped to COLIDX, no global grammar change),
                  * a quoted designator string, or a Reference (its
                  * column; the row is ignored). */
                 Val a;
@@ -506,7 +506,7 @@ static Val parse_primary(P *ps)
                     while ((*q >= 'A' && *q <= 'Z') ||
                            (*q >= 'a' && *q <= 'z')) q++;
                     if (q - p <= 2 && (*q == ')' || *q == ' ')) {
-                        int idx = colnum_word(p, (int) (q - p));
+                        int idx = colidx_word(p, (int) (q - p));
                         ps->p = q;
                         skip_ws(&ps->p);
                         if (*ps->p != ')') { val_err(&v, 3); return v; }
@@ -532,7 +532,7 @@ static Val parse_primary(P *ps)
                 if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
                 ps->p++;
                 if (a.type == VT_STR) {
-                    int idx = colnum_word(a.str, (int) strlen(a.str));
+                    int idx = colidx_word(a.str, (int) strlen(a.str));
                     val_free(&a);
                     val_free(&v);
                     memset(&v, 0, sizeof(v));
