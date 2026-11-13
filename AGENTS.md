@@ -226,6 +226,17 @@ follow the original. Read this file before changing anything.
     followed by '(') is a column designator (`COLIDX(AB)`), else a
     general expression — a quoted designator (`COLIDX("AB")`) or a
     Reference (`COLIDX(REF(2,3))`, `COLIDX(A1)` — the row ignored).
+- **The FRACTIONAL factorial** (user-ext 2026-11-13): FACT(x) for
+  non-integer x is the Gamma function (FACT(x) = Γ(x+1)) via the
+  Lanczos approximation (g = 7, 9 terms; the coefficients as
+  high-precision decimal strings) in gamma_lanczos() — the BCD
+  engine's pow/exp/sqrt/π do the math; the result carries ~15 correct
+  digits (the coefficients' precision — the display's 14 are safe).
+  csn_fact routes: exact non-negative integers keep the falling-
+  product path AND its cap (FACT(25) -> ?n?); x < 0 is domain;
+  non-integer x > 0 -> gamma; a huge argument overflows naturally
+  (Error 0).  The factorial ENTRY (2.2!) works through the same
+  route.  NCR/NPR stay integer-only.
     colidx_word() validates 1..127 ("DX" -> Error 1; a designator with
     digits/empty -> Error 1), wrong types -> 6, no arg -> 3.  NOTE: a
     column-header display showing the index ("A (1)") was BRIEFLY

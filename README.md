@@ -408,7 +408,23 @@ NPR(5,2)        20           permutations (alias of PERMUT)
 ```
 
 The combinatorial caps preserve BCD precision: `NCR(30,2)` overflows
-to `?n?` at n ≥ 25, like `FACT`.
+to `?n?` at n ≥ 25, like `FACT` for integers.
+
+**Fractional factorials**: `FACT(x)` for non-integer x is the Gamma
+function — `FACT(x) = Γ(x+1)`, computed with the Lanczos approximation
+(g = 7, 9 terms) entirely in BCD arithmetic (the engine's `pow`,
+`exp`, `sqrt` and `π`).  `2.2!` in a cell works the same way:
+
+```text
+FACT(2.2)       2.4239654799353...   (= Γ(3.2))
+FACT(0.5)       0.88622692545275...  (= Γ(1.5) = √π/2)
+2.2!            the same, as an entry
+```
+
+Precision note: the Lanczos coefficients limit the result to ~15
+correct digits (the display's 14 are safe); negative and
+overflow-sized arguments give `?n?`; the integer path keeps its cap
+(`FACT(25)` → `?n?`).
 
 - **Differential harness:** `tests/precision_ref.c` + `tests/precision_ref.py`
   dump every transcendental function at 38 decimals and compare against a

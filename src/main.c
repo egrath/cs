@@ -915,9 +915,14 @@ static void run_tests(void)
     ckc("FACT(5)", "FACT(5)", "+1.2000000000000E+3");
     ckc("FACT(0)", "FACT(0)", "+1.0000000000000E+1");
     { Csn r; char *sf = NULL;
+      /* the fractional FACT is the Gamma function now (2026-11-13):
+       * FACT(1.5) = Gamma(2.5) = 1.3293403881791... */
       int e = cs_eval_formula("FACT(1.5)", &r, &sf);
-      if (e != -1) { printf("FAIL FACT(1.5) err %d want -1\n", e); fails++; }
-      else printf("ok   FACT(1.5) -> Error 0 (?n?)\n");
+      char gg[48];
+      csn_canon(&r, gg, (int) sizeof(gg));
+      if (e != 0 || strcmp(gg, "+1.3293403881791E+1"))
+        { printf("FAIL FACT(1.5) err %d val %s\n", e, gg); fails++; }
+      else printf("ok   FACT(1.5) = Gamma(2.5)\n");
       if (sf) free(sf); }
     ckc("COMBIN(5,2)", "COMBIN(5,2)", "+1.0000000000000E+2");
     ckc("PERMUT(5,2)", "PERMUT(5,2)", "+2.0000000000000E+2");
@@ -1343,6 +1348,29 @@ static void run_tests(void)
         ckc("NCR 5,2", "NCR(5,2)", "+1.0000000000000E+2");
         ckc("NPR 5,2", "NPR(5,2)", "+2.0000000000000E+2");
         cke("NCR cap", "NCR(30,2)", -1);
+        /* the FRACTIONAL factorial: FACT(x) = Gamma(x+1) for x > 0
+         * (the Lanczos approximation, user-ext 2026-11-13) - the
+         * integer path (and its cap) is unchanged */
+        ckc("FACT 2.2", "FACT(2.2)", "+2.4239654799353E+1");
+        ckc("FACT 0.5", "FACT(0.5)", "+8.8622692545275E+0");
+        ckc("FACT 5.5", "FACT(5.5)", "+2.8788527781504E+3");
+        cke("FACT negative", "FACT(-2.2)", -1);
+        cke("FACT huge", "FACT(2000.5)", -1);
+        ckc("FACT int unchanged", "FACT(4)", "+2.4000000000000E+2");
+        cke("FACT int cap", "FACT(25)", -1);
+        /* the factorial ENTRY with a fractional source */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "2.2!");
+        {
+            Cell *c = cs_cell(0, 0);
+            char g2[48];
+            csn_canon(&c->val, g2, (int) sizeof(g2));
+            if (c->type != CE_NUM || !c->factf ||
+                strcmp(c->cont, "2.2!") || strcmp(g2, "+2.4239654799353E+1"))
+                { printf("FAIL fact 2.2! entry\\n"); fails++; }
+            else printf("ok   entry 2.2!: gamma, content kept\\n");
+        }
+        cs_clear_all();
         /* the FACTORIAL ENTRY: "5!" displays 120, content "5!" */
         cs_clear_all();
         cs_commit_entry(0, 0, "5!");

@@ -1290,12 +1290,93 @@ static int int_arg(const Csn *a, long *k)
     return 1;
 }
 
+/* the Gamma function via the Lanczos approximation (g = 7, 9 terms)
+ * for the FRACTIONAL factorial (user-ext 2026-11-13): FACT(x) =
+ * Gamma(x+1) for x > 0.  The coefficients are given to 16+ digits, so
+ * the result carries ~15 correct digits - a documented limit (the
+ * display's 14 digits are safe).  The argument z must be > 0.5. */
+static const char *lanc_p[9] = {
+    "0.99999999999980993",
+    "676.5203681218851",
+    "-1259.1392167224028",
+    "771.32342877765313",
+    "-176.61502916214059",
+    "12.507343278686905",
+    "-0.13857109526572012",
+    "0.0000099843695780195716",
+    "0.00000015056327351493116"
+};
+
+static int gamma_lanczos(Csn *r, const Csn *z)
+{
+    Csn one, two, half, seven5, zz, A, t, negt, ex, pw, s2pi, two_pi, pi, sum, term;
+    int i, err;
+
+    csn_from_int(&one, 1);
+    csn_from_int(&two, 2);
+    csn_zero(&half);
+    if (csn_parse("0.5", &half) != CSN_OK) return CSN_ER_SYNTAX;
+    csn_zero(&seven5);
+    if (csn_parse("7.5", &seven5) != CSN_OK) return CSN_ER_SYNTAX;
+
+    /* zz = z - 1 */
+    err = csn_sub(&zz, z, &one);
+    if (err) return err;
+    /* A = p0 + sum p_k / (zz + k) */
+    if (csn_parse(lanc_p[0], &A) != CSN_OK) return CSN_ER_SYNTAX;
+    for (i = 1; i <= 8; i++) {
+        Csn kk, den;
+        csn_from_int(&kk, i);
+        err = csn_add(&den, &zz, &kk);
+        if (err) return err;
+        if (csn_parse(lanc_p[i], &term) != CSN_OK) return CSN_ER_SYNTAX;
+        err = csn_div(&term, &term, &den);
+        if (err) return err;
+        err = csn_add(&A, &A, &term);
+        if (err) return err;
+    }
+    /* t = zz + 7.5 */
+    err = csn_add(&t, &zz, &seven5);
+    if (err) return err;
+    /* Gamma = sqrt(2*pi) * t^(zz+0.5) * exp(-t) * A */
+    err = csn_add(&sum, &zz, &half);
+    if (err) return err;
+    err = csn_pow(&pw, &t, &sum);
+    if (err) return err;
+    err = csn_neg(&negt, &t);
+    if (err) return err;
+    err = csn_exp(&ex, &negt);
+    if (err) return err;
+    csn_pi(&pi);
+    if (err) return err;
+    err = csn_mul(&two_pi, &two, &pi);
+    if (err) return err;
+    err = csn_sqrt(&s2pi, &two_pi);
+    if (err) return err;
+    err = csn_mul(r, &s2pi, &pw);
+    if (err) return err;
+    err = csn_mul(r, r, &ex);
+    if (err) return err;
+    err = csn_mul(r, r, &A);
+    if (err) return err;
+    return CSN_OK;
+}
+
 int csn_fact(Csn *r, const Csn *n)
 {
     long k, i;
-    Csn acc, iv;
+    Csn acc, iv, one, z;
+    int err;
     if (csn_is_zero(n)) { csn_from_int(r, 1); return CSN_OK; }
-    if (n->sign || !int_arg(n, &k)) return CSN_ER_DOMAIN;
+    if (n->sign) return CSN_ER_DOMAIN;
+    if (!int_arg(n, &k)) {
+        /* the FRACTIONAL factorial: FACT(x) = Gamma(x+1) for x > 0
+         * (user-ext 2026-11-13, the Lanczos approximation) */
+        csn_from_int(&one, 1);
+        err = csn_add(&z, n, &one);
+        if (err) return err;
+        return gamma_lanczos(r, &z);
+    }
     if (k >= FACT_LIM) return CSN_ER_DOMAIN;
     csn_from_int(&acc, 1);
     for (i = 2; i <= k; i++) {
