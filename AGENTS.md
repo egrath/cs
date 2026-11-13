@@ -438,6 +438,13 @@ Batch workflow (do all steps before reporting done):
      Newton test).
    - cos is EVEN: `COS(-0.7)` = `COS(0.7)` = `0.7648421872844884…`
      (regression for the fixed sign bug).
+- **cs_msg/cs_msg_plain are BOUNDED** (crash fix 2026-11-13): they
+  used unbounded vsprintf into lastmsg[80] with the [75] truncation
+  AFTER the write — a sticky-error line carrying a long formula
+  (>~45 chars of formula text) overflowed the buffer and macOS
+  FORTIFY aborted (EXC_BREAKPOINT, silent app death on paste of a
+  long conditional).  Now vsnprintf(lastmsg, sizeof(lastmsg)) with
+  lastmsg[256]; the display truncation stays at 75.
 - **The factorial entry "5!"** (user-ext 2026-11-13): an entry ending
   with '!' whose PREFIX PARSES (decision (b): a syntax check, not an
   evaluation — `A5!` over an empty A5 shows ?n? until filled; the

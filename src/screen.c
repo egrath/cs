@@ -30,7 +30,10 @@
 #include <curses.h>
 #include "cs.h"
 
-static char lastmsg[80];
+static char lastmsg[256];   /* the formatted text; the DISPLAY still
+                             * truncates at 75 (the status row) - the
+                             * buffer itself is big enough for long
+                             * formulas in the sticky-error line */
 static char prompttxt[80];
 static int  promptvis = 0;
 
@@ -507,7 +510,9 @@ void cs_msg(const char *fmt, ...)
     va_list ap;
     promptvis = 0;
     va_start(ap, fmt);
-    vsprintf(lastmsg, fmt, ap);
+    vsnprintf(lastmsg, sizeof(lastmsg), fmt, ap);   /* BOUNDED: long
+                                                     * formulas must
+                                                     * never overflow */
     va_end(ap);
     lastmsg[75] = '\0';
     cs_msg_text(lastmsg, A_REVERSE);
@@ -518,7 +523,7 @@ void cs_msg_plain(const char *fmt, ...)
     va_list ap;
     promptvis = 0;
     va_start(ap, fmt);
-    vsprintf(lastmsg, fmt, ap);
+    vsnprintf(lastmsg, sizeof(lastmsg), fmt, ap);   /* BOUNDED */
     va_end(ap);
     lastmsg[75] = '\0';
     cs_msg_text(lastmsg, A_NORMAL);
