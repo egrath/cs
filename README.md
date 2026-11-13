@@ -327,6 +327,43 @@ the sheet, printouts and every reference scanner.  Cells and the save
 format (CSD4) hold the BCD values as-is; older magics are refused with
 the manual's `READ ERROR`.
 
+### Sorting: the `;#` command (user-extended 2026-11-13)
+
+Reorders the rows of a rectangular range by one key column.  Not shown
+in the command panel or the original help screens (they stay
+byte-identical to the 1982 interface); documented here.
+
+```text
+;#
+Range?          A1>A5        (static) or REF(1,1)>REF(1,5) (dynamic)
+Key (Column)?   A            (bare designator) or COLIDX(2)/COLIDX(A)
+Order (A/D)?    A            (ascending) or D (descending)
+```
+
+- The range's **rows** are reordered, each row carrying its cells
+  within the range's columns (a single-column range sorts just that
+  column).
+- Comparison: numbers by value, text by string order, numbers before
+  text on mixed keys; **empty keys sort last** in both orders; equal
+  keys keep their relative order (stable).
+- **Formulas follow the cells**: every formula's references into the
+  sorted block are rewritten to the rows where the cells landed —
+  `+VAL(A4)` becomes `+VAL(A6)` when row 4's content moved there.
+  Frozen `!`-references are not remapped, and references inside
+  `\`-comments or `"..."` strings are never touched.  Cached values
+  refresh on `;R` as usual (the recalculation stays manual).
+- ESC cancels at any of the three prompts; an invalid Order key
+  re-prompts.
+
+Example (the key column is A, ascending):
+
+```text
+before:  A3=1 Apples   after:  A3=1 Apples
+         A4=5 Oranges          A4=2 Tomatoes
+         A5=4 Berries          A5=4 Berries
+         A6=2 Tomatoes         A6=5 Oranges
+```
+
 - **Differential harness:** `tests/precision_ref.c` + `tests/precision_ref.py`
   dump every transcendental function at 38 decimals and compare against a
   150-digit Python-decimal reference (`python3 tests/precision_ref.py

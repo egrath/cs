@@ -418,6 +418,20 @@ Batch workflow (do all steps before reporting done):
   case REPAINTS the main screen after cs_help_cmd returns (the original:
   "Pressing return on the second page switches back to the applications
   main screen"); without that repaint page 2 lingers until the next key.
+- **Sorting: `;#`** (user-ext 2026-11-13): reorder the rows of a
+  rectangular range by a key column (asc/desc).  Prompts "Range? "
+  (cs_coord_text: static or REF pairs), "Key (Column)? " (a bare
+  designator via cs_eval_keycol, or an expression yielding a Number
+  index or Reference), "Order (A/D)? " (invalid keys re-prompt, ESC
+  cancels everywhere).  Rectangle-row semantics (each row carries its
+  cells within the range's columns); numbers before text on mixed
+  keys, empty keys last, stable.  Formula references into the sorted
+  block are REMAPPED text-level (cs_sort_refs: perm[row - r1] with
+  ABSOLUTE destination rows; frozen '!' refs and comments/strings
+  untouched); the cached values refresh on ;R.  NOT advertised in the
+  command panel or the help (both stay byte-identical to the 1982
+  interface); documented here and in README.  Implemented in
+  cs_sort_range (exported for --test) + sort_cmd.
    - Differential harness: `tests/precision_ref.c` + `tests/precision_ref.py`
      (25 inputs × 9 functions at 38 decimals vs a 150-digit decimal
      reference, RADIANS throughout; tolerance 2e-29 relative — see the

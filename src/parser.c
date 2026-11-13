@@ -1509,6 +1509,44 @@ int cs_eval_formula(const char *s, Csn *val, char **str)
  * not parse.  Accepts a Range value or a single Reference (a
  * one-cell range); the range arrives normalized and straight-line
  * checked from parse_cmp. */
+/* evaluate a sort-key column answer (user-ext 2026-11): a bare
+ * designator word (A..DW, cleanly ended), or a general expression
+ * that yields a Number (the 1-based index) or a Reference (its
+ * column).  Returns the 1-based index, or -1 with *err set. */
+int cs_eval_keycol(const char *s, int *err)
+{
+    Val v;
+    int e, idx;
+    const char *p = s;
+    /* the bare designator word: 1-2 letters cleanly ended */
+    if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')) {
+        const char *q = p;
+        while ((*q >= 'A' && *q <= 'Z') || (*q >= 'a' && *q <= 'z')) q++;
+        if (q - p <= 2 && *q == '\0') {
+            idx = colidx_word(p, (int) (q - p));
+            if (!idx) { *err = 1; return -1; }
+            return idx;
+        }
+    }
+    e = cs_eval_typed(s, &v);
+    if (e) { *err = e; return -1; }
+    if (v.type == VT_NUM) {
+        Csn t;
+        csn_zero(&t);
+        if (!csn_integer_part(&v.num, &t)) { val_free(&v); *err = 0; return -1; }
+        idx = (int) csn_to_long_val(&t);
+    } else if (v.type == VT_REF) {
+        idx = v.ref.col + 1;
+    } else {
+        val_free(&v);
+        *err = 6;
+        return -1;
+    }
+    val_free(&v);
+    if (idx < 1 || idx > CS_MAXCOL) { *err = 1; return -1; }
+    return idx;
+}
+
 int cs_eval_range(const char *s, int *c1, int *r1, int *c2, int *r2)
 {
     Val v;

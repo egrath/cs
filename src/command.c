@@ -723,6 +723,119 @@ void cs_lock_cmd(void)
     redraw();
 }
 
+/* ============================== Sort ================================ */
+/* ;# (user-ext 2026-11): reorder the rows of a rectangular range by
+ * one key column, ascending or descending.  Each row carries its
+ * cells within the range's columns; formulas anywhere in the sheet
+ * get their in-range references remapped to the rows where the cells
+ * landed (frozen '!' refs excepted, like the insert/delete shifter).
+ * Empty keys sort last in both orders; the sort is stable. */
+void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
+{
+    int nrows = r2 - r1 + 1, ncols = c2 - c1 + 1;
+    int n = 0, i, j, r, c, ne, ne0;
+    Cell *snap;                         /* clone_cells snapshot, row-major */
+    int *order, *nonempty, *empties, *perm;
+    Cell *kc;
+
+    if (nrows <= 0 || ncols <= 0 || keycol < c1 || keycol > c2) return;
+    snap = clone_cells(c1, r1, c2, r2, &n);
+    if (!snap) return;
+    order = (int *) malloc((size_t) nrows * sizeof(int));
+    nonempty = (int *) malloc((size_t) nrows * sizeof(int));
+    empties = (int *) malloc((size_t) nrows * sizeof(int));
+    perm = (int *) malloc((size_t) nrows * sizeof(int));
+    if (!order || !nonempty || !empties || !perm) {
+        free(snap); free(order); free(nonempty); free(empties); free(perm);
+        return;
+    }
+    /* partition: rows with a usable key sort first, empty-key rows
+     * keep their relative order and go last (both directions) */
+    ne = ne0 = 0;
+    for (i = 0; i < nrows; i++) {
+        kc = &snap[i * ncols + (keycol - c1)];
+        if (kc->type == CE_NUM && !kc->iserr) nonempty[ne++] = i;
+        else if (kc->type == CE_TEXT && kc->cont && kc->cont[0]) nonempty[ne++] = i;
+        else empties[ne0++] = i;
+    }
+    /* stable insertion sort on the key */
+    for (i = 1; i < ne; i++) {
+        int t = nonempty[i];
+        kc = &snap[t * ncols + (keycol - c1)];
+        for (j = i - 1; j >= 0; j--) {
+            Cell *k2 = &snap[nonempty[j] * ncols + (keycol - c1)];
+            int cv;
+            if (kc->type == CE_NUM && k2->type == CE_NUM)
+                cv = csn_cmp(&kc->val, &k2->val);
+            else if (kc->type == CE_TEXT && k2->type == CE_TEXT)
+                cv = strcmp(kc->cont, k2->cont);
+            else cv = (kc->type == CE_NUM) ? -1 : 1;   /* numbers first */
+            if (desc ? cv <= 0 : cv >= 0) break;
+            nonempty[j + 1] = nonempty[j];
+        }
+        nonempty[j + 1] = t;
+    }
+    for (i = 0; i < ne; i++) order[i] = nonempty[i];
+    for (i = 0; i < ne0; i++) order[ne + i] = empties[i];
+    /* the permutation: perm[si] = the destination row of source row si */
+    for (i = 0; i < nrows; i++) perm[order[i]] = r1 + i;   /* absolute rows */
+    /* write back: release the block, then place the snapshot rows */
+    for (r = 0; r < nrows; r++)
+        for (c = 0; c < ncols; c++)
+            if (cells[r1 + r][c1 + c].type != CE_EMPTY)
+                cs_free_cell(&cells[r1 + r][c1 + c]);
+    for (r = 0; r < nrows; r++) {
+        int src = order[r];
+        for (c = 0; c < ncols; c++) {
+            Cell *dst = &cells[r1 + r][c1 + c];
+            Cell *sc = &snap[src * ncols + c];
+            *dst = *sc;
+            if (dst->cont)   dst->cont   = cs_strdup(dst->cont);
+            if (dst->rep)    dst->rep    = cs_strdup(dst->rep);
+            if (dst->strres) dst->strres = cs_strdup(dst->strres);
+            if (dst->type != CE_EMPTY) entriesUsed++;
+        }
+    }
+    free(snap);
+    /* the formulas: remap in-range references to the new rows */
+    for (r = 0; r < CS_MAXROW; r++)
+        for (c = 0; c < CS_MAXCOL; c++) {
+            Cell *cl = &cells[r][c];
+            char *nc2;
+            if (!cl->cont || cl->type == CE_EMPTY) continue;
+            nc2 = cs_sort_refs(cl->cont, c1, r1, c2, r2, perm);
+            if (nc2) { free(cl->cont); cl->cont = nc2; }
+        }
+    free(order); free(nonempty); free(empties); free(perm);
+    cs_recount_entries();
+    cs_mark_sheet_change();
+}
+
+static void sort_cmd(void)
+{
+    char buf[80];
+    int c1, r1, c2, r2, kc, err, ch, desc;
+    if (cs_prompt_coord("Range? ", "", buf, (int) sizeof(buf), 2) < 0) return;
+    redraw();
+    if (!cs_coord_text(buf, &c1, &r1, &c2, &r2)) { cs_msg("bad range coord"); return; }
+    if (cs_prompt_str("Key (Column)? ", "", buf, (int) sizeof(buf)) < 0) return;
+    redraw();
+    err = 0;
+    kc = cs_eval_keycol(buf, &err);
+    if (err || kc < 1 || kc - 1 < c1 || kc - 1 > c2) {
+        cs_msg("bad key column"); return;
+    }
+    for (;;) {
+        ch = cs_prompt_char("Order (A/D)? ");
+        redraw();
+        if (ch == 27) return;
+        if (ch == 'A' || ch == 'a') { desc = 0; break; }
+        if (ch == 'D' || ch == 'd') { desc = 1; break; }
+    }
+    cs_sort_range(c1, r1, c2, r2, kc - 1, desc);
+    redraw();
+}
+
 static void storage_cmd(void)
 {
     cs_msg("Room for %d entries", CS_BUDGET - entriesUsed);
@@ -847,6 +960,8 @@ void cs_command_menu(void)
      * the applications main screen" - repaint it at once (the key
      * loop would otherwise leave page 2 up until the next key) */
     case 'H': cs_help_cmd(); redraw(); break;
+    case '#': sort_cmd(); break;   /* sort (user-ext 2026-11, not in
+                                   * the panel or the original help) */
     case 'I': insert_cmd(); break;
     case 'L': cs_load_dialog(0); break;
     case 'M': cs_load_dialog(1); break;

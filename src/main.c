@@ -1223,6 +1223,91 @@ static void run_tests(void)
         /* combined with REF: the column of AC5 (set first) */
         setv(28, 4, "8");                    /* AC5 = 8 */
         ckc("COLIDX in REF", "VAL(REF(COLIDX(\"AB\")+1,5))", "+8.0000000000000E+1");
+        /* the sort command ;# (the user's exact example): A3>B6 by
+         * column A ascending - the B texts travel with their rows */
+        cs_clear_all();
+        setv(0, 2, "1");                        /* A3 = 1 */
+        cs_set_text(cs_cell(1, 2), "Apples", 'L');
+        setv(0, 3, "5");
+        cs_set_text(cs_cell(1, 3), "Oranges", 'L');
+        setv(0, 4, "4");
+        cs_set_text(cs_cell(1, 4), "Berries", 'L');
+        setv(0, 5, "2");
+        cs_set_text(cs_cell(1, 5), "Tomatoes", 'L');
+        cs_sort_range(0, 2, 1, 5, 0, 0);        /* A3>B6, key A, asc */
+        if (cs_cell(0, 2)->val.nd[0] != 1 ||
+            cs_cell(0, 3)->val.nd[0] != 2 ||
+            cs_cell(0, 4)->val.nd[0] != 4 ||
+            cs_cell(0, 5)->val.nd[0] != 5)
+            { printf("FAIL sort asc values\\n"); fails++; }
+        else if (!cs_cell(1, 3)->cont || strcmp(cs_cell(1, 3)->cont, "Tomatoes") ||
+                 !cs_cell(1, 4)->cont || strcmp(cs_cell(1, 4)->cont, "Berries") ||
+                 !cs_cell(1, 5)->cont || strcmp(cs_cell(1, 5)->cont, "Oranges"))
+            { printf("FAIL sort asc texts\\n"); fails++; }
+        else printf("ok   sort asc: 1,2,4,5 with the texts following\\n");
+        /* descending */
+        cs_sort_range(0, 2, 1, 5, 0, 1);
+        if (cs_cell(0, 2)->val.nd[0] != 5 ||
+            cs_cell(0, 3)->val.nd[0] != 4 ||
+            cs_cell(0, 4)->val.nd[0] != 2 ||
+            cs_cell(0, 5)->val.nd[0] != 1)
+            { printf("FAIL sort desc\\n"); fails++; }
+        else printf("ok   sort desc\\n");
+        /* formulas referencing the sorted range follow the cells:
+         * B7 = +VAL(A4) (the OLD A4 = 4 lands at row 5) */
+        cs_sort_range(0, 2, 1, 5, 0, 0);        /* back to 1,2,4,5 */
+        {
+            Csn v;
+            csn_parse("0", &v);
+            cs_free_cell(cs_cell(1, 6));
+            csn_parse("4", &v);
+            cs_commit_entry(1, 6, "+VAL(A4)");  /* B7 references A4 */
+        }
+        cs_sort_range(0, 2, 1, 5, 0, 1);        /* desc: old A4's 4 -> A3 */
+        {
+            Cell *c = cs_cell(1, 6);
+            if (!c->cont || strcmp(c->cont, "+VAL(A5)"))
+                { printf("FAIL sort ref remap (%s)\\n",
+                         c->cont ? c->cont : ""); fails++; }
+            else printf("ok   sort remaps +VAL(A4) to +VAL(A5)\\n");
+        }
+        /* text keys: sort the block by column B ascending */
+        cs_sort_range(0, 2, 1, 5, 1, 0);
+        {
+            const char *want[4] = { "Apples", "Berries", "Oranges",
+                                    "Tomatoes" };
+            int okk = 1, w;
+            for (w = 0; w < 4; w++)
+                if (!cs_cell(1, 2 + w)->cont ||
+                    strcmp(cs_cell(1, 2 + w)->cont, want[w]) != 0)
+                    okk = 0;
+            if (!okk) { printf("FAIL sort text keys\\n"); fails++; }
+            else printf("ok   sort by text keys\\n");
+        }
+        /* empty keys sort last; equal keys keep their order (stable) */
+        cs_clear_all();
+        setv(0, 2, "9");                        /* A3 = 9 */
+        cs_set_text(cs_cell(1, 2), "X", 'L');   /* B3 = X */
+        setv(0, 3, "9");                        /* A4 = 9 (equal key) */
+        cs_set_text(cs_cell(1, 3), "Y", 'L');   /* B4 = Y */
+        setv(0, 5, "1");                        /* A6 = 1 */
+        cs_sort_range(0, 2, 1, 5, 0, 0);        /* A3>B6, key A, asc */
+        {
+            int okk = cs_cell(0, 2)->val.nd[0] == 1 &&
+                      cs_cell(0, 3)->val.nd[0] == 9 &&
+                      cs_cell(0, 4)->val.nd[0] == 9 &&
+                      cs_cell(0, 5)->type == CE_EMPTY &&
+                      cs_cell(1, 3)->cont && strcmp(cs_cell(1, 3)->cont, "X") == 0 &&
+                      cs_cell(1, 4)->cont && strcmp(cs_cell(1, 4)->cont, "Y") == 0;
+            if (!okk) { printf("FAIL sort empties/stability\\n"); fails++; }
+            else printf("ok   sort: empties last, equal keys stable\\n");
+        }
+        /* a key column outside the range: no work */
+        cs_sort_range(0, 2, 1, 5, 3, 0);
+        if (cs_cell(0, 2)->val.nd[0] != 1)
+            { printf("FAIL sort key outside\\n"); fails++; }
+        else printf("ok   sort rejects a key outside the range\\n");
+        cs_clear_all();
         cs_clear_all();
     }
 

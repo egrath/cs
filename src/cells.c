@@ -137,6 +137,73 @@ int cs_coord_text(const char *s, int *c1, int *r1, int *c2, int *r2)
     return 0;
 }
 
+/* sort reference remap (user-ext 2026-11): coordinate tokens inside
+ * the sorted block are rewritten to the row where their cell landed.
+ * perm[i] = the destination row (0-based) of the block's row r1+i.
+ * Same token conventions as the insert/delete shifter: comments after
+ * '\' and "..." strings are skipped, '!'-frozen references are not
+ * remapped.  Returns a malloc'd replacement or NULL when unchanged. */
+char *cs_sort_refs(const char *s, int c1, int r1, int c2, int r2,
+                   const int *perm)
+{
+    char *out = (char *) malloc(strlen(s) * 2 + 16);
+    char *o = out;
+    const char *p = s;
+    int changed = 0, inq = 0;
+    if (!out) return NULL;
+    while (*p) {
+        if (*p == '"') { inq = !inq; *o++ = *p++; continue; }
+        if (*p == '\\' && !inq) {
+            /* '\' comment: the rest is copied verbatim */
+            size_t rest = strlen(p);
+            memcpy(o, p, rest);
+            o += rest;
+            break;
+        }
+        if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')) {
+            const char *st = p;
+            int nl = 0;
+            while ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')) { p++; nl++; }
+            if (nl <= 2 && *p >= '0' && *p <= '9') {
+                while (*p >= '0' && *p <= '9') p++;
+                if (*p == '!' || *p == '>' || *p == ',' || *p == ')' ||
+                    *p == ' ' || *p == ':' || *p == '+' || *p == '-' ||
+                    *p == '*' || *p == '/' || *p == '%' || *p == '\0' ||
+                    *p == '<' || *p == '=') {
+                    char tmp[8], tmp2[4];
+                    int i, cc, rr, ok, bang;
+                    for (i = 0; st + i < p; i++) tmp[i] = (char) ((st[i] >= 'a' && st[i] <= 'z') ? st[i] - 32 : st[i]);
+                    tmp[i] = '\0';
+                    ok = cs_parse_coord(tmp, &cc, &rr);
+                    bang = *p == '!';
+                    if (ok && !bang &&
+                        cc >= c1 && cc <= c2 && rr >= r1 && rr <= r2) {
+                        int newr = perm[rr - r1];
+                        cs_col_name(cc, tmp2);
+                        o += sprintf(o, "%s%d", tmp2, newr + 1);
+                        changed = 1;
+                        if (bang) *o++ = '!';
+                        if (*p == '!') p++;
+                        continue;
+                    }
+                    memcpy(o, st, (size_t) (p - st));
+                    o += p - st;
+                    if (bang) *o++ = '!';
+                    if (*p == '!') p++;
+                    continue;
+                }
+            }
+            /* not a coordinate: a word (fn name etc.) - copy verbatim */
+            memcpy(o, st, (size_t) (p - st));
+            o += p - st;
+        }
+        *o++ = *p++;
+    }
+    *o = '\0';
+    if (!changed) { free(out); return NULL; }
+    return out;
+}
+
 void cs_range_norm(int *c1, int *r1, int *c2, int *r2)
 {
     int t;
