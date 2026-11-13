@@ -843,7 +843,10 @@ void cs_command_menu(void)
     case 'E': winCol = curCol; winRow = curRow; redraw(); break;
     case 'F': format_cmd(); break;
     case 'G': cs_goto_cmd(); break;
-    case 'H': cs_help_cmd(); break;
+    /* the original: RETURN on the second help page "switches back to
+     * the applications main screen" - repaint it at once (the key
+     * loop would otherwise leave page 2 up until the next key) */
+    case 'H': cs_help_cmd(); redraw(); break;
     case 'I': insert_cmd(); break;
     case 'L': cs_load_dialog(0); break;
     case 'M': cs_load_dialog(1); break;
