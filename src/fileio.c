@@ -141,8 +141,10 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
             just = cl->just;
             fputc((int) (unsigned char) just, f);
             /* prec+1 occupies 0..25, so bits 5-6 carry the notation
-             * (0=auto,1=sci,2=dec) - the format stays CSD4-compatible */
-            fputc(((cl->prec + 1) & 31) | ((cl->notation & 3) << 5), f);
+             * (0=auto,1=sci,2=dec) and bit 7 the factorial-entry
+             * flag - the format stays CSD4-compatible */
+            fputc(((cl->prec + 1) & 31) | ((cl->notation & 3) << 5) |
+                  ((cl->factf & 1) << 7), f);
             fputc(cl->formf, f);
             len = cl->cont ? (int) strlen(cl->cont) : 0;
             wr16(f, len);
@@ -199,7 +201,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
     count = rd16(f);
     if (count < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
     for (i = 0; i < count; i++) {
-        int cc, rr, ty, just, prc, frm, nta, len;
+        int cc, rr, ty, just, prc, frm, nta, fct, len;
         int dr, dc, drop;
         Cell *cl, scratch;
         cc = fgetc(f);
@@ -208,6 +210,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
         just = (char) fgetc(f);
         nta = fgetc(f);
         prc = (nta & 31) - 1;           /* bits 0-4: prec+1 (0=none) */
+        fct = (nta >> 7) & 1;           /* bit 7: factorial entry */
         nta = (nta >> 5) & 3;           /* bits 5-6: notation */
         frm = fgetc(f);
         if (cc == EOF || rr < 0 || cc >= CS_MAXCOL || rr >= CS_MAXROW) break;
@@ -236,6 +239,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->formf = frm;
             cl->prec = prc;
             cl->notation = nta;
+            cl->factf = fct;
             csn_zero(&cl->val);
             cl->iserr = 0;
             cl->strres = NULL;
@@ -260,6 +264,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->formf = frm;
             cl->prec = prc;
             cl->notation = nta;
+            cl->factf = fct;
             csn_copy(&cl->val, &v);
             cl->iserr = 0;
             cl->strres = NULL;

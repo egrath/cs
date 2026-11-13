@@ -59,6 +59,34 @@ void cs_sticky_err(int code, const char *expr, int col, int rw)
         cs_msg("Error %d-> %s? hit space [%s]", code, expr, coord);
 }
 
+/* the FACTORIAL ENTRY recompute (user-ext 2026-11-13): evaluate the
+ * prefix (the content minus the trailing '!') and store FACT of it.
+ * Marks the sheet changed only on a real difference. */
+static int factf_recompute(int col, int rw, Cell *c)
+{
+    char pfx[CS_EDITMAX + 1];
+    Csn src, fv;
+    int n = (int) strlen(c->cont), e, fe;
+
+    memcpy(pfx, c->cont, (size_t) n - 1);
+    pfx[n - 1] = '\0';
+    e = cs_eval_fact_source(pfx, &src);
+    fe = 0;
+    if (!e) fe = csn_fact(&fv, &src);
+    if (e == KW_ABORT) { cs_eval_aborted = 1; return KW_ABORT; }
+    if (e || fe) {
+        if (!c->iserr) cs_sheet_changed = 1;
+        c->iserr = 1;
+        csn_zero(&c->val);
+        errq_add(col, rw, e ? e : 0);
+        return e ? e : 0;
+    }
+    if (c->iserr || csn_cmp(&fv, &c->val) != 0) cs_sheet_changed = 1;
+    csn_copy(&c->val, &fv);
+    c->iserr = 0;
+    return 0;
+}
+
 int cs_recalc_entry(int col, int rw)
 {
     Cell *c = cs_cell(col, rw);
@@ -66,7 +94,8 @@ int cs_recalc_entry(int col, int rw)
     char *str = NULL, *oldstr;
     int err, changed;
     if (!c || c->type != CE_NUM || !c->cont) return 0;
-    if (cs_is_inputf(c)) return 0;      /* recalculate does not apply */
+    if (cs_is_inputf(c)) return 0;      /* the value holder: not a formula */
+    if (c->factf) return factf_recompute(col, rw, c);
     csn_copy(&old, &c->val);
     oldstr = c->strres;                 /* kept for the change check */
     err = cs_eval_formula(c->cont, &val, &str);
@@ -197,6 +226,15 @@ int cs_is_inputf(const Cell *c)
     return n > 2 && c->cont[0] == '!' && c->cont[n - 1] == '!';
 }
 
+/* does the cell hold a FACTORIAL ENTRY ("5!", "A5!", "REF(2,5)!")?
+ * (user-ext 2026-11-13): displays FACT of its source and recomputes
+ * on ;R — unlike the '!' value holder, the window shows the value,
+ * not "In!" */
+int cs_is_factf(const Cell *c)
+{
+    return c->factf;
+}
+
 /* is this char one that may start a numeric entry */
 static int numeric_start(int ch)
 {
@@ -220,6 +258,32 @@ int cs_commit_entry(int col, int rw, const char *entry)
     n = (int) strlen(buf);
     c = cs_cell(col, rw);
     if (!c) return 0;
+
+    /* the FACTORIAL ENTRY (user-ext 2026-11-13): "5!", "A5!",
+     * "REF(2,5)!" - the content keeps the entry verbatim, the window
+     * shows FACT of the prefix's value, and ;R recomputes.  The rule
+     * is a PARSE check (decision (b)): the prefix must be a valid
+     * expression - a source that is not a valid number yet shows ?n?
+     * until it is; non-expression prefixes (STOP!, 5!!) stay text.
+     * The manual's '!...'!' value-holder form is untouched. */
+    if (n >= 2 && buf[n - 1] == '!' && buf[0] != '!') {
+        char pfx[CS_EDITMAX + 1];
+        Csn fv, src;
+        int e, fe;
+        memcpy(pfx, buf, (size_t) n - 1);
+        pfx[n - 1] = '\0';
+        if (cs_parse_only(pfx) == 0) {
+            csn_zero(&fv);
+            e = cs_eval_fact_source(pfx, &src);
+            fe = 0;
+            if (!e) fe = csn_fact(&fv, &src);
+            if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
+            cs_set_num(c, buf, &fv, (e || fe) ? 1 : 0, NULL);
+            c->factf = 1;
+            cs_recount_entries();
+            return 0;
+        }
+    }
 
     /* ---- calculator: trailing '?' evaluates without storing ---- */
     if (buf[n - 1] == '?' && buf[0] != '!') {

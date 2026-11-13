@@ -379,6 +379,37 @@ before:  A3=1 Apples   after:  A3=1 Apples
          A6=2 Tomatoes         A6=5 Oranges
 ```
 
+### The factorial entry: `5!` (user-extended 2026-11-13)
+
+An entry **ending with `!`** whose prefix is a valid expression
+becomes a factorial cell: the window shows FACT of the prefix's
+value, the **content keeps the entry verbatim**, and the cell
+**recomputes on `;R`** (so `A5!` tracks A5).  The rule is a syntax
+check — a source that isn't a valid number yet shows `?n?` until it
+is, and non-expression entries (`STOP!`, `5!!`) stay text.  Inside
+regular formulas `!` keeps the manual's frozen-reference meaning.
+
+```text
+5!              displays 120, content stays 5!
+A5!             FACT of A5's value; tracks A5 through ;R
+REF(2,5)!       FACT of the referenced cell's value
+```
+
+### Integer and combinatorial functions (user-extended 2026-11-13)
+
+```text
+ABS(-5)         5            (existing)
+SGN(-3)         -1    SGN(3) = 1    SGN(0) = 0   (alias of SIGN)
+INTG(3.5)       3            the integer part (truncate toward zero)
+FRAC(3.5)       0.5          the fractional part, sign-preserving:
+FRAC(-3.5)      -0.5         FRAC(x) = x - INTG(x)
+NCR(5,2)        10           combinations (alias of COMBIN)
+NPR(5,2)        20           permutations (alias of PERMUT)
+```
+
+The combinatorial caps preserve BCD precision: `NCR(30,2)` overflows
+to `?n?` at n ≥ 25, like `FACT`.
+
 - **Differential harness:** `tests/precision_ref.c` + `tests/precision_ref.py`
   dump every transcendental function at 38 decimals and compare against a
   150-digit Python-decimal reference (`python3 tests/precision_ref.py

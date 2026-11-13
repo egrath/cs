@@ -45,6 +45,9 @@ typedef struct {
 typedef struct {
     const char *p;
     int depth;
+    int dry;       /* parse-only: side-effect statements are detected
+                    * but NOT executed (the factorial-entry syntax
+                    * check must not run SETs) */
 } P;
 
 static void val_free(Val *v)
@@ -177,7 +180,8 @@ typedef enum {
     FN_SIGN, FN_MOD, FN_POWER, FN_LOG10, FN_DEGREES, FN_RADIANS,
     FN_DEG, FN_RAD,
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
-    FN_REF, FN_VAL, FN_COLIDX, FN_MED
+    FN_REF, FN_VAL, FN_COLIDX, FN_MED,
+    FN_SGN, FN_NCR, FN_NPR, FN_INTG, FN_FRAC
 } FnId;
 
 static int fnid(const char *name)
@@ -222,6 +226,11 @@ static int fnid(const char *name)
     if (!strcmp(name, "VAL"))   return FN_VAL;
     if (!strcmp(name, "COLIDX")) return FN_COLIDX;
     if (!strcmp(name, "MED"))   return FN_MED;
+    if (!strcmp(name, "SGN"))   return FN_SGN;
+    if (!strcmp(name, "NCR"))   return FN_NCR;
+    if (!strcmp(name, "NPR"))   return FN_NPR;
+    if (!strcmp(name, "INTG"))  return FN_INTG;
+    if (!strcmp(name, "FRAC"))  return FN_FRAC;
     return FN_UNKNOWN;
 }
 
@@ -590,7 +599,8 @@ static Val parse_primary(P *ps)
             }
             if (f == FN_MOD || f == FN_POWER || f == FN_COMBIN ||
                 f == FN_PERMUT || f == FN_GCD || f == FN_LCM ||
-                f == FN_ROUND || f == FN_TRUNC) {
+                f == FN_ROUND || f == FN_TRUNC ||
+                f == FN_NCR || f == FN_NPR) {
                 Val a2;
                 int err;
                 Val a = parse_numarg(ps);
@@ -612,9 +622,11 @@ static Val parse_primary(P *ps)
                     err = csn_pow(&v.num, &a.num, &a2.num);
                     break;
                 case FN_COMBIN:
+                case FN_NCR:
                     err = csn_comb(&v.num, &a.num, &a2.num);
                     break;
                 case FN_PERMUT:
+                case FN_NPR:
                     err = csn_perm(&v.num, &a.num, &a2.num);
                     break;
                 case FN_GCD:
@@ -743,9 +755,10 @@ static Val parse_primary(P *ps)
                 f == FN_ABS || f == FN_EXP ||
                 f == FN_SIN || f == FN_COS || f == FN_TAN ||
                 f == FN_ASIN || f == FN_ACOS || f == FN_ATAN ||
-                f == FN_SIGN || f == FN_DEGREES ||
+                f == FN_SIGN || f == FN_SGN || f == FN_DEGREES ||
                 f == FN_DEG || f == FN_RADIANS ||
-                f == FN_RAD || f == FN_FACT) {
+                f == FN_RAD || f == FN_FACT ||
+                f == FN_INTG || f == FN_FRAC) {
                 int err;
                 Val a = parse_numarg(ps);
                 if (!a.good) return a;
@@ -771,6 +784,7 @@ static Val parse_primary(P *ps)
                     err = CSN_OK;
                     break;
                 case FN_SIGN:
+                case FN_SGN:
                     err = csn_sign(&v.num, &a.num);
                     break;
                 case FN_DEGREES:
@@ -783,6 +797,25 @@ static Val parse_primary(P *ps)
                     break;
                 case FN_FACT:
                     err = csn_fact(&v.num, &a.num);
+                    break;
+                case FN_INTG:
+                    /* the integer part: truncate toward zero (the
+                     * manual's truncate rule) */
+                    {
+                        Csn zero;
+                        csn_zero(&zero);
+                        err = csn_trunc(&v.num, &a.num, &zero);
+                    }
+                    break;
+                case FN_FRAC:
+                    /* the fractional part, sign-preserving:
+                     * FRAC(x) = x - INTG(x)  (-3.5 -> -0.5) */
+                    {
+                        Csn zero, t;
+                        csn_zero(&zero);
+                        err = csn_trunc(&t, &a.num, &zero);
+                        if (!err) err = csn_sub(&v.num, &a.num, &t);
+                    }
                     break;
                 case FN_SIN:
                     err = csn_sin(&v.num, &a.num);
@@ -1172,6 +1205,7 @@ static void exec_set_stmt(const char *args, int *err)
     while (*w == ' ') w++;
     memset(&sub, 0, sizeof(sub));
     sub.p = w;
+    sub.dry = 0;
     tgt = parse_condexpr(&sub);
     if (!tgt.good) {
         *err = tgt.err;
@@ -1277,7 +1311,7 @@ static void exec_recalc_stmt(const char *args, int *err)
 /* execute one statement piece.  Returns 1 = the piece was a
  * side-effect call (*err: -1 = ok, else the error code), 0 = not a
  * side-effect call (a value piece). */
-static int side_effect_stmt(const char *piece, int *err)
+static int side_effect_stmt(const char *piece, int *err, int dry)
 {
     char buf[CS_EDITMAX + 4];
     int sl, isset, isrec;
@@ -1304,6 +1338,12 @@ static int side_effect_stmt(const char *piece, int *err)
     if (!isset && !isrec) return 0;
     kw = isset ? buf + 3 : buf + 6;
     buf[sl - 1] = '\0';                 /* drop the closing ')' */
+    if (dry) {
+        /* parse-only mode (the factorial-entry syntax check): the
+         * statement is recognized, not executed */
+        *err = -1;
+        return 1;
+    }
     if (isset) exec_set_stmt(kw + 1, err);
     else exec_recalc_stmt(kw + 1, err);
     /* the exec errors propagate: run_branch treats a return of 2 with
@@ -1317,7 +1357,7 @@ static int side_effect_stmt(const char *piece, int *err)
  * expression; the others must be side-effect calls, executed in
  * written order.  Returns 0 on success (the result in *rv), else the
  * error code (13 = user interrupt). */
-static int run_branch(char *text, Val *rv)
+static int run_branch(char *text, Val *rv, int dry)
 {
     char *p = text;
     int values = 0;
@@ -1342,7 +1382,7 @@ static int run_branch(char *text, Val *rv)
         }
         save = *q;
         *q = '\0';
-        r = side_effect_stmt(p, &serr);
+        r = side_effect_stmt(p, &serr, dry);
         if (r == 2) {                       /* a failing side-effect call */
             val_free(rv);
             memset(rv, 0, sizeof(*rv));
@@ -1357,6 +1397,7 @@ static int run_branch(char *text, Val *rv)
             if (values) { val_err(rv, 7); return 1; }
             memset(&sub, 0, sizeof(sub));
             sub.p = p;
+            sub.dry = dry;
             v = parse_condexpr(&sub);
             if (!v.good) {
                 int e = v.err;
@@ -1369,7 +1410,7 @@ static int run_branch(char *text, Val *rv)
             *rv = v;
             values++;
         }
-        if (cs_poll_escape()) {             /* interrupt between statements */
+        if (!dry && cs_poll_escape()) {     /* interrupt between statements */
             val_free(rv);
             memset(rv, 0, sizeof(*rv));
             csn_zero(&rv->num);
@@ -1451,7 +1492,7 @@ static Val parse_condexpr(P *ps)
             memset(&t, 0, sizeof(t)); csn_zero(&t.num);
             memset(&f, 0, sizeof(f)); csn_zero(&f.num);
             t.good = 1; f.good = 1;     /* empty branches assign 0 */
-            r = run_branch(ctrue ? tbuf : fbuf, ctrue ? &t : &f);
+            r = run_branch(ctrue ? tbuf : fbuf, ctrue ? &t : &f, ps->dry);
             if (r) {
                 /* the Val carries the error code (13 = user interrupt) */
                 if (ctrue) { val_free(&f); val_free(&cond); return t; }
@@ -1490,6 +1531,7 @@ static int cs_eval_typed(const char *s, Val *out)
     csn_zero(&out->num);
     ps.p = buf;
     ps.depth = 0;
+    ps.dry = 0;
     v = parse_condexpr(&ps);
     if (!v.good) {
         int e = v.err;
@@ -1529,6 +1571,35 @@ int cs_eval_formula(const char *s, Csn *val, char **str)
     val_free(&v);
     csn_copy(val, &v.num);
     if (str) *str = NULL;
+    return 0;
+}
+
+/* parse-only syntax check (user-ext 2026-11): 0 = the text is a
+ * valid expression (side-effect statements are detected, NOT run);
+ * else the parse error code */
+int cs_parse_only(const char *s)
+{
+    Val v;
+    int e = cs_eval_typed(s, &v);
+    val_free(&v);
+    return e;
+}
+
+/* evaluate an expression to a NUMBER for the factorial entries
+ * (user-ext 2026-11-13): 0 = ok with the value in *out (References
+ * coerce), else the error code and *out zeroed */
+int cs_eval_fact_source(const char *s, Csn *out)
+{
+    Val v;
+    int e = cs_eval_typed(s, &v);
+    if (e) { csn_zero(out); return e; }
+    {
+        int d = val_deref(&v);
+        if (d >= 0) { val_free(&v); csn_zero(out); return d; }
+    }
+    if (v.type != VT_NUM) { val_free(&v); csn_zero(out); return 6; }
+    csn_copy(out, &v.num);
+    val_free(&v);
     return 0;
 }
 

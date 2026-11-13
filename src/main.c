@@ -1239,20 +1239,20 @@ static void run_tests(void)
             cs_cell(0, 3)->val.nd[0] != 2 ||
             cs_cell(0, 4)->val.nd[0] != 4 ||
             cs_cell(0, 5)->val.nd[0] != 5)
-            { printf("FAIL sort asc values\\n"); fails++; }
+            { printf("FAIL sort asc values\n"); fails++; }
         else if (!cs_cell(1, 3)->cont || strcmp(cs_cell(1, 3)->cont, "Tomatoes") ||
                  !cs_cell(1, 4)->cont || strcmp(cs_cell(1, 4)->cont, "Berries") ||
                  !cs_cell(1, 5)->cont || strcmp(cs_cell(1, 5)->cont, "Oranges"))
-            { printf("FAIL sort asc texts\\n"); fails++; }
-        else printf("ok   sort asc: 1,2,4,5 with the texts following\\n");
+            { printf("FAIL sort asc texts\n"); fails++; }
+        else printf("ok   sort asc: 1,2,4,5 with the texts following\n");
         /* descending */
         cs_sort_range(0, 2, 1, 5, 0, 1);
         if (cs_cell(0, 2)->val.nd[0] != 5 ||
             cs_cell(0, 3)->val.nd[0] != 4 ||
             cs_cell(0, 4)->val.nd[0] != 2 ||
             cs_cell(0, 5)->val.nd[0] != 1)
-            { printf("FAIL sort desc\\n"); fails++; }
-        else printf("ok   sort desc\\n");
+            { printf("FAIL sort desc\n"); fails++; }
+        else printf("ok   sort desc\n");
         /* formulas referencing the sorted range follow the cells:
          * B7 = +VAL(A4) (the OLD A4 = 4 lands at row 5) */
         cs_sort_range(0, 2, 1, 5, 0, 0);        /* back to 1,2,4,5 */
@@ -1267,9 +1267,9 @@ static void run_tests(void)
         {
             Cell *c = cs_cell(1, 6);
             if (!c->cont || strcmp(c->cont, "+VAL(A5)"))
-                { printf("FAIL sort ref remap (%s)\\n",
+                { printf("FAIL sort ref remap (%s)\n",
                          c->cont ? c->cont : ""); fails++; }
-            else printf("ok   sort remaps +VAL(A4) to +VAL(A5)\\n");
+            else printf("ok   sort remaps +VAL(A4) to +VAL(A5)\n");
         }
         /* text keys: sort the block by column B ascending */
         cs_sort_range(0, 2, 1, 5, 1, 0);
@@ -1281,8 +1281,8 @@ static void run_tests(void)
                 if (!cs_cell(1, 2 + w)->cont ||
                     strcmp(cs_cell(1, 2 + w)->cont, want[w]) != 0)
                     okk = 0;
-            if (!okk) { printf("FAIL sort text keys\\n"); fails++; }
-            else printf("ok   sort by text keys\\n");
+            if (!okk) { printf("FAIL sort text keys\n"); fails++; }
+            else printf("ok   sort by text keys\n");
         }
         /* empty keys sort last; equal keys keep their order (stable) */
         cs_clear_all();
@@ -1299,14 +1299,14 @@ static void run_tests(void)
                       cs_cell(0, 5)->type == CE_EMPTY &&
                       cs_cell(1, 3)->cont && strcmp(cs_cell(1, 3)->cont, "X") == 0 &&
                       cs_cell(1, 4)->cont && strcmp(cs_cell(1, 4)->cont, "Y") == 0;
-            if (!okk) { printf("FAIL sort empties/stability\\n"); fails++; }
-            else printf("ok   sort: empties last, equal keys stable\\n");
+            if (!okk) { printf("FAIL sort empties/stability\n"); fails++; }
+            else printf("ok   sort: empties last, equal keys stable\n");
         }
         /* a key column outside the range: no work */
         cs_sort_range(0, 2, 1, 5, 3, 0);
         if (cs_cell(0, 2)->val.nd[0] != 1)
-            { printf("FAIL sort key outside\\n"); fails++; }
-        else printf("ok   sort rejects a key outside the range\\n");
+            { printf("FAIL sort key outside\n"); fails++; }
+        else printf("ok   sort rejects a key outside the range\n");
         /* MED(range): the median (user-ext 2026-11-13) - odd count,
          * Excel-style even count, text/empties skipped, a rectangle
          * range, unsorted input, an error cell -> Error 0, empty -> 0
@@ -1331,6 +1331,85 @@ static void run_tests(void)
         ckc("MED empty range", "MED(A3>B6)", "0");
         cs_commit_entry(0, 4, "+1/0");          /* A5 = ?n? */
         cke("MED error cell", "MED(A3>A6)", -1);
+        /* INTG / FRAC / SGN / NCR / NPR (user-ext 2026-11-13) */
+        ckc("INTG 3.5", "INTG(3.5)", "+3.0000000000000E+1");
+        ckc("INTG -3.5", "INTG(-3.5)", "-3.0000000000000E+1");
+        ckc("FRAC 3.5", "FRAC(3.5)", "+5.0000000000000E+0");
+        ckc("FRAC -3.5", "FRAC(-3.5)", "-5.0000000000000E+0");
+        ckc("FRAC -3.5 sign", "-FRAC(-3.5)", "+5.0000000000000E+0");
+        ckc("SGN -3", "SGN(-3)", "-1.0000000000000E+1");
+        ckc("SGN 3", "SGN(3)", "+1.0000000000000E+1");
+        ckc("SGN 0", "SGN(0)", "0");
+        ckc("NCR 5,2", "NCR(5,2)", "+1.0000000000000E+2");
+        ckc("NPR 5,2", "NPR(5,2)", "+2.0000000000000E+2");
+        cke("NCR cap", "NCR(30,2)", -1);
+        /* the FACTORIAL ENTRY: "5!" displays 120, content "5!" */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "5!");
+        {
+            Cell *c = cs_cell(0, 0);
+            char g2[48];
+            csn_canon(&c->val, g2, (int) sizeof(g2));
+            if (c->type != CE_NUM || c->factf != 1 ||
+                strcmp(c->cont, "5!") || strcmp(g2, "+1.2000000000000E+3"))
+                { printf("FAIL fact entry 5! (ff=%d cont='%s')\n", c->factf, c->cont ? c->cont : ""); fails++; }
+            else printf("ok   entry 5!: shows 120, content 5!\n");
+        }
+        /* A5! tracks A5 through ;R */
+        {
+            Csn v;
+            csn_parse("5", &v);
+            cs_set_num(cs_cell(0, 4), "5", &v, 0, NULL);   /* A5 = 5 */
+            cs_commit_entry(0, 5, "A5!");                   /* A6 = FACT(A5) */
+            cs_recalc_all();
+            if (cs_cell(0, 5)->val.nd[0] != 1 || cs_cell(0, 5)->val.nd[1] != 2)
+                { printf("FAIL A5! value\n"); fails++; }
+            setv(0, 4, "3");                    /* A5 = 3 -> FACT = 6 */
+            cs_recalc_all();
+            if (cs_cell(0, 5)->val.nd[0] != 6)
+                { printf("FAIL A5! recompute (%d)\n", cs_cell(0, 5)->val.nd[0]); fails++; }
+            else printf("ok   A5! tracks A5 through ;R\n");
+        }
+        /* REF(2,5)! and the non-expression fallbacks */
+        cs_clear_all();
+        {
+            Csn v;
+            csn_parse("4", &v);
+            cs_set_num(cs_cell(1, 4), "4", &v, 0, NULL);   /* B5 = 4 */
+            cs_commit_entry(2, 4, "REF(2,5)!");             /* C5 = FACT(B5) */
+            if (cs_cell(2, 4)->val.nd[0] != 2 || cs_cell(2, 4)->val.nd[1] != 4)
+                { printf("FAIL REF factorial (24?)\n"); fails++; }
+            else printf("ok   REF(2,5)! = 24\n");
+            cs_commit_entry(0, 6, "STOP!");                 /* stays text */
+            if (cs_cell(0, 6)->type != CE_TEXT)
+                { printf("FAIL STOP! not text\n"); fails++; }
+            else printf("ok   STOP! stays text\n");
+            cs_commit_entry(0, 7, "5!!");                   /* the old numeric path */
+            if (cs_cell(0, 7)->type != CE_NUM || !cs_cell(0, 7)->iserr)
+                { printf("FAIL 5!! numeric error\n"); fails++; }
+            else printf("ok   5!! stays text\n");
+            cs_commit_entry(0, 8, "A9!");                   /* empty A9: ?n? */
+            if (cs_cell(0, 8)->type != CE_NUM || !cs_cell(0, 8)->iserr)
+                { printf("FAIL A9! ?n?\n"); fails++; }
+            else printf("ok   A9! shows ?n? until A9 is filled\n");
+        }
+        /* the factf state survives the CSD4 round trip */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "5!");
+        if (!cs_save("t_ft.CSD", 0, 0, CS_MAXCOL - 1, CS_MAXROW - 1, NULL))
+            { printf("FAIL factf save\n"); fails++; }
+        cs_clear_all();
+        if (!cs_load("t_ft.CSD", 0, 0, 0))
+            { printf("FAIL factf load\n"); fails++; }
+        {
+            Cell *c = cs_cell(0, 0);
+            if (c->type != CE_NUM || !c->factf ||
+                c->val.nd[0] != 1 || c->val.nd[1] != 2)
+                { printf("FAIL factf round trip\n"); fails++; }
+            else printf("ok   factf survives save/load\n");
+        }
+        remove("t_ft.CSD");
+        cs_clear_all();
         cs_clear_all();
         cs_clear_all();
     }

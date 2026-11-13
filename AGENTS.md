@@ -410,6 +410,26 @@ Batch workflow (do all steps before reporting done):
      Newton test).
    - cos is EVEN: `COS(-0.7)` = `COS(0.7)` = `0.7648421872844884…`
      (regression for the fixed sign bug).
+- **The factorial entry "5!"** (user-ext 2026-11-13): an entry ending
+  with '!' whose PREFIX PARSES (decision (b): a syntax check, not an
+  evaluation — `A5!` over an empty A5 shows ?n? until filled; the
+  manual's '!...!' value holder is untouched) becomes a FACTORIAL
+  cell: Cell.factf (persisted in the prec byte's bit 7), content
+  verbatim, the window shows the VALUE (not "In!" — cs_is_inputf is
+  flag-free and factf bypasses it), FACT(prefix value) via
+  cs_eval_fact_source, and ;R RECOMPUTES via factf_recompute in
+  cs_recalc_entry (NOT skipped like the value holder).  The dry parse
+  (P.dry + cs_parse_only) detects side-effect statements without
+  running them — the P.dry field must be initialized on every stack P
+  (a garbage dry silently skipped all SETs once!).  Non-expression
+  prefixes (STOP!, 5!!) fall through: STOP! stays text, 5!! hits the
+  old numeric-error path (iserr).
+- **INTG/FRAC/SGN/NCR/NPR** (user-ext 2026-11-13): INTG = trunc toward
+  zero (csn_trunc with 0); FRAC = x - INTG(x), SIGN-PRESERVING
+  (FRAC(-3.5) = -0.5 — user decision); SGN = a SIGN alias (SGN(0) = 0
+  — the user's "=1" was a typo, kept 0); NCR/NPR = COMBIN/PERMUT
+  aliases (the n >= 25 caps give ?n?).  All thin BCD wrappers in the
+  parser's function dispatch.
 - **The help screens (`;H`) are the ORIGINAL CalcStar text** (the user
   supplied the two pages verbatim, 2026-11-13; our extensions are NOT
   in the in-app help — they live in this file and README.md).  The

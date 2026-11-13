@@ -27,6 +27,8 @@ typedef struct {
     char *strres;   /* string result of a formula, or NULL */
     int formf;      /* form mode set (for ;A Auto) */
     int prec;       /* per-entry precision override, -1 = none */
+    int factf;      /* factorial entry: content "5!"/"A5!" displays
+                     * FACT(value) and recomputes on ;R (2026-11-13) */
     int notation;   /* display notation (flagged ext 2026-11): 0=auto,
                      * 1=scientific (too narrow: "!n!"), 2=decimal
                      * (too narrow: head kept, trailing '*') */
@@ -117,12 +119,15 @@ void   cs_fmt_num(const Csn *v, int width, int prec, int iserr, int notation,
 int    cs_ensure_room(void);
 void   cs_recount_entries(void);
 int    cs_is_inputf(const Cell *c);
+int    cs_is_factf(const Cell *c);  /* a factorial entry: "5!"/"A5!" */
 
 /* parser.c  (returns 0 on success; nonzero = CalcStar evaluation error
    code; -1 = CalcStar "Error 0" value-range error such as ?n?) */
 int    cs_eval_formula(const char *s, Csn *val, char **str);
 int    cs_eval_range(const char *s, int *c1, int *r1, int *c2, int *r2);
 int    cs_eval_keycol(const char *s, int *err);
+int    cs_parse_only(const char *s);   /* dry syntax check (no side effects) */
+int    cs_eval_fact_source(const char *s, Csn *out);
 void   cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc);
 
 /* screen.c */

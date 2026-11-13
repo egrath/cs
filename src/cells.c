@@ -247,6 +247,7 @@ void cs_free_cell(Cell *c)
     c->just = 'L';
     csn_zero(&c->val);
     c->iserr = 0;
+    c->factf = 0;
     /* NOTE: formf deliberately survives - the user's form course must
      * keep its stop-cells across data re-entry (manual: ";A ... is very
      * useful when certain entries are subject to frequent changes").
@@ -269,6 +270,7 @@ void cs_clear_all(void)
         for (c = 0; c < CS_MAXCOL; c++) {
             cells[r][c].prec = -1;
             cells[r][c].notation = 0;   /* (auto) */
+            cells[r][c].factf = 0;
         }
 }
 
