@@ -1983,6 +1983,78 @@ static void run_tests(void)
             } else { printf("FAIL load\n"); fails++; }
         } else { printf("FAIL save\n"); fails++; }
     }
+    /* CSD5 round trip for the DERIVED TYPE (2026-11-13): a string-
+     * result formula cell saves its string and shows it right after a
+     * load - NO ;R needed (the user's file-format request); a numeric
+     * result round-trips with no string */
+    {
+        cs_clear_all();
+        cs_commit_entry(0, 0, "+CHR(65)&CHR(66)");      /* A1 = "AB" */
+        cs_commit_entry(1, 0, "+VAL(A1)");              /* B1 = "AB" */
+        cs_commit_entry(2, 0, "+\"ABC\"");              /* C1 = "ABC" */
+        cs_commit_entry(3, 0, "+1+1");                  /* D1 = 2 (numeric) */
+        if (cs_save("t_str", 0, 0, 4, 4, "")) {
+            cs_clear_all();
+            if (cs_load("t_str", 0, 0, 0)) {
+                Cell *c = cs_cell(0, 0);
+                if (c->strres && !strcmp(c->strres, "AB") &&
+                    c->type == CE_NUM && c->cont &&
+                    !strcmp(c->cont, "+CHR(65)&CHR(66)"))
+                    printf("ok   CSD round trip: string formula keeps "
+                           "\"AB\" without ;R\n");
+                else { printf("FAIL CSD string round trip\n"); fails++; }
+                c = cs_cell(1, 0);
+                if (c->strres && !strcmp(c->strres, "AB"))
+                    printf("ok   CSD round trip: VAL(A1) keeps \"AB\"\n");
+                else { printf("FAIL CSD VAL round trip\n"); fails++; }
+                c = cs_cell(2, 0);
+                if (c->strres && !strcmp(c->strres, "ABC"))
+                    printf("ok   CSD round trip: literal formula keeps "
+                           "\"ABC\"\n");
+                else { printf("FAIL CSD literal round trip\n"); fails++; }
+                c = cs_cell(3, 0);
+                {
+                    char g[48];
+                    csn_canon(&c->val, g, (int) sizeof(g));
+                    if (!c->strres && !strcmp(g, "+2.0000000000000E+1"))
+                        printf("ok   CSD round trip: numeric cell has no "
+                               "string\n");
+                    else { printf("FAIL CSD numeric round trip\n"); fails++; }
+                }
+                remove("t_str.csd");
+            } else { printf("FAIL CSD string load\n"); fails++; }
+        } else { printf("FAIL CSD string save\n"); fails++; }
+        /* a LONG string result (200 chars) round-trips through the
+         * u16 strres record - built directly on the cell, since an
+         * entry cannot exceed CS_EDITMAX */
+        cs_clear_all();
+        {
+            Csn v;
+            char *big = (char *) malloc(201);
+            csn_parse("0", &v);
+            memset(big, 'A', 200);
+            big[200] = '\0';
+            cs_set_num(cs_cell(0, 0), "+BIG", &v, 0, big);
+            free(big);
+        }
+        if (cs_save("t_lng", 0, 0, 2, 2, "")) {
+            cs_clear_all();
+            if (cs_load("t_lng", 0, 0, 0)) {
+                Cell *c = cs_cell(0, 0);
+                int ok = c->strres && (int) strlen(c->strres) == 200;
+                {
+                    int i;
+                    for (i = 0; ok && i < 200; i++)
+                        if (c->strres[i] != 'A') ok = 0;
+                }
+                if (ok) printf("ok   CSD round trip: a 200-char string "
+                               "survives\n");
+                else { printf("FAIL CSD long string\n"); fails++; }
+                remove("t_lng.csd");
+            } else { printf("FAIL CSD long load\n"); fails++; }
+        } else { printf("FAIL CSD long save\n"); fails++; }
+        cs_clear_all();
+    }
     /* Load/Merge position (manual 14-14): cells land at the requested
      * corner; cells running past the sheet edge are parsed and dropped
      * while the file stream stays in sync */

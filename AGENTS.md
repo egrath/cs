@@ -535,9 +535,14 @@ Batch workflow (do all steps before reporting done):
   CE_NUM/CE_TEXT: cont keeps the formula (re-evaluable), strres
   carries the string result and is set/cleared by every commit/;R
   evaluation — a numeric result clears strres and the cell is
-  numeric again (pinned flip-back).  strres is NOT persisted (CSD
-  saves the value bytes only): after a load the cell rests numeric
-  until the next ;R — consistent with manual recalculation.
+  numeric again (pinned flip-back).  strres IS persisted: the CSD
+  per-cell record carries "unsigned short strreslen + bytes" (written
+  only for type==3 cells; the fileio header documents it) — a loaded
+  sheet shows the string immediately, NO ;R needed (pinned round
+  trips incl. a 200-char string; the earlier "not persisted" note
+  was wrong).  The CSD magic stays CSD4: no format change was
+  needed (user request 2026-11-13 — backwards compatibility
+  waived, but the existing layout already carried the string).
 - **SET preserves formulas** (user-ext 2026-11-13, flagged semantic
   refinement): a numeric SET into a cell whose entry is a FORMULA
   (an expression, not a pure number literal — num_literal_p scans

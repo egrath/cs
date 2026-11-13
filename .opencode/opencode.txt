@@ -1,3 +1,19 @@
+## BATCH (branch "brainfuck", follow-up 3): CSD round trip (2026-11-13):
+- USER REQUEST: persist the string result in the CSD format.  FINDING:
+  the CSD4 layout ALREADY persists strres (per type==3 cell:
+  "unsigned short strreslen + bytes" — the fileio header documents
+  it; my earlier "not persisted" claim was WRONG).  NO format change,
+  magic stays CSD4.  NEW PINS (4+1): string formula / VAL / literal /
+  numeric (no string) round trips, all showing the string right after
+  load WITHOUT ;R; a 200-char strres survives the u16 record (built
+  directly via cs_set_num — an entry cannot exceed CS_EDITMAX, so a
+  CHR chain can't reach 200; the first attempt overflowed a char[240]
+  buffer and SIGTRAPed the suite).  pty: ;S t_p (name, CR, A) then
+  ;L t_p -> AB left-justified, type line "text: left justified",
+  no ;R.  EXPECT LESSON (repeat): a bare `log_file` mid-script
+  TRUNCATES the capture — one log per script, check the final frame.
+- VERIFIED: --test 396 ok, warning-free build.
+
 ## BATCH (branch "brainfuck", follow-up 2): the DERIVED cell type (2026-11-13):
 - USER BUG REPORT: +CHR(65)&CHR(66) displayed "AB" but the type line
   said numeric; VAL(A1) gave 0, not the string; the alignment was
