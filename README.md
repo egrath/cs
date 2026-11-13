@@ -426,6 +426,26 @@ correct digits (the display's 14 are safe); negative and
 overflow-sized arguments give `?n?`; the integer path keeps its cap
 (`FACT(25)` → `?n?`).
 
+**INVFACT(y)** — the inverse factorial (user-extended 2026-11-13):
+
+```text
+INVFACT(120)             5     (exact integers walk down the factorial)
+INVFACT(119.5)           4.9975523876792...
+INVFACT(50)              4.4715274582078...
+INVFACT(FACT(2.2))       2.2   (the round trip is exact to the display)
+INVFACT(1e400)           210.8499606194...
+```
+
+Non-integer arguments solve `ln Γ(x+1) = ln y` with NEWTON's method in
+log space — the derivative is the analytically computed digamma
+function, and the iteration runs until the BCD noise floor is
+reached, so the result carries the full display precision.  The
+log-space formulation means the whole exponent range works (no huge
+intermediates).  Below the Gamma minimum (y < 0.8856...) there is no
+solution (`?n?`), and the ascending branch is returned for the
+two-sided interval just above it.  `INVFACT(0)` and negative
+arguments are `?n?`.
+
 - **Differential harness:** `tests/precision_ref.c` + `tests/precision_ref.py`
   dump every transcendental function at 38 decimals and compare against a
   150-digit Python-decimal reference (`python3 tests/precision_ref.py

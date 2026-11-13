@@ -1362,6 +1362,216 @@ static int gamma_lanczos(Csn *r, const Csn *z)
     return CSN_OK;
 }
 
+/* the log-Gamma via the same Lanczos form: ln Gamma(z) for z > 0.5,
+ * in LOG SPACE (no huge intermediates - the inverse factorial's
+ * Newton runs here).  ln Gamma(z) = ln sqrt(2*pi) + (zz+0.5)*ln(t)
+ * - t + ln(A), zz = z-1, t = zz+7.5. */
+static int lngamma_lanczos(Csn *r, const Csn *z)
+{
+    Csn one, zz, A, t, half, sum, term, lnA, lns2pi, res;
+    int i, err;
+
+    csn_from_int(&one, 1);
+    err = csn_sub(&zz, z, &one);
+    if (err) return err;
+    if (csn_parse(lanc_p[0], &A) != CSN_OK) return CSN_ER_SYNTAX;
+    for (i = 1; i <= 8; i++) {
+        Csn kk, den;
+        csn_from_int(&kk, i);
+        err = csn_add(&den, &zz, &kk);
+        if (err) return err;
+        if (csn_parse(lanc_p[i], &term) != CSN_OK) return CSN_ER_SYNTAX;
+        err = csn_div(&term, &term, &den);
+        if (err) return err;
+        err = csn_add(&A, &A, &term);
+        if (err) return err;
+    }
+    csn_zero(&sum);
+    if (csn_parse("7.5", &sum) != CSN_OK) return CSN_ER_SYNTAX;
+    err = csn_add(&t, &zz, &sum);           /* t = zz + 7.5 (same as the
+                                             * direct Lanczos form) */
+    if (err) return err;
+    err = csn_ln(&lnA, &A);
+    if (err) return err;
+    csn_zero(&half);
+    if (csn_parse("0.5", &half) != CSN_OK) return CSN_ER_SYNTAX;
+    csn_zero(&lns2pi);
+    if (csn_parse("0.9189385332046727417803297364056176", &lns2pi) != CSN_OK)
+        return CSN_ER_SYNTAX;               /* ln sqrt(2*pi) */
+    /* res = (zz+0.5)*ln(t) - t + ln(sqrt(2*pi)) + ln(A) */
+    {
+        Csn lnt, expo;
+        err = csn_ln(&lnt, &t);
+        if (err) return err;
+        err = csn_add(&expo, &zz, &half);   /* the exponent zz + 0.5 */
+        if (err) return err;
+        err = csn_mul(&res, &expo, &lnt);
+        if (err) return err;
+        err = csn_sub(&res, &res, &t);
+        if (err) return err;
+        err = csn_add(&res, &res, &lns2pi);
+        if (err) return err;
+        err = csn_add(&res, &res, &lnA);
+        if (err) return err;
+    }
+    csn_copy(r, &res);
+    return CSN_OK;
+}
+
+/* the digamma function psi(x) (user-ext 2026-11-13, for the inverse
+ * factorial's Newton): shift the argument up to >= 20 (psi(x+1) =
+ * psi(x) + 1/x, exact), then the asymptotic series
+ * psi(z) = ln z - 1/(2z) - 1/(12z^2) + 1/(120z^4) - 1/(252z^6)
+ *          + 1/(240z^8) - 1/(132z^10)  (error ~5e-18 at z = 20). */
+int csn_digamma(Csn *r, const Csn *x)
+{
+    Csn z, sum, one, two, inc, twenty, lnz, t, z2, z4, z6, z8, z10, tt, psi;
+    Csn kk, den;
+    int err;
+    csn_from_int(&one, 1);
+    csn_from_int(&two, 2);
+    csn_from_int(&twenty, 20);
+    csn_copy(&z, x);
+    csn_zero(&sum);
+    while (csn_cmp(&z, &twenty) < 0) {
+        err = csn_div(&inc, &one, &z);
+        if (err) return err;
+        err = csn_add(&sum, &sum, &inc);
+        if (err) return err;
+        err = csn_add(&z, &z, &one);
+        if (err) return err;
+    }
+    err = csn_ln(&lnz, &z);
+    if (err) return err;
+    err = csn_div(&t, &one, &z);
+    if (err) return err;
+    err = csn_mul(&z2, &z, &z);
+    if (err) return err;
+    err = csn_mul(&z4, &z2, &z2);
+    if (err) return err;
+    err = csn_mul(&z6, &z4, &z2);
+    if (err) return err;
+    err = csn_mul(&z8, &z4, &z4);
+    if (err) return err;
+    err = csn_mul(&z10, &z8, &z2);
+    if (err) return err;
+    /* psi = lnz - (1/z)/2 - 1/(12 z^2) + 1/(120 z^4) - 1/(252 z^6)
+     *       + 1/(240 z^8) - 1/(132 z^10) */
+    csn_zero(&psi);
+    err = csn_add(&psi, &psi, &lnz);
+    if (err) return err;
+    err = csn_div(&tt, &t, &two);           /* (1/z)/2 */
+    if (err) return err;
+    err = csn_sub(&psi, &psi, &tt);
+    if (err) return err;
+    csn_parse("12", &kk);
+    err = csn_mul(&den, &kk, &z2);
+    if (err) return err;
+    err = csn_div(&tt, &one, &den);
+    if (err) return err;
+    err = csn_sub(&psi, &psi, &tt);
+    if (err) return err;
+    csn_parse("120", &kk);
+    err = csn_mul(&den, &kk, &z4);
+    if (err) return err;
+    err = csn_div(&tt, &one, &den);
+    if (err) return err;
+    err = csn_add(&psi, &psi, &tt);
+    if (err) return err;
+    csn_parse("252", &kk);
+    err = csn_mul(&den, &kk, &z6);
+    if (err) return err;
+    err = csn_div(&tt, &one, &den);
+    if (err) return err;
+    err = csn_sub(&psi, &psi, &tt);
+    if (err) return err;
+    csn_parse("240", &kk);
+    err = csn_mul(&den, &kk, &z8);
+    if (err) return err;
+    err = csn_div(&tt, &one, &den);
+    if (err) return err;
+    err = csn_add(&psi, &psi, &tt);
+    if (err) return err;
+    csn_parse("132", &kk);
+    err = csn_mul(&den, &kk, &z10);
+    if (err) return err;
+    err = csn_div(&tt, &one, &den);
+    if (err) return err;
+    err = csn_sub(&psi, &psi, &tt);
+    if (err) return err;
+    err = csn_sub(r, &psi, &sum);           /* psi(z) - sum 1/(x+i) */
+    return err;
+}
+
+/* the INVERSE factorial (user-ext 2026-11-13): INVFACT(y) = x with
+ * x! = y.  Exact integers walk down the factorial (INVFACT(120) = 5);
+ * everything else solves ln Gamma(x+1) = ln y with NEWTON's method in
+ * LOG SPACE (no huge intermediates - the full exponent range works)
+ * using the analytic digamma derivative.  The iteration runs to the
+ * BCD noise floor (the delta stops shrinking), which is the display's
+ * full precision.  The ascending Gamma branch is returned; below the
+ * Gamma minimum (~0.8856031944) there is no solution -> domain. */
+static const char *invfact_gmin = "0.88560319441088870028";
+
+int csn_invfact(Csn *r, const Csn *y)
+{
+    Csn one, gmin, lny, x, z, lg, f, psi, step, xnew, delta, prev;
+    int it, err, k;
+    Csn fk;
+
+    if (y->sign || csn_is_zero(y)) return CSN_ER_DOMAIN;
+    csn_from_int(&one, 1);
+    if (csn_parse(invfact_gmin, &gmin) != CSN_OK) return CSN_ER_SYNTAX;
+    if (csn_cmp(y, &gmin) < 0) return CSN_ER_DOMAIN;
+
+    /* the exact-integer walk: f = k!, find f == y exactly */
+    csn_zero(&fk);
+    if (csn_parse("1", &fk) != CSN_OK) return CSN_ER_SYNTAX;
+    k = 1;
+    if (csn_cmp(&fk, y) == 0) { csn_from_int(r, 1); return CSN_OK; }
+    while (csn_cmp(&fk, y) < 0) {
+        Csn kk;
+        csn_from_int(&kk, k + 1);
+        err = csn_mul(&fk, &fk, &kk);
+        if (err) break;                     /* the walk overflowed */
+        k++;
+        if (csn_cmp(&fk, y) == 0) { csn_from_int(r, k); return CSN_OK; }
+    }
+    /* x0: the walk's upper bracket (or 1 for y < 1) */
+    if (csn_cmp(&fk, y) > 0) csn_from_int(&x, k);
+    else csn_from_int(&x, 1);
+
+    err = csn_ln(&lny, y);
+    if (err) return err;
+    csn_zero(&prev);
+    for (it = 0; it < 100; it++) {
+        /* z = x + 1 */
+        err = csn_add(&z, &x, &one);
+        if (err) return err;
+        err = lngamma_lanczos(&lg, &z);
+        if (err) return err;
+        err = csn_sub(&f, &lg, &lny);
+        if (err) return err;
+        err = csn_digamma(&psi, &z);
+        if (err) return err;
+        if (csn_is_zero(&psi)) break;       /* the Gamma minimum */
+        err = csn_div(&step, &f, &psi);
+        if (err) return err;
+        err = csn_sub(&xnew, &x, &step);
+        if (err) return err;
+        err = csn_sub(&delta, &xnew, &x);
+        if (err) return err;
+        csn_abs(&delta, &delta);
+        if (csn_is_zero(&delta)) { csn_copy(&x, &xnew); break; }
+        if (it >= 3 && !csn_is_zero(&prev) && csn_cmp(&delta, &prev) >= 0)
+            break;                          /* the noise floor reached */
+        csn_copy(&prev, &delta);
+        csn_copy(&x, &xnew);
+    }
+    csn_copy(r, &x);
+    return CSN_OK;
+}
+
 int csn_fact(Csn *r, const Csn *n)
 {
     long k, i;

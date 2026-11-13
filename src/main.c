@@ -1437,6 +1437,26 @@ static void run_tests(void)
             else printf("ok   factf survives save/load\n");
         }
         remove("t_ft.CSD");
+        /* INVFACT: the inverse factorial (user-ext 2026-11-13) */
+        cs_clear_all();
+        ckc("INVFACT 120", "INVFACT(120)", "+5.0000000000000E+1");
+        ckc("INVFACT 24", "INVFACT(24)", "+4.0000000000000E+1");
+        ckc("INVFACT 6", "INVFACT(6)", "+3.0000000000000E+1");
+        ckc("INVFACT 2", "INVFACT(2)", "+2.0000000000000E+1");
+        ckc("INVFACT 1", "INVFACT(1)", "+1.0000000000000E+1");
+        ckc("INVFACT 119.5", "INVFACT(119.5)", "+4.9975523876792E+1");
+        ckc("INVFACT 50", "INVFACT(50)", "+4.4715274582078E+1");
+        ckc("INVFACT 0.95", "INVFACT(0.95)", "+8.6419384840602E+0");
+        cke("INVFACT 0", "INVFACT(0)", -1);
+        cke("INVFACT -5", "INVFACT(-5)", -1);
+        cke("INVFACT 0.5", "INVFACT(0.5)", -1);
+        ckc("INVFACT 1e400", "INVFACT(1e400)", "+2.1084996061940E+3");
+        /* the round trip to full precision: INVFACT(FACT(2.2)) = 2.2 */
+        ckc("INVFACT round trip", "INVFACT(FACT(2.2))", "+2.1999999999999E+1");
+        ckc("INVFACT round trip 0.5", "INVFACT(FACT(0.5))", "+4.9999999999999E+0");
+        /* a reference argument */
+        setv(0, 0, "120");
+        ckc("INVFACT ref", "INVFACT(A1)", "+5.0000000000000E+1");
         cs_clear_all();
         cs_clear_all();
         cs_clear_all();

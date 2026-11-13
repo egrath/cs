@@ -181,7 +181,7 @@ typedef enum {
     FN_DEG, FN_RAD,
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
     FN_REF, FN_VAL, FN_COLIDX, FN_MED,
-    FN_SGN, FN_NCR, FN_NPR, FN_INTG, FN_FRAC
+    FN_SGN, FN_NCR, FN_NPR, FN_INTG, FN_FRAC, FN_INVFACT
 } FnId;
 
 static int fnid(const char *name)
@@ -231,6 +231,7 @@ static int fnid(const char *name)
     if (!strcmp(name, "NPR"))   return FN_NPR;
     if (!strcmp(name, "INTG"))  return FN_INTG;
     if (!strcmp(name, "FRAC"))  return FN_FRAC;
+    if (!strcmp(name, "INVFACT")) return FN_INVFACT;
     return FN_UNKNOWN;
 }
 
@@ -569,6 +570,23 @@ static Val parse_primary(P *ps)
                 }
                 val_free(&a);
                 val_err(&v, 6);            /* wrong type */
+                return v;
+            }
+            if (f == FN_INVFACT) {
+                /* INVFACT(y): the inverse factorial - exact integers
+                 * walk, the rest solves ln Gamma(x+1) = ln y with
+                 * Newton (the full BCD precision) */
+                Val a = parse_numarg(ps);
+                int err;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                val_free(&v);
+                err = csn_invfact(&v.num, &a.num);
+                val_free(&a);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
                 return v;
             }
             if (f == FN_PROJ || f == FN_DEPD) {

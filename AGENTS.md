@@ -237,6 +237,23 @@ follow the original. Read this file before changing anything.
   non-integer x > 0 -> gamma; a huge argument overflows naturally
   (Error 0).  The factorial ENTRY (2.2!) works through the same
   route.  NCR/NPR stay integer-only.
+- **INVFACT(y)** (user-ext 2026-11-13): the inverse factorial.  Exact
+  integers walk the factorial sequence (INVFACT(120) = 5; y = 1 -> 1);
+  everything else solves ln Γ(x+1) = ln y with NEWTON in LOG SPACE
+  (lngamma_lanczos — the Lanczos form without the exp, so the full
+  exponent range works) and the ANALYTIC digamma derivative
+  (csn_digamma: shift the argument to >= 20 with psi(x+1) = psi(x) +
+  1/x, then the asymptotic series to the z^-10 term — error ~5e-18).
+  The iteration runs until the delta stops shrinking (the BCD noise
+  floor) or 100 passes.  Domain: y <= 0 and y below the Gamma minimum
+  (0.8856031944108887 — hardcoded) -> Error 0; for the two-sided
+  interval just above the minimum the ASCENDING branch is returned.
+  The argument comes through parse_numarg (Numbers and coerced
+  References).  THE LNGAMMA BUG CLASS: an uninitialized `half` (the
+  exponent zz+0.5 multiplier!) and an uninitialized lns2pi — the code
+  gave ln(A) only; also the exponent multiplier must be (zz+0.5), NOT
+  half alone.  The digamma was correct from the start (the "x10" was
+  a canon misread: +1.7061E+1 = 1.7061).
     colidx_word() validates 1..127 ("DX" -> Error 1; a designator with
     digits/empty -> Error 1), wrong types -> 6, no arg -> 3.  NOTE: a
     column-header display showing the index ("A (1)") was BRIEFLY

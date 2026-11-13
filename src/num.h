@@ -80,6 +80,8 @@ int  csn_mod(Csn *r, const Csn *a, const Csn *b);  /* a mod b            */
 int  csn_degrees(Csn *r, const Csn *rad);     /* rad -> deg              */
 int  csn_radians(Csn *r, const Csn *deg);     /* deg -> rad              */
 int  csn_fact(Csn *r, const Csn *n);          /* n!  (integer n)         */
+int  csn_invfact(Csn *r, const Csn *y);       /* inverse factorial       */
+int  csn_digamma(Csn *r, const Csn *x);       /* psi(x)                  */
 int  csn_comb(Csn *r, const Csn *n, const Csn *k);
 int  csn_perm(Csn *r, const Csn *n, const Csn *k);
 int  csn_gcd(Csn *r, const Csn *a, const Csn *b);
