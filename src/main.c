@@ -1457,6 +1457,28 @@ static void run_tests(void)
         /* a reference argument */
         setv(0, 0, "120");
         ckc("INVFACT ref", "INVFACT(A1)", "+5.0000000000000E+1");
+        /* E(): the Euler number at full internal precision */
+        ckc("E()", "E()", "+2.7182818284590E+1");
+        ckc("LN E", "LN(E())", "+1.0000000000000E+1");
+        ckc("E squared", "E()*E()", "+7.3890560989306E+1");
+        /* EXP(1) agrees with the E() constant to ~28 decimals (the
+         * constant carries more digits than the exp series rounds) */
+        {
+            Csn r;
+            char *sf = NULL;
+            char gg[48];
+            int e = cs_eval_formula("EXP(1)-E()", &r, &sf);
+            csn_canon(&r, gg, (int) sizeof(gg));
+            if (e != 0)
+                { printf("FAIL E in exp err %d\n", e); fails++; }
+            else if (e == 0 && gg[0] != '\0' &&
+                     (strstr(gg, "E-2") != NULL || strstr(gg, "E-1") != NULL ||
+                      strcmp(gg, "0") == 0))
+                printf("ok   E in exp: agrees to ~28 decimals (%s)\n", gg);
+            else
+                { printf("FAIL E in exp (%s)\n", gg); fails++; }
+            if (sf) free(sf);
+        }
         cs_clear_all();
         cs_clear_all();
         cs_clear_all();

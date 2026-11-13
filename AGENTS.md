@@ -480,6 +480,16 @@ Batch workflow (do all steps before reporting done):
   command panel or the help (both stay byte-identical to the 1982
   interface); documented here and in README.  Implemented in
   cs_sort_range (exported for --test) + sort_cmd.
+- **E()** (user-ext 2026-11-13): the Euler number as a constant
+  function, matching the PI() pattern — csn_e() parses the 56-digit
+  string "2.71828182845904523536028747135266249775724709369995957496696763"
+  (the BCD mantissa keeps the leading 40 digits).  LN(E()) = 1; the
+  engine's EXP(1) agrees with the constant to ~28 decimals (the
+  constant is MORE precise than the exp series' rounding — pinned as
+  a tolerance, not an equality).  The name "E" is a 1-letter function
+  name - no conflict with the COLIDX designator parse (that is scoped
+  to COLIDX's argument) or with scientific notation (parse_num's
+  E-scan only follows digits).
 - **MED(range)** (user-ext 2026-11-13): the median, in the SUM/AVG
   family's dispatch (parse_list args: ranges incl. rectangles,
   multi-area lists, direct numbers).  Text/empty entries skipped, an

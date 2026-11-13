@@ -482,6 +482,11 @@ arguments are `?n?`.
   Function-index note: the grammar cannot see a function name containing
   digits (the scanner stops at the first digit), hence no `LOG10` spelling —
   the manual's `LOG` is already the common logarithm.
+- **The Euler number**: `E()` — the constant at the full 40-digit
+  internal precision (the same digit budget as `PI()`), so
+  `LN(E())` = 1 and `E()*E()` = 7.3890560989306.  The engine's own
+  `EXP(1)` agrees with the constant to ~28 decimals (the constant
+  carries more digits than the exp series rounds).
 - **Round/truncate functions**: `ROUND(x,d)` (half-up with correct sign
   handling) and `TRUNC(x,d)` — `d` within −16..+16 (negative `d` means
   tens/hundreds), else `?n?`. These are user-called functions; the display

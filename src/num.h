@@ -75,6 +75,7 @@ int  csn_asin(Csn *r, const Csn *x);
 int  csn_acos(Csn *r, const Csn *x);
 int  csn_atan(Csn *r, const Csn *x);
 void csn_pi(Csn *r);                 /* pi at maximum internal precision */
+void csn_e(Csn *r);                  /* the Euler number, max precision  */
 int  csn_sign(Csn *r, const Csn *a);          /* -1 / 0 / +1             */
 int  csn_mod(Csn *r, const Csn *a, const Csn *b);  /* a mod b            */
 int  csn_degrees(Csn *r, const Csn *rad);     /* rad -> deg              */

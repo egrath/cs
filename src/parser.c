@@ -176,7 +176,7 @@ typedef enum {
     FN_SUM, FN_CNT, FN_AVG, FN_MAX, FN_MIN,
     FN_SQRT, FN_LOG, FN_LN, FN_ABS, FN_EXP,
     FN_REGR, FN_PROJ, FN_DEPD, FN_SLOPE, FN_UNKNOWN,
-    FN_SIN, FN_COS, FN_TAN, FN_ASIN, FN_ACOS, FN_ATAN, FN_PI,
+    FN_SIN, FN_COS, FN_TAN, FN_ASIN, FN_ACOS, FN_ATAN, FN_PI, FN_E,
     FN_SIGN, FN_MOD, FN_POWER, FN_LOG10, FN_DEGREES, FN_RADIANS,
     FN_DEG, FN_RAD,
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
@@ -207,6 +207,7 @@ static int fnid(const char *name)
     if (!strcmp(name, "ACOS"))  return FN_ACOS;
     if (!strcmp(name, "ATAN"))  return FN_ATAN;
     if (!strcmp(name, "PI"))    return FN_PI;
+    if (!strcmp(name, "E"))     return FN_E;
     if (!strcmp(name, "SIGN"))  return FN_SIGN;
     if (!strcmp(name, "MOD"))   return FN_MOD;
     if (!strcmp(name, "POWER")) return FN_POWER;
@@ -432,6 +433,13 @@ static Val parse_primary(P *ps)
                 else { val_err(&v, 6); return v; }
                 val_free(&v);
                 csn_pi(&v.num); v.good = 1;
+                return v;
+            }
+            if (f == FN_E) {
+                if (*ps->p == ')') ps->p++;
+                else { val_err(&v, 6); return v; }
+                val_free(&v);
+                csn_e(&v.num); v.good = 1;
                 return v;
             }
             if (f == FN_REF) {

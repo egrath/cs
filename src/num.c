@@ -1212,6 +1212,15 @@ void csn_pi(Csn *r)
     csn_copy(r, &PI);
 }
 
+/* the Euler number at maximum internal precision (the same digit
+ * budget as the PI constant; the BCD mantissa keeps the leading 40
+ * digits) */
+void csn_e(Csn *r)
+{
+    csn_parse("2.71828182845904523536028747135266249775724709369995957496696763",
+              r);
+}
+
 /* ===== Batch A: light algebra (sign, mod, deg/rad, fact/combin, gcd,
  * ===== lcm, round/trunc)
  */
