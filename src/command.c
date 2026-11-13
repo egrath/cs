@@ -686,6 +686,12 @@ static void what_heading(const Cell *c, int col, char *out, int outn)
         char buf[64];
         int prec;
         if (cs_is_inputf(c)) { strcpy(out, "In!"); return; }
+        /* a string result is the value (the derived type) */
+        if (c->strres) {
+            strncpy(out, c->strres, outn - 1);
+            out[outn - 1] = '\0';
+            return;
+        }
         prec = (c->prec >= 0) ? c->prec : colp[col];
         cs_fmt_num(&c->val, 20, prec, c->iserr, c->notation, buf,
                     (int) sizeof(buf));
@@ -754,8 +760,13 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
     ne = ne0 = 0;
     for (i = 0; i < nrows; i++) {
         kc = &snap[i * ncols + (keycol - c1)];
-        if (kc->type == CE_NUM && !kc->iserr) nonempty[ne++] = i;
-        else if (kc->type == CE_TEXT && kc->cont && kc->cont[0]) nonempty[ne++] = i;
+        /* a string-result formula cell is a TEXT key (the derived
+         * type, 2026-11-13) */
+        if (kc->type == CE_NUM && !kc->iserr && !kc->strres)
+            nonempty[ne++] = i;
+        else if (kc->type == CE_TEXT && kc->cont && kc->cont[0])
+            nonempty[ne++] = i;
+        else if (kc->strres && !kc->iserr) nonempty[ne++] = i;
         else empties[ne0++] = i;
     }
     /* stable insertion sort on the key */
@@ -765,11 +776,14 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
         for (j = i - 1; j >= 0; j--) {
             Cell *k2 = &snap[nonempty[j] * ncols + (keycol - c1)];
             int cv;
-            if (kc->type == CE_NUM && k2->type == CE_NUM)
+            if (kc->type == CE_NUM && !kc->strres &&
+                k2->type == CE_NUM && !k2->strres)
                 cv = csn_cmp(&kc->val, &k2->val);
             else if (kc->type == CE_TEXT && k2->type == CE_TEXT)
                 cv = strcmp(kc->cont, k2->cont);
-            else cv = (kc->type == CE_NUM) ? -1 : 1;   /* numbers first */
+            else if (kc->strres && k2->strres)
+                cv = strcmp(kc->strres, k2->strres);
+            else cv = (kc->type == CE_NUM && !kc->strres) ? -1 : 1;
             if (desc ? cv <= 0 : cv >= 0) break;
             nonempty[j + 1] = nonempty[j];
         }

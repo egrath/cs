@@ -180,6 +180,14 @@ VAL(A2)&"!"             appends to a text cell's content
                         (byte order, case-sensitive)
 ```
 
+A formula whose result is a string **is a text value**: the window
+shows it left-justified, the type line reads `text: left justified`,
+`VAL` and a bare reference yield the string, the range functions skip
+it like text, and `;R` re-evaluates it like any formula (a numeric
+result flips the cell back to numeric).  A string-result cell is not
+persisted as text — after loading a file it rests numeric until the
+next `;R`.
+
 The **strict mixing rule**: a string and a number in ONE operation is
 Error 6 (`"abc"+1`, `VAL(A2)*2` over a text cell, `"abc"=5`, `"a"&7`)
 — through every path, including direct function arguments

@@ -525,6 +525,19 @@ Batch workflow (do all steps before reporting done):
   form; parse_unary first gave the mixing error 6, bugfixed
   2026-11-13); a unary `-` on a string stays Error 6.  The ref
   shifter's delimiter lists gained `&` (4 sites in cells.c).
+- **The DERIVED cell type** (user bug report 2026-11-13): a formula
+  whose current result is a string IS a text value everywhere — the
+  window shows it LEFT-justified, the type line reads "text: left
+  justified", VAL and the bare-reference coercion yield the String,
+  range functions (SUM/CNT/AVG/MAX/MIN/MED) skip it like text, `;W`
+  headings show the string, print reports print it left-justified,
+  and the sort treats it as a TEXT key.  The store does NOT flip
+  CE_NUM/CE_TEXT: cont keeps the formula (re-evaluable), strres
+  carries the string result and is set/cleared by every commit/;R
+  evaluation — a numeric result clears strres and the cell is
+  numeric again (pinned flip-back).  strres is NOT persisted (CSD
+  saves the value bytes only): after a load the cell rests numeric
+  until the next ;R — consistent with manual recalculation.
 - **SET preserves formulas** (user-ext 2026-11-13, flagged semantic
   refinement): a numeric SET into a cell whose entry is a FORMULA
   (an expression, not a pure number literal — num_literal_p scans

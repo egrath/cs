@@ -64,8 +64,9 @@ static void print_render(int col, int row, char *out, int width)
         return;
     }
     if (c->strres) {
+        /* a string result prints like text: LEFT justified */
         int len = (int) strlen(c->strres);
-        if (len < width) memcpy(out + (width - len), c->strres, (size_t) len);
+        if (len < width) memcpy(out, c->strres, (size_t) len);
         else memcpy(out, c->strres, (size_t) width);
         return;
     }

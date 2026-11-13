@@ -1541,6 +1541,73 @@ static void run_tests(void)
             if (sf) free(sf);
         }
         cke("-CHR(65)", "-CHR(65)", 6);     /* a unary '-' stays an error */
+        /* the DERIVED TYPE (user bug report 2026-11-13): a formula
+         * whose result is a string IS a text value - for VAL, for the
+         * bare-reference coercion, for the display and the type line */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "+CHR(65)&CHR(66)");   /* A1 = "AB" */
+        if (!cs_cell(0, 0)->strres || strcmp(cs_cell(0, 0)->strres, "AB"))
+            { printf("FAIL derived strres (%s)\n",
+                     cs_cell(0, 0)->strres ? cs_cell(0, 0)->strres : "(null)");
+              fails++; }
+        else printf("ok   a string-result formula keeps its string\n");
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("VAL(A1)", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "AB"))
+                { printf("FAIL VAL of string formula (%s)\n",
+                         sf ? sf : "(null)"); fails++; }
+            else printf("ok   VAL(A1) yields the string AB\n");
+            if (sf) free(sf);
+        }
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("(A1=\"AB\"):\"y\":\"n\"", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "y"))
+                { printf("FAIL bare-ref string compare (%s)\n",
+                         sf ? sf : "(null)"); fails++; }
+            else printf("ok   a bare reference coerces to the string\n");
+            if (sf) free(sf);
+        }
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("+VAL(A1)&\"!\"", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "AB!"))
+                { printf("FAIL string chain (%s)\n", sf ? sf : "(null)");
+                  fails++; }
+            else printf("ok   VAL(A1)&\"!\" chains the string\n");
+            if (sf) free(sf);
+        }
+        cs_commit_entry(2, 0, "+\"ABC\"");            /* C1 = "ABC" */
+        cs_commit_entry(1, 0, "+VAL(C1)");            /* B1 = "ABC" */
+        if (!cs_cell(1, 0)->strres || strcmp(cs_cell(1, 0)->strres, "ABC"))
+            { printf("FAIL VAL text formula (%s)\n",
+                     cs_cell(1, 0)->strres ? cs_cell(1, 0)->strres : "(null)");
+              fails++; }
+        else printf("ok   +VAL(C1) shows ABC, derived type text\n");
+        /* the derived type flips back: a numeric result clears the
+         * string and the cell is numeric again */
+        cs_commit_entry(0, 0, "+1+1");
+        if (cs_cell(0, 0)->strres != NULL)
+            { printf("FAIL derived flip-back (strres not cleared)\n"); fails++; }
+        else printf("ok   a numeric result clears the string type\n");
+        {
+            char gb[48];
+            csn_canon(&cs_cell(0, 0)->val, gb, (int) sizeof(gb));
+            if (strcmp(gb, "+2.0000000000000E+1"))
+                { printf("FAIL flip-back value (%s)\n", gb); fails++; }
+            else printf("ok   the cell is numeric again (2)\n");
+        }
+        /* a string-result cell inside a range is SKIPPED like text */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "+\"txt\"");            /* A1 = "txt" */
+        setv(0, 1, "5");                              /* A2 = 5 */
+        ckc("range skips string formula", "SUM(A1>A2)",
+            "+5.0000000000000E+1");
+        cs_clear_all();
         cke("ORD ABC", "ORD(\"ABC\")", -1);
         cke("ORD empty", "ORD(\"\")", -1);
         cke("ORD number", "ORD(5)", 6);

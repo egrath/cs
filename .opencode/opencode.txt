@@ -1,3 +1,17 @@
+## BATCH (branch "brainfuck", follow-up 2): the DERIVED cell type (2026-11-13):
+- USER BUG REPORT: +CHR(65)&CHR(66) displayed "AB" but the type line
+  said numeric; VAL(A1) gave 0, not the string; the alignment was
+  numeric (right).  FIX — the derived type: a formula whose result is
+  a string IS a text value.  cont keeps the formula, strres carries
+  the string; every consumer reads the VALUE: val_deref + FN_VAL
+  (strres first), the window (LEFT-justified strres), the type line
+  ("text: left justified"), print_render (left), what_heading (;W
+  shows the string), the sort keys (strres -> text key), the range
+  walkers (skip strres like text).  A numeric result clears strres ->
+  numeric again (pinned).  strres is not persisted (post-load the
+  cell rests numeric until ;R).  --test 391 ok; pty: AB/AB/ABC all
+  left-justified, type line "text: left justified".
+
 ## BATCH (branch "brainfuck", follow-up): leading-+ on strings (2026-11-13):
 - USER BUG REPORT: `CHR(65)` typed into a cell shows as text — the
   1982 rule: system functions need a LEADING `+`/`-`; `+CHR(65)` then

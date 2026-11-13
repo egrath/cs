@@ -76,6 +76,14 @@ static int val_deref(Val *v)
         return -1;
     if (v->type != VT_REF) return 6;    /* a Range is not a value here */
     cl = cs_cell(v->ref.col, v->ref.row);
+    /* a formula whose current result is a string IS a text value
+     * (the derived type, user report 2026-11-13) */
+    if (cl && cl->strres && !cl->iserr) {
+        v->str = cs_strdup(cl->strres);
+        if (!v->str) { val_err(v, 0); return 0; }
+        v->type = VT_STR;
+        return -1;
+    }
     if (cl && cl->type == CE_TEXT && cl->cont && !cl->iserr) {
         v->str = cs_strdup(cl->cont);
         if (!v->str) { val_err(v, 0); return 0; }
@@ -339,9 +347,11 @@ static Val parse_list(P *ps, Csn *list, int *cnt)
                 for (c = v.rng.start.col; c <= v.rng.end.col; c++) {
                     Cell *cl = cs_cell(c, r);
                     if (!cl) continue;
-                    if (cl->type == CE_NUM && !cl->iserr) {
+                    /* a string-result formula cell is a TEXT value in
+                     * the range: skipped like text (2026-11-13) */
+                    if (cl->type == CE_NUM && !cl->iserr && !cl->strres) {
                         if (n < LISTMAX) csn_copy(&list[n++], &cl->val);
-                    } else if (cl->iserr) { val_err(&rv, 0); return rv; }
+                    } else if (cl->iserr && !cl->strres) { val_err(&rv, 0); return rv; }
                 }
         } else {
             int e = val_deref(&v);
@@ -509,6 +519,14 @@ static Val parse_primary(P *ps)
                 memset(&v, 0, sizeof(v));
                 csn_zero(&v.num);
                 v.type = VT_NUM;
+                /* the derived type first: a string result is the value */
+                if (cl && cl->strres && !cl->iserr) {
+                    v.str = cs_strdup(cl->strres);
+                    if (!v.str) { val_err(&v, 0); return v; }
+                    v.type = VT_STR;
+                    v.good = 1;
+                    return v;
+                }
                 if (cl && cl->type == CE_NUM && !cl->iserr) {
                     csn_copy(&v.num, &cl->val);
                     v.good = 1;
