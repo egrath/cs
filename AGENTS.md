@@ -432,6 +432,14 @@ Batch workflow (do all steps before reporting done):
   command panel or the help (both stay byte-identical to the 1982
   interface); documented here and in README.  Implemented in
   cs_sort_range (exported for --test) + sort_cmd.
+- **MED(range)** (user-ext 2026-11-13): the median, in the SUM/AVG
+  family's dispatch (parse_list args: ranges incl. rectangles,
+  multi-area lists, direct numbers).  Text/empty entries skipped, an
+  error cell in a range -> Error 0 (the family's behavior — user
+  decision).  BCD insertion sort ascending; odd count -> the middle
+  element, even count -> the average of the two middle elements
+  (Excel-style — user decision); no numbers -> 0 (AVG's behavior —
+  user decision).
    - Differential harness: `tests/precision_ref.c` + `tests/precision_ref.py`
      (25 inputs × 9 functions at 38 decimals vs a 150-digit decimal
      reference, RADIANS throughout; tolerance 2e-29 relative — see the

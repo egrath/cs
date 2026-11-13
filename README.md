@@ -233,6 +233,21 @@ CNT(A1>REF(1,10))               mixed spelling
 MIN(REF(1,1)>A10)   MAX(A1>REF(1,10))
 SUM(A1>A5,B1>B3)                multi-area: both ranges add up
 CNT(A1>A5,B1>B3)                -> 8
+MED(A3>B6)                      the median (user-ext 2026-11-13)
+```
+
+`MED(range)` — the median, with the same value rules as the family
+(text and empty entries are skipped; an error cell in the range is
+Error 0; multi-area lists and direct numbers are allowed).  The
+values sort ascending with the BCD compare: an **odd** count yields
+the middle element, an **even** count the average of the two middle
+elements (Excel-style), and a range with no numbers gives 0 (like
+`AVG`):
+
+```text
+MED(A3>B6)          1,5,4,2 in A with text in B3  ->  3
+MED(A3>B4,A6)       1,5,3,2  ->  (2+3)/2 = 2.5
+MED(A3>A3)          a single value is its own median
 ```
 
 The regression set takes a range plus one anchor reference and keeps

@@ -1307,6 +1307,30 @@ static void run_tests(void)
         if (cs_cell(0, 2)->val.nd[0] != 1)
             { printf("FAIL sort key outside\\n"); fails++; }
         else printf("ok   sort rejects a key outside the range\\n");
+        /* MED(range): the median (user-ext 2026-11-13) - odd count,
+         * Excel-style even count, text/empties skipped, a rectangle
+         * range, unsorted input, an error cell -> Error 0, empty -> 0
+         * (AVG's behavior, user decision) */
+        cs_clear_all();
+        setv(0, 2, "1");                        /* A3 = 1 */
+        setv(0, 3, "5");                        /* A4 = 5 */
+        setv(0, 4, "4");                        /* A5 = 4 */
+        setv(0, 5, "2");                        /* A6 = 2 */
+        cs_set_text(cs_cell(1, 2), "Apples", 'L');   /* B3 text: ignored */
+        setv(1, 3, "3");                        /* B4 = 3 */
+        ckc("MED odd", "MED(A3>B6)", "+3.0000000000000E+1");
+        ckc("MED rectangle", "MED(A3>B4)", "+3.0000000000000E+1");
+        ckc("MED even", "MED(A3>B4,A6)", "+2.5000000000000E+1");
+        ckc("MED direct mix", "MED(A3>A4,100)", "+5.0000000000000E+1");
+        ckc("MED single", "MED(A3>A3)", "+1.0000000000000E+1");
+        cs_free_cell(cs_cell(0, 2));
+        cs_free_cell(cs_cell(0, 3));
+        cs_free_cell(cs_cell(0, 4));
+        cs_free_cell(cs_cell(0, 5));
+        cs_free_cell(cs_cell(1, 3));
+        ckc("MED empty range", "MED(A3>B6)", "0");
+        cs_commit_entry(0, 4, "+1/0");          /* A5 = ?n? */
+        cke("MED error cell", "MED(A3>A6)", -1);
         cs_clear_all();
         cs_clear_all();
     }

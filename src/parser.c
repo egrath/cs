@@ -177,7 +177,7 @@ typedef enum {
     FN_SIGN, FN_MOD, FN_POWER, FN_LOG10, FN_DEGREES, FN_RADIANS,
     FN_DEG, FN_RAD,
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
-    FN_REF, FN_VAL, FN_COLIDX
+    FN_REF, FN_VAL, FN_COLIDX, FN_MED
 } FnId;
 
 static int fnid(const char *name)
@@ -221,6 +221,7 @@ static int fnid(const char *name)
     if (!strcmp(name, "REF"))   return FN_REF;
     if (!strcmp(name, "VAL"))   return FN_VAL;
     if (!strcmp(name, "COLIDX")) return FN_COLIDX;
+    if (!strcmp(name, "MED"))   return FN_MED;
     return FN_UNKNOWN;
 }
 
@@ -852,6 +853,33 @@ static Val parse_primary(P *ps)
                     for (i = 1; i < cnt; i++)
                         if (csn_cmp(&list[i], &v.num) > 0)
                             csn_copy(&v.num, &list[i]);
+                } else if (f == FN_MED) {
+                    /* the median (user-ext 2026-11-13): the numbers
+                     * sorted ascending; odd count -> the middle
+                     * element, even count -> the average of the two
+                     * middle elements (Excel-style); empty -> 0 like
+                     * AVG; the values are the SAME list SUM/AVG
+                     * collect (text/empties skipped, an error cell in
+                     * a range is Error 0) */
+                    int i, j;
+                    Csn t;
+                    for (i = 1; i < cnt; i++) {
+                        t = list[i];
+                        for (j = i - 1; j >= 0 && csn_cmp(&list[j], &t) > 0; j--)
+                            list[j + 1] = list[j];
+                        list[j + 1] = t;
+                    }
+                    if (cnt % 2 == 1) {
+                        csn_copy(&v.num, &list[cnt / 2]);
+                    } else {
+                        Csn two, sum;
+                        int err;
+                        err = csn_add(&sum, &list[cnt / 2 - 1], &list[cnt / 2]);
+                        if (err) { val_err(&v, 0); return v; }
+                        csn_from_int(&two, 2);
+                        err = csn_div(&v.num, &sum, &two);
+                        if (err) { val_err(&v, 0); return v; }
+                    }
                 } else {
                     int i;
                     csn_copy(&v.num, &list[0]);
