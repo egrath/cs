@@ -22,7 +22,7 @@ void cs_mark_sheet_change(void)
 }
 
 /* the safeguard limits and the interruption message (flagged strings) */
-#define CS_MAX_PASSES 1000
+#define CS_MAX_PASSES 10000
 
 /* re-evaluate a single numeric cell (input-formula cells excluded) */
 /* error-cell queue: filled by the last Recalculate, in the same order
@@ -130,10 +130,24 @@ int cs_recalc_entry(int col, int rw)
 }
 
 /* the one-pass body of the recalculation (locked rows first) */
+static int cs_dbg_pass;
 static void recalc_pass(void)
 {
     int r, c;
     cs_nerrlist = 0;                    /* fresh queue per recalculation */
+    if (getenv("BFDBG") && cs_cell(2, 4)->cont) {
+        char q0[48], q1[48], q2[48], q3[48];
+        if (++cs_dbg_pass <= 9) {
+            csn_canon(&cs_cell(1, 0)->val, q0, 48);
+            csn_canon(&cs_cell(5, 0)->val, q1, 48);
+            csn_canon(&cs_cell(0, 0)->val, q2, 48);
+            csn_canon(&cs_cell(1, 4)->val, q3, 48);
+            fprintf(stderr,
+                    "PASS %d: pc=%s mode=%s t1=%s c=%s (cerr=%d) J5err=%d\n",
+                    cs_dbg_pass, q0, q1, q2, q3, cs_cell(1, 4)->iserr,
+                    cs_cell(8, 4)->iserr);
+        }
+    }
     if (dirTB) {
         for (c = 0; c < CS_MAXCOL; c++)
             for (r = 0; r < CS_MAXROW; r++)
@@ -208,7 +222,9 @@ void cs_run_recalc_passes(int always_one)
         }
     }
     cs_kb_nodelay_set(0);
-    cs_recalc_last_passes = pass;       /* diagnostics / tests */
+    /* the executed pass count (at the cap exit the for-loop has
+     * already incremented past the limit) */
+    cs_recalc_last_passes = (pass > CS_MAX_PASSES) ? pass - 1 : pass;
     if (iterating && pass > CS_MAX_PASSES) {
         cs_limit_hit = 1;
         cs_msg("Recalculation limit reached");

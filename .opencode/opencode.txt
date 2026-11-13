@@ -1,3 +1,42 @@
+## BATCH (branch "brainfuck" -> pushed to master): the typed string model + bf interpreter (2026-11-13):
+- STRING BATCH: VAL is the TYPED accessor (text cell -> String; empty/
+  error -> Error 1); string comparisons (all six ops, strcmp byte
+  order); `&` concatenation level parse_concat between parse_add and
+  parse_cmp; CHR(n) 32..127 only, ORD(s) strict length-1 printable;
+  STRICT MIXING: String+Number -> Error 6 everywhere (parse_add,
+  parse_mul, parse_cmp, direct list args in parse_list); ranges still
+  SKIP their text (SUM/MED family).  The ref shifter's delimiter
+  lists gained '&' (4 sites in cells.c).
+- GRAMMAR TRAP (bit 3 bf formulas): `X!=0` parses as `(X!)=0` — the
+  factorial POSTFIX; inequality is `<>`.
+- SET PRESERVES FORMULAS: exec_set_stmt's numeric write keeps the
+  target's entry text when it is NOT a pure number literal
+  (num_literal_p in parser.c); a literal/empty/text target still
+  becomes the plain value (the clobber keeps state-cell re-evaluations
+  idempotent — LOAD-BEARING for the driver's stability).
+- CS_MAX_PASSES 10000; cs_recalc_last_passes normalized to the
+  executed count (pass-1 at the cap exit).
+- BRAINFUCK: 17 formula cells row 5 B..R + state row 1 (B1 pc, D1
+  ptr, F1 mode, H1 depth, J1 out, K1 in, L1 len), program row 3 (one
+  TEXT char per cell), tape col A (seed 0), output col S, input col T
+  from row 20.  One instruction per ;R pass; halt = mode 3 (R5) and
+  the sheet settles.  --test bf_build runs `+++[>+++<-]` (tape 9),
+  `H`, `Hi`, `,`-echo with input "A".  LESSONS: (a) a conditional's
+  FALSE branch runs whenever the cond is false — Q5's else must be
+  guarded to skip-back (nested conditional as the value piece, fully
+  parenthesized so run_branch's ';' split sees ONE piece); (b) `!=`
+  trap; (c) CHR domain stalls gracefully on non-printable tape bytes.
+- DEBUGGED THE PASS-CAP TEST: the commit's eval left A1 = the plain
+  value with cont "1.000000000000" — the SET clobbered the formula
+  (root cause of the whole SET-preservation change).
+- VERIFIED: --test 380 ok, warning-free build; pty: idle cs1.txt
+  EXACT (B3=33.00 state; the recipe: ;G B3, 33.00 RETURN, capture,
+  then close the log BEFORE ;Q — a bare `log_file` in expect
+  TRUNCATED the capture file once (24 bytes); idle4.exp (ESC to
+  cancel the quit flow) works); pty interactive bounded machine
+  (A1=0 seed, formula at B1, ^X right) settles at 5.00/5.00 with the
+  formula on the contents line.
+- Untracked (never commit): docs/CalcStar_UM_11_8_1982.pdf, test3.csd.
 # CalcStar clone — session notes / pick-up point
 # (written and maintained by the agent; read this first after a session loss)
 

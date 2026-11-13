@@ -143,7 +143,7 @@ Wherever a value is consumed, a reference **coerces** to that value
 number, a TEXT cell yields its content as a string, and an empty or
 error cell raises **Error 1** — never a silent zero.
 
-### VAL(cell) — explicit value access
+### VAL(cell) — the typed value access
 
 ```text
 VAL(A1)                 the number stored in A1
@@ -154,12 +154,41 @@ SQRT(VAL(A1))           any numeric function accepts VAL(...)
 VAL(REF(1+1,2+3))       fully dynamic: the value of B5
 ```
 
-`VAL` needs exactly one cell reference.  `VAL` of an empty, text or
-error cell is **Error 1** — decide in a conditional instead:
+`VAL` needs exactly one cell reference.  `VAL` is **typed**: a numeric
+cell yields its number, a TEXT cell yields its content as a string,
+and an empty, allocated or error cell is **Error 1** — decide in a
+conditional instead:
 
 ```text
 VAL(A1)>0:"filled":"empty"
 ```
+
+### Strings, characters and `&` (user-extended 2026-11-13)
+
+String values exist inside formulas: a quoted literal, `VAL` of a text
+cell, the result of a conditional, and the two character functions:
+
+```text
+CHR(n)                  the character with code n (32..127 only;
+                        0, negative, fractional or out of range -> ?n?)
+ORD(s)                  the code of a string of length EXACTLY 1
+                        (another length, a non-printable byte, or a
+                        number argument -> ?n?)
+CHR(72)&CHR(73)         "HI"        & concatenates two strings
+VAL(A2)&"!"             appends to a text cell's content
+("a"<"b"):"yes":"no"    the six comparisons work on strings
+                        (byte order, case-sensitive)
+```
+
+The **strict mixing rule**: a string and a number in ONE operation is
+Error 6 (`"abc"+1`, `VAL(A2)*2` over a text cell, `"abc"=5`, `"a"&7`)
+— through every path, including direct function arguments
+(`SUM("abc",1)` is an error).  The one documented exception stays:
+text INSIDE a referenced range is ignored by `SUM`/`CNT`/`AVG`/
+`MAX`/`MIN`/`MED`.
+
+Grammar note: inequality is spelled `<>` (the manual's operator).
+`!` after a value is the factorial postfix (`5!`), never a `!=`.
 
 ### REF(col,row) — construct a reference
 
@@ -306,12 +335,25 @@ selected branch executes):
 
 `RECALC()` requests recalculation passes; the drivers (entry commit,
 `;R`) iterate whole-sheet passes until nothing changes, the
-1000-pass limit, or ESC.  The change detection is honest: an SET that
-writes the *same* value does not keep the iteration alive, so an
-always-true SET branch like the first example settles immediately
-under `;R A`.  Two formulas fighting over one cell (one writes 20,
-the other writes 19) hit the limit and show `Recalculation limit
-reached`.
+10000-pass limit (raised for long state machines), or ESC.  The
+change detection is honest: an SET that writes the *same* value does
+not keep the iteration alive, so an always-true SET branch like the
+first example settles immediately under `;R A`.  Two formulas
+fighting over one cell (one writes 20, the other writes 19) hit the
+limit and show `Recalculation limit reached`.
+
+**SET preserves formulas** (2026-11-13): a numeric SET into a cell
+whose entry is a formula (an expression, not a plain number literal)
+updates the value and keeps the entry text — a state machine whose
+counter targets its own cell keeps its program:
+
+```text
+1:SET(A1,VAL(A1)+1);RECALC();0:0        committed in A1 itself
+                                        the formula survives every pass
+```
+
+A SET into a plain number (or an empty/text) cell still rewrites the
+cell as a plain value, exactly as before.
 
 ### Dynamic ranges in the command dialogs
 
@@ -507,6 +549,98 @@ arguments are `?n?`.
 - Cells and the save format (`CSD2` — numbers stored as sign, exponent,
   digit bytes) hold the BCD values as-is.  Files produced by older builds
   (`CSD1`, IEEE doubles) are refused with the manual's `READ ERROR`.
+
+## A brainfuck interpreter built from formulas (user-extended 2026-11-13)
+
+There is no brainfuck command — the interpreter is a fixed block of
+17 formula cells that you paste once, plus a program row and a data
+column.  It is a proof of concept for the string/typed-value batch:
+`CHR`/`ORD` do the I/O, `VAL`/`REF` address the tape dynamically, and
+the iterated recalculation (`;R A`) is the clock — **one instruction
+per pass**, the user watches the values change live.
+
+### Sheet layout
+
+```text
+row 1   B1 pc        the program pointer (the column of the current
+                     program character; starts at 2 = column B)
+        D1 ptr       the tape pointer (the tape row, starts at 1)
+        F1 mode      0 run, 1 skip-fwd, 2 skip-back, 3 halted
+        H1 depth     the bracket depth while skipping
+        J1 out       how many characters have been printed
+        K1 in        how many input characters have been read
+        L1 len       the program length (a constant you set)
+row 3   B3..         the program: ONE character per cell, columns
+                     B, C, D, ... (type them as text!)
+row 5   B5..R5       the machinery (17 formulas, below)
+col A   A1..A250     the tape: seed the cells you will use with 0
+col S   S1..         the output: one character per row, read downward
+col T   T20..        the input characters, one per cell (read by `,`)
+```
+
+Column widths: make the columns you watch wide enough (A, B and S at
+least; `;W`/`;F` adjust them).
+
+### The machinery (row 5, columns B..R)
+
+Every formula starts with `+` (numeric entry).  They are evaluated
+left to right once per pass; exactly one cell acts per pass.  The
+five state cells B5, C5..H5 etc. are never copied — the formulas
+address the state cells absolutely.
+
+```text
+B5  +(VAL(B1)<=VAL(L1)+1):ORD(VAL(REF(VAL(B1),3))):0
+C5  +(VAL(F1)=0)*(VAL(B5)=43):SET(REF(1,VAL(D1)),VAL(REF(1,VAL(D1)))+1);SET(B1,VAL(B1)+1);0:0
+D5  +(VAL(F1)=0)*(VAL(B5)=45):SET(REF(1,VAL(D1)),VAL(REF(1,VAL(D1)))-1);SET(B1,VAL(B1)+1);0:0
+E5  +(VAL(F1)=0)*(VAL(B5)=62):SET(D1,VAL(D1)+1);SET(B1,VAL(B1)+1);0:0
+F5  +(VAL(F1)=0)*(VAL(B5)=60):SET(D1,VAL(D1)-1);SET(B1,VAL(B1)+1);0:0
+G5  +(VAL(F1)=0)*(VAL(B5)=46):SET(REF(19,VAL(J1)+1),CHR(VAL(REF(1,VAL(D1)))));SET(J1,VAL(J1)+1);SET(B1,VAL(B1)+1);0:0
+H5  +(VAL(F1)=0)*(VAL(B5)=44):SET(REF(1,VAL(D1)),ORD(VAL(REF(20,VAL(K1)+20))));SET(K1,VAL(K1)+1);SET(B1,VAL(B1)+1);0:0
+I5  +(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))=0):SET(F1,1);SET(H1,0);0:0
+J5  +(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))<>0):SET(B1,VAL(B1)+1);0:0
+K5  +(VAL(F1)=0)*(VAL(B5)=93)*(VAL(REF(1,VAL(D1)))<>0):SET(F1,2);SET(H1,0);0:0
+L5  +(VAL(F1)=0)*(VAL(B5)=93)*(VAL(REF(1,VAL(D1)))=0):SET(B1,VAL(B1)+1);0:0
+M5  +(VAL(F1)=1)*(VAL(B5)<>93):SET(H1,VAL(H1)+(VAL(B5)=91));SET(B1,VAL(B1)+1);0:0
+N5  +(VAL(F1)=1)*(VAL(B5)=93):SET(H1,VAL(H1)-1);SET(B1,VAL(B1)+1);0:0
+O5  +(VAL(F1)=1)*(VAL(B5)=93)*(VAL(H1)=0):SET(F1,0);0:0
+P5  +(VAL(F1)=2)*(VAL(B5)<>91):SET(B1,VAL(B1)-1);SET(H1,VAL(H1)+(VAL(B5)=93));0:0
+Q5  +(VAL(F1)=2)*(VAL(B5)=91):((VAL(H1)=1):SET(F1,0);0:SET(H1,VAL(H1)-1);SET(B1,VAL(B1)-1);0):0
+R5  +(VAL(B1)>VAL(L1)+1)*(VAL(F1)<>3):SET(F1,3);0:0
+```
+
+How it works: B5 fetches the current program character's code
+(guarded so an overshoot reads 0 instead of erroring).  C5..H5 are
+the run executors for `+ - > < . ,`; I5..L5 handle `[`/`]` (a false
+`[` enters skip-forward, a true `]` enters skip-back, both with the
+depth counter H1); M5..Q5 are the skip steps (one character per
+pass, bracket-depth aware — a nested conditional in Q5's value
+position does the "land on the matching bracket" case); R5 is the
+halt detector: when the pc runs past the program the mode becomes 3,
+every condition goes false and `;R A` **settles** by itself.
+
+### Running a program
+
+1. Set the state: B1=2, D1=1, F1=0, H1=0, J1=0, K1=0 and L1=the
+   program length.
+2. Seed the tape: enter 0 into A1..A60 (however many cells you use).
+3. Type the program characters into row 3, columns B.., one per
+   cell, as TEXT.
+4. Type (or paste) the 17 machinery formulas into row 5.
+5. `;R A` — one instruction per pass; the machine stops by itself.
+   Read the output down column S and the tape in column A.
+
+`+++[>+++<-]` leaves 9 in A2.  `++++++++[>++++++++<-]>++++++++.`
+prints `H`.  The classic `++++++[>++++++++<-]>+.` prints `1` — the
+interpreter passes all of these in the test suite.
+
+Constraints: the brackets must be balanced (an unbalanced program
+walks pc to the end and stops via the halt cell); `.` needs the tape
+byte in 32..127 (`CHR`'s domain); `,` needs enough input characters
+in column T (running out stalls the machine with an error cell);
+the tape is 250 rows deep and the output column is 255 rows — a
+long-running loop can hit the 10000-pass recalculation cap, which
+shows `Recalculation limit reached` and leaves the machine's state
+intact for another `;R A`.
 
 ## Build & run
 

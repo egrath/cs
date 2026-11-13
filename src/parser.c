@@ -181,7 +181,8 @@ typedef enum {
     FN_DEG, FN_RAD,
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
     FN_REF, FN_VAL, FN_COLIDX, FN_MED,
-    FN_SGN, FN_NCR, FN_NPR, FN_INTG, FN_FRAC, FN_INVFACT
+    FN_SGN, FN_NCR, FN_NPR, FN_INTG, FN_FRAC, FN_INVFACT,
+    FN_CHR, FN_ORD
 } FnId;
 
 static int fnid(const char *name)
@@ -233,6 +234,8 @@ static int fnid(const char *name)
     if (!strcmp(name, "INTG"))  return FN_INTG;
     if (!strcmp(name, "FRAC"))  return FN_FRAC;
     if (!strcmp(name, "INVFACT")) return FN_INVFACT;
+    if (!strcmp(name, "CHR"))   return FN_CHR;
+    if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
 
@@ -343,7 +346,11 @@ static Val parse_list(P *ps, Csn *list, int *cnt)
         } else {
             int e = val_deref(&v);
             if (e >= 0) { val_free(&v); val_err(&rv, e); return rv; }
-            if (v.type == VT_STR) continue;    /* text is ignored */
+            /* the STRICT mixing rule (user-refined 2026-11-13): a
+             * directly-entered String argument in a numeric list is an
+             * error (ranges SKIP their non-numerics instead - the
+             * documented MED/SUM semantics) */
+            if (v.type == VT_STR) { val_free(&v); val_err(&rv, 6); return rv; }
             if (n < LISTMAX) csn_copy(&list[n++], &v.num);
         }
         val_free(&v);
@@ -485,7 +492,10 @@ static Val parse_primary(P *ps)
                 return v;
             }
             if (f == FN_VAL) {
-                /* VAL(cell): the value of a single referenced cell */
+                /* VAL(cell): the TYPED value of a single referenced
+                 * cell (user-refined 2026-11-13): a numeric cell -> a
+                 * Number, a TEXT cell -> its content as a String, an
+                 * empty/allocated/error cell -> Error 1 */
                 Val a = parse_condexpr(ps);
                 Cell *cl;
                 if (!a.good) return a;
@@ -504,7 +514,14 @@ static Val parse_primary(P *ps)
                     v.good = 1;
                     return v;
                 }
-                val_err(&v, 1);     /* empty/allocated/text/error cell */
+                if (cl && cl->type == CE_TEXT && cl->cont && !cl->iserr) {
+                    v.str = cs_strdup(cl->cont);
+                    if (!v.str) { val_err(&v, 0); return v; }
+                    v.type = VT_STR;
+                    v.good = 1;
+                    return v;
+                }
+                val_err(&v, 1);     /* empty/allocated/error cell */
                 return v;
             }
             if (f == FN_COLIDX) {
@@ -594,6 +611,68 @@ static Val parse_primary(P *ps)
                 err = csn_invfact(&v.num, &a.num);
                 val_free(&a);
                 if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            if (f == FN_CHR) {
+                /* CHR(n): the character with the 7-bit printable code
+                 * n (32..127); everything else is Error 0 (user-ext
+                 * 2026-11-13) */
+                Val a = parse_numarg(ps);
+                int cc;
+                Csn t;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                if (!csn_integer_part(&a.num, &t)) {
+                    val_free(&a); val_err(&v, 0); return v;
+                }
+                cc = (int) csn_to_long_val(&t);
+                val_free(&a);
+                if (cc < 32 || cc > 127) { val_err(&v, 0); return v; }
+                val_free(&v);
+                memset(&v, 0, sizeof(v));
+                csn_zero(&v.num);
+                v.str = (char *) malloc(2);
+                if (!v.str) { val_err(&v, 0); return v; }
+                v.str[0] = (char) cc;
+                v.str[1] = '\0';
+                v.type = VT_STR;
+                v.good = 1;
+                return v;
+            }
+            if (f == FN_ORD) {
+                /* ORD(s): the 7-bit code of a STRING OF LENGTH 1 with
+                 * a printable byte (32..127); a length other than 1,
+                 * an out-of-range byte, a Number argument, or an empty
+                 * string is an error (user-ext 2026-11-13) */
+                Val a = parse_condexpr(ps);
+                int blen;
+                unsigned char c0;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                if (a.type == VT_REF) {
+                    int de = val_deref(&a);
+                    if (de >= 0) { val_free(&a); val_err(&v, de); return v; }
+                }
+                if (a.type != VT_STR || !a.str) {
+                    val_free(&a); val_err(&v, 6); return v;
+                }
+                blen = (int) strlen(a.str);
+                c0 = (unsigned char) a.str[0];
+                val_free(&a);
+                val_free(&v);
+                memset(&v, 0, sizeof(v));
+                csn_zero(&v.num);
+                v.type = VT_NUM;
+                if (blen != 1 || c0 < 32 || c0 > 127) {
+                    val_err(&v, 0);
+                    return v;
+                }
+                csn_from_int(&v.num, (long) c0);
                 v.good = 1;
                 return v;
             }
@@ -1114,6 +1193,10 @@ static Val parse_add(P *ps)
         if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
         e = val_deref(&b);
         if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        if (a.type == VT_STR || b.type == VT_STR ||
+            a.type == VT_RANGE || b.type == VT_RANGE) {
+            val_free(&a); val_free(&b); val_err(&a, 6); return a;
+        }
         if (op == '+') {
             if (a.type == VT_BOOL && b.type == VT_BOOL) {
                 /* logical OR */
@@ -1134,11 +1217,62 @@ static Val parse_add(P *ps)
     return a;
 }
 
-static Val parse_cmp(P *ps)
+static Val parse_concat(P *ps);
+
+/* string concatenation with '&' (user-ext 2026-11-13): String & String
+ * only - mixing a Number in is Error 6 (the strict rule).  Sits
+ * between the additive and the comparison levels. */
+static Val parse_concat(P *ps)
 {
     Val a;
     memset(&a, 0, sizeof(a));
     a = parse_add(ps);
+    if (!a.good) return a;
+    /* no eager dereference: a Reference stays raw for '>' (which sits
+     * ABOVE this level) - the dereference happens at the operation */
+    for (;;) {
+        const char *p = ps->p;
+        Val b;
+        int e;
+        memset(&b, 0, sizeof(b));
+        skip_ws(&p);
+        if (*p == ':') break;
+        if (*p != '&') break;
+        ps->p = p + 1;
+        b = parse_add(ps);
+        if (!b.good) { val_free(&a); val_free(&b); return b; }
+        /* both operands are consumed here: deref (option 3) */
+        e = val_deref(&a);
+        if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        e = val_deref(&b);
+        if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        if (a.type == VT_STR && b.type == VT_STR) {
+            char *cc = (char *) malloc(strlen(a.str) + strlen(b.str) + 1);
+            Val rv;
+            if (!cc) { val_free(&a); val_free(&b); val_err(&a, 0); return a; }
+            strcpy(cc, a.str);
+            strcat(cc, b.str);
+            val_free(&a);
+            val_free(&b);
+            memset(&rv, 0, sizeof(rv));
+            rv.str = cc;
+            rv.type = VT_STR;
+            rv.good = 1;
+            a = rv;
+            continue;
+        }
+        val_free(&a); val_free(&b);
+        val_err(&a, 6);
+        return a;
+    }
+    return a;
+}
+
+static Val parse_cmp(P *ps)
+{
+    Val a;
+    memset(&a, 0, sizeof(a));
+    a = parse_concat(ps);
     if (!a.good) return a;
     {
         const char *p = ps->p;
@@ -1184,6 +1318,24 @@ static Val parse_cmp(P *ps)
         if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
         e = val_deref(&b);
         if (e >= 0) { val_free(&a); val_free(&b); val_err(&a, e); return a; }
+        /* STRING vs STRING: the six operators via the byte order
+         * (user-ext 2026-11-13) - the same collating sequence the
+         * sort's text keys use; case-sensitive 7-bit ASCII */
+        if (a.type == VT_STR && b.type == VT_STR) {
+            int cv = strcmp(a.str, b.str);
+            switch (op) {
+            case 1: r = (cv < 0); break;
+            case 2: r = (cv <= 0); break;
+            case 3: r = (cv == 0); break;
+            case 4: r = (cv != 0); break;
+            default: r = (cv > 0); break;
+            }
+            csn_from_int(&a.num, r ? 1 : 0);
+            a.type = VT_BOOL;
+            val_free(&b);
+            return a;
+        }
+        /* MIXED string/number (through any path) is an error */
         if (a.type == VT_STR || b.type == VT_STR) { val_free(&a); val_free(&b); val_err(&a, 6); return a; }
         if (a.type == VT_RANGE || b.type == VT_RANGE) { val_free(&a); val_free(&b); val_err(&a, 6); return a; }
         r = csn_cmp(&a.num, &b.num);
@@ -1212,6 +1364,33 @@ extern int cs_poll_escape(void);
 
 /* execute SET(cell,value): the value is fully evaluated first, then
  * the target is written (SET(A1,A1+1) uses A1's previous value) */
+/* 1 = the text is a pure number literal: its re-evaluation yields the
+ * same constant every pass, so SET may replace the entry with the
+ * written value.  Anything else (an expression, a reference, a
+ * conditional) is a formula: SET into that cell updates the VALUE and
+ * keeps the entry text, so a state machine whose counter targets its
+ * own cell keeps its program (2026-11-13). */
+static int num_literal_p(const char *s)
+{
+    int dig = 0;
+    while (*s == ' ') s++;
+    if (*s == '+' || *s == '-') s++;
+    while (*s >= '0' && *s <= '9') { s++; dig = 1; }
+    if (*s == '.') {
+        s++;
+        while (*s >= '0' && *s <= '9') { s++; dig = 1; }
+    }
+    if (!dig) return 0;
+    if (*s == 'e' || *s == 'E') {
+        s++;
+        if (*s == '+' || *s == '-') s++;
+        if (!(*s >= '0' && *s <= '9')) return 0;
+        while (*s >= '0' && *s <= '9') s++;
+    }
+    while (*s == ' ') s++;
+    return *s == '\0';
+}
+
 static void exec_set_stmt(const char *args, int *err)
 {
     const char *w;
@@ -1283,8 +1462,17 @@ static void exec_set_stmt(const char *args, int *err)
         else if (txt[0] == '\\' && (txt[1] == 'l' || txt[1] == 'L')) { just = 'L'; txt += 2; }
         else if (txt[0] == '\\' && (txt[1] == 'c' || txt[1] == 'C')) { just = 'C'; txt += 2; }
         cs_set_text(cell, txt, just);
+    } else if (cell->type == CE_NUM && cell->cont &&
+               !num_literal_p(cell->cont)) {
+        /* numeric into a FORMULA cell: the value changes, the entry
+         * text stays - the formula must survive a SET into its own
+         * cell (self-targeting counters, 2026-11-13) */
+        csn_copy(&cell->val, &v.num);
+        cell->iserr = 0;
+        if (cell->strres) { free(cell->strres); cell->strres = NULL; }
     } else {
-        /* numeric: the cell becomes a plain value (no reference text) */
+        /* numeric into an empty/text/literal cell: the cell becomes a
+         * plain value (no reference text) */
         char fb[64];
         csn_fmt_fixed(&v.num, 12, fb, (int) sizeof(fb));
         if (!fb[0]) csn_fmt_sci(&v.num, 12, fb, (int) sizeof(fb));

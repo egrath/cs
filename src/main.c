@@ -488,6 +488,64 @@ static void setv(int col, int row, const char *txt)
     cs_set_num(cs_cell(col, row), txt, &v, 0, NULL);
 }
 
+/* the brainfuck machinery (user-ext 2026-11-13): 17 formula cells in
+ * row 5, columns B..R, evaluated left to right every recalculation
+ * pass - one instruction per pass.  State in row 1 (B1 pc, D1 tape
+ * ptr, F1 mode 0=run/1=skip-fwd/2=skip-back/3=halt, H1 bracket depth,
+ * J1 output count, K1 input ptr, L1 program length); the program is
+ * row 3 (one character per cell, columns B..); the tape is column A
+ * (seeded with 0); the output lands in column S (one character per
+ * row); the input chars sit in column T from row 20. */
+static const char *bf_mach[17] = {
+    "+(VAL(B1)<=VAL(L1)+1):ORD(VAL(REF(VAL(B1),3))):0",
+    "+(VAL(F1)=0)*(VAL(B5)=43):SET(REF(1,VAL(D1)),VAL(REF(1,VAL(D1)))+1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=45):SET(REF(1,VAL(D1)),VAL(REF(1,VAL(D1)))-1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=62):SET(D1,VAL(D1)+1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=60):SET(D1,VAL(D1)-1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=46):SET(REF(19,VAL(J1)+1),CHR(VAL(REF(1,VAL(D1)))));SET(J1,VAL(J1)+1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=44):SET(REF(1,VAL(D1)),ORD(VAL(REF(20,VAL(K1)+20))));SET(K1,VAL(K1)+1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))=0):SET(F1,1);SET(H1,0);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))<>0):SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=93)*(VAL(REF(1,VAL(D1)))<>0):SET(F1,2);SET(H1,0);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=93)*(VAL(REF(1,VAL(D1)))=0):SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=1)*(VAL(B5)<>93):SET(H1,VAL(H1)+(VAL(B5)=91));SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=1)*(VAL(B5)=93):SET(H1,VAL(H1)-1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=1)*(VAL(B5)=93)*(VAL(H1)=0):SET(F1,0);0:0",
+    "+(VAL(F1)=2)*(VAL(B5)<>91):SET(B1,VAL(B1)-1);SET(H1,VAL(H1)+(VAL(B5)=93));0:0",
+    "+(VAL(F1)=2)*(VAL(B5)=91):((VAL(H1)=1):SET(F1,0);0:SET(H1,VAL(H1)-1);SET(B1,VAL(B1)-1);0):0",
+    "+(VAL(B1)>VAL(L1)+1)*(VAL(F1)<>3):SET(F1,3);0:0"
+};
+
+/* build the interpreter sheet: state, machinery, tape, program and
+ * optional input characters */
+static void bf_build(const char *prog, const char *inp)
+{
+    static char lbuf[8];
+    char cb[2];
+    int i, n = (int) strlen(prog);
+    cs_clear_all();
+    setv(1, 0, "2");                        /* B1 pc */
+    setv(3, 0, "1");                        /* D1 ptr */
+    setv(5, 0, "0");                        /* F1 mode */
+    setv(7, 0, "0");                        /* H1 depth */
+    setv(9, 0, "0");                        /* J1 out count */
+    setv(10, 0, "0");                       /* K1 input ptr */
+    sprintf(lbuf, "%d", n);
+    setv(11, 0, lbuf);                      /* L1 program length */
+    for (i = 0; i < 60; i++) setv(0, i, "0");       /* the tape */
+    for (i = 0; i < 17; i++) cs_commit_entry(1 + i, 4, bf_mach[i]);
+    cb[1] = '\0';
+    for (i = 0; i < n; i++) {
+        cb[0] = prog[i];
+        cs_set_text(cs_cell(1 + i, 2), cb, 'L');    /* row 3, B.. */
+    }
+    if (inp)
+        for (i = 0; inp[i]; i++) {
+            cb[0] = inp[i];
+            cs_set_text(cs_cell(19, 19 + i), cb, 'L');      /* T20.. */
+        }
+}
+
 /* window-scroll check: 1 on failure (added to `fails` by the caller) */
 static int scrck(int cond, const char *what)
 {
@@ -1076,7 +1134,34 @@ static void run_tests(void)
         cke("VAL empty", "VAL(C9)", 1);
         cs_free_cell(cs_cell(0, 1));
         cs_set_text(cs_cell(0, 1), "hello", 'L');
-        cke("VAL text", "VAL(A2)", 1);
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("VAL(A2)", &r, &sf);
+            /* VAL is the TYPED accessor (user-refined 2026-11-13): a
+             * text cell yields its content as a String - the error
+             * contract check happens via cke on the empty cell */
+            if (e != 0 || sf == NULL || strcmp(sf, "hello"))
+                { printf("FAIL VAL text (%s)\n", sf ? sf : "(null)"); fails++; }
+            else printf("ok   VAL(text) = the string\n");
+        /* the STRICT mixing rule (user-refined 2026-11-13): a string
+         * and a number in one operation -> Error 6, through every
+         * path */
+        cke("mix literal+num", "\"abc\"+1", 6);
+        cke("mix textref+num", "VAL(A2)+1", 6);
+        cke("mix bare+num", "A2+1", 6);
+        cke("mix SUM direct", "SUM(\"abc\",1)", 6);
+        cke("mix cmp", "(\"abc\"=1)", 6);
+        cke("mix concat", "\"abc\"&5", 6);
+        cke("mix MED direct", "MED(\"abc\",1)", 6);
+        /* the range-skip stays: text INSIDE a range is ignored by the
+         * family (the documented MED/SUM semantics) */
+        setv(0, 0, "42");                       /* A1 = 42 */
+        setv(0, 2, "3");                        /* A3 = 3 */
+        setv(0, 4, "5");                        /* A5 = 5 */
+        ckc("range skip unchanged", "SUM(A1>A5)", "+5.0000000000000E+2");
+            if (sf) free(sf);
+        }
         setv(0, 2, "3");                        /* A3 = 3 */
         cs_commit_entry(0, 8, "+1/0");           /* A9 = ?n? (outside the ranges) */
         cke("VAL error cell", "VAL(A9)", 1);
@@ -1336,6 +1421,154 @@ static void run_tests(void)
         ckc("MED empty range", "MED(A3>B6)", "0");
         cs_commit_entry(0, 4, "+1/0");          /* A5 = ?n? */
         cke("MED error cell", "MED(A3>A6)", -1);
+        /* CHR / ORD: the 7-bit printable range 32..127, strict
+         * (user-refined 2026-11-13) */
+        cs_clear_all();
+        cke("CHR A", "CHR(65)", 0);
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("CHR(65)", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "A"))
+                { printf("FAIL CHR 65 (%s)\n", sf ? sf : "(null)"); fails++; }
+            else printf("ok   CHR(65) = the string A\n");
+            if (sf) free(sf);
+        }
+        cke("CHR 31", "CHR(31)", -1);
+        cke("CHR 128", "CHR(128)", -1);
+        cke("CHR 65.5", "CHR(65.5)", -1);
+        cke("CHR 0", "CHR(0)", -1);
+        /* the pass cap (raised to 10000, user decision 2026-11-13,
+         * for long-running state machines like the brainfuck
+         * interpreter) - a never-settling counter runs exactly this
+         * many passes */
+        cs_clear_all();
+        setv(0, 0, "0");                        /* A1 = 0: the SET source */
+        cs_commit_entry(0, 0, "1:SET(A1,VAL(A1)+1);RECALC();0:0");
+        cs_recalc_all();
+        if (cs_recalc_last_passes != 10000)
+            { printf("FAIL pass cap (%d)\n", cs_recalc_last_passes); fails++; }
+        else printf("ok   the pass cap: 10000 passes\n");
+        /* the formula SURVIVES the self-targeting SET (2026-11-13) */
+        if (!cs_cell(0, 0)->cont ||
+            strcmp(cs_cell(0, 0)->cont, "1:SET(A1,VAL(A1)+1);RECALC();0:0"))
+            { printf("FAIL self-SET keeps formula\n"); fails++; }
+        else printf("ok   a self-targeting SET keeps the formula\n");
+        cs_clear_all();
+        /* a bounded self-targeting machine settles */
+        setv(0, 0, "0");                        /* A1 = 0 */
+        cs_commit_entry(1, 0, "(VAL(A1)<5):SET(A1,VAL(A1)+1);RECALC();0:VAL(A1)");
+        cs_recalc_all();
+        {
+            char gb[48];
+            csn_canon(&cs_cell(0, 0)->val, gb, (int) sizeof(gb));
+            if (cs_recalc_last_passes >= 10000 || strcmp(gb, "+5.0000000000000E+1"))
+                { printf("FAIL bounded machine (passes=%d A1=%s)\n",
+                         cs_recalc_last_passes, gb); fails++; }
+            else printf("ok   a bounded machine settles (A1=5)\n");
+        }
+        if (!cs_cell(1, 0)->cont ||
+            strcmp(cs_cell(1, 0)->cont,
+                   "(VAL(A1)<5):SET(A1,VAL(A1)+1);RECALC();0:VAL(A1)"))
+            { printf("FAIL bounded machine keeps formula\n"); fails++; }
+        else printf("ok   the bounded machine keeps its formula\n");
+        cs_clear_all();
+        /* the brainfuck interpreter (user-ext 2026-11-13): the
+         * documented formula machinery runs one instruction per
+         * recalculation pass; each program must SETTLE (halt) */
+        bf_build("+++[>+++<-]", NULL);
+        cs_recalc_all();
+        {
+            char gt[48];
+            csn_canon(&cs_cell(0, 1)->val, gt, (int) sizeof(gt));
+            if (cs_recalc_last_passes >= 10000 ||
+                strcmp(gt, "+9.0000000000000E+1") ||
+                cs_cell(5, 0)->val.nd[0] != 3)
+                { printf("FAIL bf multiply (passes=%d A2=%s)\n",
+                         cs_recalc_last_passes, gt); fails++; }
+            else printf("ok   bf +++[>+++<-]: tape 9, halted\n");
+        }
+        bf_build("++++++++[>++++++++<-]>++++++++.", NULL);
+        cs_recalc_all();
+        if (cs_recalc_last_passes >= 10000 ||
+            !cs_cell(18, 0)->cont || strcmp(cs_cell(18, 0)->cont, "H"))
+            { printf("FAIL bf H\n"); fails++; }
+        else printf("ok   bf prints H\n");
+        bf_build("++++++++[>++++++++<-]>++++++++.+++++++++++++++++++++++++++++++++.", NULL);
+        cs_recalc_all();
+        if (cs_recalc_last_passes >= 10000 ||
+            !cs_cell(18, 0)->cont || strcmp(cs_cell(18, 0)->cont, "H") ||
+            !cs_cell(18, 1)->cont || strcmp(cs_cell(18, 1)->cont, "i"))
+            { printf("FAIL bf Hi\n"); fails++; }
+        else printf("ok   bf prints Hi\n");
+        bf_build(",.", "A");
+        cs_recalc_all();
+        if (cs_recalc_last_passes >= 10000 ||
+            !cs_cell(18, 0)->cont || strcmp(cs_cell(18, 0)->cont, "A"))
+            { printf("FAIL bf input\n"); fails++; }
+        else printf("ok   bf reads input and echoes A\n");
+        cs_clear_all();
+        {
+            Csn r;
+            char *sf = NULL;
+            char gg[48];
+            int e = cs_eval_formula("ORD(\"A\")", &r, &sf);
+            csn_canon(&r, gg, (int) sizeof(gg));
+            if (e != 0 || strcmp(gg, "+6.5000000000000E+2"))
+                { printf("FAIL ORD A (%s)\n", gg); fails++; }
+            else printf("ok   ORD(\"A\") = 65\n");
+            if (sf) free(sf);
+        }
+        cke("ORD ABC", "ORD(\"ABC\")", -1);
+        cke("ORD empty", "ORD(\"\")", -1);
+        cke("ORD number", "ORD(5)", 6);
+        cke("ORD space", "ORD(\" \")", 0);
+        cke("ORD out-of-range", "ORD(\"\x80\")", -1);
+        /* the round trips */
+        ckc("ORD CHR 65", "ORD(CHR(65))", "+6.5000000000000E+2");
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("CHR(ORD(\"A\"))", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "A"))
+                { printf("FAIL CHR ORD round trip\n"); fails++; }
+            else printf("ok   CHR(ORD(\"A\")) = A\n");
+            if (sf) free(sf);
+        }
+        /* the & concatenation: String & String only */
+        cs_clear_all();
+        setv(0, 0, "42");
+        cs_set_text(cs_cell(0, 1), "hello", 'L');
+        cs_set_text(cs_cell(1, 0), "World", 'L');
+        cs_set_text(cs_cell(1, 1), "World", 'L');
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("A2&B1", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "helloWorld"))
+                { printf("FAIL concat refs (%s)\n", sf ? sf : "(null)"); fails++; }
+            else printf("ok   B1&C2 = helloWorld\n");
+            if (sf) free(sf);
+        }
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("CHR(72)&CHR(73)", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "HI"))
+                { printf("FAIL concat CHR (%s)\n", sf ? sf : "(null)"); fails++; }
+            else printf("ok   CHR(72)&CHR(73) = HI\n");
+            if (sf) free(sf);
+        }
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("(\"AB\"=\"AB\"):(\"x\"):(\"y\")", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "x"))
+                { printf("FAIL string cond (%s)\n", sf ? sf : "(null)"); fails++; }
+            else printf("ok   a string condition composes\n");
+            if (sf) free(sf);
+        }
+        cs_clear_all();
         /* INTG / FRAC / SGN / NCR / NPR (user-ext 2026-11-13) */
         ckc("INTG 3.5", "INTG(3.5)", "+3.0000000000000E+1");
         ckc("INTG -3.5", "INTG(-3.5)", "-3.0000000000000E+1");

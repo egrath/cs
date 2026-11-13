@@ -86,7 +86,8 @@ follow the original. Read this file before changing anything.
   skip-scanned via branch_end() and parsed from its own sub-buffer).
   RECALC is a REQUEST: the drivers (cs_run_recalc_passes in eval.c —
   `;R`, entry commit, ?-calculator) iterate whole-sheet passes until a
-  pass changes no stored value, the 1000-pass limit (CS_MAX_PASSES) or
+  pass changes no stored value, the 10000-pass limit (CS_MAX_PASSES,
+  raised from 1000 2026-11-13 for long state machines) or
   ESC (`User interrupted execution`; the limit shows
   `Recalculation limit reached`; the loop paints `Calculating ...
   (pass N)`; while iterating the window is repainted after every
@@ -104,7 +105,7 @@ follow the original. Read this file before changing anything.
   every pass wait for an ENTER — user bug 2026-11-12).  cs_recalc_entry is the stability sensor: it compares the
   NEW stored value against the OLD one (2026-11 bugfix — it once
   compared a zeroed value, so any nonzero fixed point kept the passes
-  running to the 1000 limit) and counts a changed string result
+  running to the 10000 limit) and counts a changed string result
   (`strres`, e.g. "counting"→"done") as a change too.  The --test pins
   the user's exact settling sheet (A3=5, A4=10, C4 counts to "done").
   cs_mark_sheet_change marks SET writes.  SET's value is
@@ -217,7 +218,7 @@ follow the original. Read this file before changing anything.
     snapshotted and `cs_mark_sheet_change()` fires only when the
     stored state really differs (an idempotent SET no longer keeps an
     iterated recalculation alive — an always-true SET branch settles
-    under `;R A` instead of running to the 1000-pass limit).
+    under `;R A` instead of running to the 10000-pass limit).
     `cs_recalc_last_passes` records the last driver run's pass count
     (diagnostics/tests).
   - **COLIDX(x)** (user-ext 2026-11; briefly named COLNUM before the
@@ -505,6 +506,59 @@ Batch workflow (do all steps before reporting done):
   element, even count -> the average of the two middle elements
   (Excel-style — user decision); no numbers -> 0 (AVG's behavior —
   user decision).
+- **The TYPED string model** (user-ext 2026-11-13): VAL is the TYPED
+  accessor (numeric -> Number, TEXT -> String, empty/error -> Error 1;
+  a bare reference behaves the same under option 3); string
+  comparisons through all six operators via strcmp (byte order,
+  case-sensitive); `&` concatenation as its own grammar level between
+  parse_add and parse_cmp (String & String only); CHR(n) = one char,
+  integer 32..127 only (everything else Error 0); ORD(s) = the code of
+  a length-1 printable string (strict: wrong length, non-printable
+  byte, Number argument -> errors, Number arg -> Error 6).  THE
+  STRICT MIXING RULE: String+Number in one operation -> Error 6
+  through every path (literals, refs, VAL, direct function args);
+  the one exception stays: text INSIDE a referenced range is ignored
+  by the SUM/MED family.  GRAMMAR TRAP: `!` after a value is the
+  factorial POSTFIX — `X!=0` parses as `(X!)=0`; inequality must be
+  spelled `<>` (three bf-machinery formulas bit this).  The ref
+  shifter's delimiter lists gained `&` (4 sites in cells.c).
+- **SET preserves formulas** (user-ext 2026-11-13, flagged semantic
+  refinement): a numeric SET into a cell whose entry is a FORMULA
+  (an expression, not a pure number literal — num_literal_p scans
+  sign/digits/./exponent) updates the VALUE and keeps the entry
+  text, so a state machine whose counter targets its own cell keeps
+  its program.  A pure-number-literal target (or empty/text) still
+  becomes the plain value (the literal clobber is LOAD-BEARING: the
+  state cells' cont must track their value or the next pass
+  re-evaluates the seed and oscillates forever).  Without this, the
+  first self-targeting SET destroyed the formula text and the machine
+  "forgot its program" after one pass.
+- **CS_MAX_PASSES 1000 -> 10000** (user decision, flagged): for long
+  state machines; ESC still interrupts; cs_recalc_last_passes is
+  normalized to the EXECUTED pass count (at the cap exit the for-loop
+  has already incremented past the limit: `(pass > CS_MAX_PASSES) ?
+  pass - 1 : pass`).
+- **The brainfuck interpreter, built from documented formulas**
+  (user-ext 2026-11-13, proof of concept for the string batch; NOT a
+  command): 17 machinery formulas in row 5 columns B..R (evaluated
+  left to right once per pass — row-major order IS the pass
+  ordering), state cells B1 pc / D1 ptr / F1 mode (0 run 1 skipfwd 2
+  skipback 3 halt) / H1 depth / J1 out / K1 in / L1 program length,
+  program row 3 one char per cell (TEXT entries), tape column A
+  (seed 0), output column S one char per row, input column T from
+  row 20.  One instruction per `;R` pass; the halt detector R5 sets
+  mode 3 and the sheet settles by itself.  The full formula list
+  lives in README.md ("A brainfuck interpreter built from formulas");
+  --test builds it programmatically (bf_build) and runs `+++[>+++<-]`
+  (tape 9), `H`, `Hi` and a `,`-echo.  DEBUGGED LESSONS: (a) a
+  two-branch conditional's FALSE branch executes whenever the
+  condition is false — the Q5 "land on the matching bracket" case
+  must guard the else to skip-back only (a nested conditional as the
+  value piece, fully parenthesized so run_branch's `;` split sees it
+  as ONE piece); (b) `!=` = factorial postfix (see above); (c) the
+  `.` executor needs the tape byte printable or CHR errors and the
+  machine stalls (graceful: error cells stop changing after ~2
+  passes).
    - Differential harness: `tests/precision_ref.c` + `tests/precision_ref.py`
      (25 inputs × 9 functions at 38 decimals vs a 150-digit decimal
      reference, RADIANS throughout; tolerance 2e-29 relative — see the

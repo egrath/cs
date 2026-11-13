@@ -169,7 +169,7 @@ char *cs_sort_refs(const char *s, int c1, int r1, int c2, int r2,
                 if (*p == '!' || *p == '>' || *p == ',' || *p == ')' ||
                     *p == ' ' || *p == ':' || *p == '+' || *p == '-' ||
                     *p == '*' || *p == '/' || *p == '%' || *p == '\0' ||
-                    *p == '<' || *p == '=') {
+                    *p == '<' || *p == '=' || *p == '&') {
                     char tmp[8], tmp2[4];
                     int i, cc, rr, ok, bang;
                     for (i = 0; st + i < p; i++) tmp[i] = (char) ((st[i] >= 'a' && st[i] <= 'z') ? st[i] - 32 : st[i]);
@@ -312,7 +312,7 @@ int cs_scan_refs(const char *s, void (*cb)(int, int, void *), void *ctx)
                 if (*p == '!' || *p == '>' || *p == ',' || *p == ')' ||
                     *p == ' ' || *p == ':' || *p == '+' || *p == '-' ||
                     *p == '*' || *p == '/' || *p == '%' || *p == '\0' ||
-                    *p == '<' || *p == '=') {
+                    *p == '<' || *p == '=' || *p == '&') {
                     char tmp[8];
                     int i, ok;
                     for (i = 0; st + i < p; i++) tmp[i] = (char) ((st[i] >= 'a' && st[i] <= 'z') ? st[i] - 32 : st[i]);
@@ -358,7 +358,7 @@ char *cs_adjust_refs(const char *s, int dc, int dr)
                 if (*p == '!' || *p == '>' || *p == ',' || *p == ')' ||
                     *p == ' ' || *p == ':' || *p == '+' || *p == '-' ||
                     *p == '*' || *p == '/' || *p == '%' || *p == '\0' ||
-                    *p == '<' || *p == '=') {
+                    *p == '<' || *p == '=' || *p == '&') {
                     char tmp[8], tmp2[8];
                     int i, newc, newr, ok;
                     for (i = 0; st + i < p; i++) tmp[i] = (char) ((st[i] >= 'a' && st[i] <= 'z') ? st[i] - 32 : st[i]);
@@ -422,7 +422,7 @@ static char *shift_refs_core(const char *s, int iscol, int at, int delta, int ge
                 if (*p == '!' || *p == '>' || *p == ',' || *p == ')' ||
                     *p == ' ' || *p == ':' || *p == '+' || *p == '-' ||
                     *p == '*' || *p == '/' || *p == '%' || *p == '\0' ||
-                    *p == '<' || *p == '=') {
+                    *p == '<' || *p == '=' || *p == '&') {
                     char tmp[8], tmp2[4];
                     int i, newc, newr, ok, bang;
                     for (i = 0; st + i < p; i++) tmp[i] = (char) ((st[i] >= 'a' && st[i] <= 'z') ? st[i] - 32 : st[i]);
