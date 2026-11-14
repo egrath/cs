@@ -2311,6 +2311,51 @@ static void run_tests(void)
             else printf("ok   dep scan col terminates: %s\n", dl);
         }
         cs_clear_all();
+        /* the sparse-relink bug (user report 2026-11-14): an ABSENT
+         * source must still clear an occupied target - deleting
+         * columns C>D kept the old D, deleting rows 4>7 kept c and e */
+        cs_clear_all();
+        setv(1, 2, "1"); setv(2, 2, "2");     /* row 3: B3..E3 = 1..4 */
+        setv(3, 2, "3"); setv(4, 2, "4");
+        cs_delete_columns(2, 3);              /* delete columns C>D */
+        if (tread(1, 2)->type != CE_NUM ||
+            tread(1, 2)->val.nd[0] != 1 ||
+            tread(2, 2)->type != CE_NUM ||
+            tread(2, 2)->val.nd[0] != 4 ||
+            tread(3, 2)->type == CE_NUM)
+            { printf("FAIL col delete clears targets\n"); fails++; }
+        else printf("ok   column delete clears with absent sources\n");
+        cs_clear_all();
+        {
+            const char *txt[8] = { "a", "b", "c", "d", "e", "f", NULL,
+                                   "x" };
+            int w;
+            for (w = 0; w < 8; w++) {
+                if (txt[w]) cs_set_text(tcell(1, 2 + w), txt[w], 'L');
+            }
+        }
+        cs_delete_rows(3, 6);                 /* delete rows 4>7 */
+        if (tread(1, 2)->type != CE_TEXT ||
+            strcmp(tread(1, 2)->cont, "a") ||
+            tread(1, 3)->type != CE_TEXT ||
+            strcmp(tread(1, 3)->cont, "f") ||
+            tread(1, 4)->type != CE_EMPTY ||
+            tread(1, 5)->type != CE_TEXT ||
+            strcmp(tread(1, 5)->cont, "x") ||
+            tread(1, 6)->type != CE_EMPTY)
+            { printf("FAIL row delete clears targets\n"); fails++; }
+        else printf("ok   row delete clears with absent sources\n");
+        cs_clear_all();
+        /* ROW() and COL(): the current cell cursor, 1-indexed */
+        curCol = 0; curRow = 0;
+        ckc("ROW at A1", "ROW()", "+1.0000000000000E+1");
+        ckc("COL at A1", "COL()", "+1.0000000000000E+1");
+        curCol = 2; curRow = 2;
+        ckc("ROW at C3", "ROW()", "+3.0000000000000E+1");
+        ckc("COL at C3", "COL()", "+3.0000000000000E+1");
+        cke("ROW with arg", "ROW(5)", 6);
+        cke("COL with arg", "COL(1)", 6);
+        cs_clear_all();
         /* range deletes: rows 1..3 of a populated sheet shift up two;
          * column range deletes shift the formats by the range width */
         colw[0] = 10; colw[1] = 20; colw[2] = 30; colw[3] = 40;

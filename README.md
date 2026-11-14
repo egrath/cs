@@ -217,6 +217,14 @@ fractional coordinates (`REF(1,1.5)` → Error 0), zero or negative
 rows 1..255 — `REF(128,1)`, `REF(1,256)` → Error 1), wrong types
 (`REF("x",1)` → Error 6), wrong argument counts (Error 3).
 
+### ROW() and COL() — the current cursor position
+
+`ROW()` returns the current cell cursor's row, `COL()` its column,
+both 1-indexed.  They evaluate against the cursor **at evaluation
+time** — a stored `+ROW()` re-evaluates against wherever the cursor
+sits during `;R` (like the manual's cursor concept).  Arguments are an
+error.
+
 ### COLIDX(x) — the column index
 
 The 1-based column number (what `REF`'s first argument expects).  The

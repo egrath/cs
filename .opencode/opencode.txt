@@ -27,6 +27,24 @@
   "Hello World!" in S7.  The CSD format is untouched (the file is
   byte-identical in spirit; no regeneration needed).
 
+## BATCH (branch "DOS", follow-up 4): the relink absent-source bug + ROW/COL (2026-11-14):
+- USER BUGS with exact traces: deleting columns C>D from
+  B..E=1,2,3,4 kept the old D (3.00); deleting rows 4>7 from
+  a,b,c,d,e,f,-,x kept c and e.  ROOT CAUSE: cs_relink_cell bailed
+  on an ABSENT source, but the dense assignment it replaced moves
+  "empty" over occupied targets.  FIX: an absent source releases an
+  occupied target (a degenerate equal-coord relink is a no-op).
+  Pinned with both exact cases; the column case pty-verified
+  (1.00/4.00 after the delete).
+- NEW FUNCTIONS: ROW()/COL() = the current cursor's row/column,
+  1-indexed, evaluated against the cursor AT EVAL TIME (flagged:
+  stored formulas re-evaluate against the cursor at ;R).  Args are
+  Error 6 (the PI/E zero-arg convention — my pins first said 3, the
+  family convention won).  Pinned at A1/C3.
+- PENDING (the user deferred): the streaming SUM/AVG/MAX/MIN + the
+  bounded MED (the parse_list heap buffer is interim).
+- VERIFIED: --test 413 ok; the idle gate EXACT.
+
 ## BATCH (branch "DOS", follow-up 3): the delete hang (2026-11-14):
 - USER BUG: deleting a row/column HUNG the app.  ROOT CAUSE: dep_check
   (the pre-delete dependency scan) advanced its ordered-scan cursor in

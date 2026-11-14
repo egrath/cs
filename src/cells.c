@@ -222,8 +222,22 @@ void cs_relink_cell(int fc, int fr, int tc, int tr)
     if (fc < 0 || fc >= CS_MAXCOL || fr < 0 || fr >= CS_MAXROW ||
         tc < 0 || tc >= CS_MAXCOL || tr < 0 || tr >= CS_MAXROW)
         return;
+    if (fc == tc && fr == tr) return;   /* a degenerate move: no-op */
     i = cs_row_find(sp, fc);
-    if (i >= sp->n || sp->e[i].col != fc) return;
+    if (i >= sp->n || sp->e[i].col != fc) {
+        /* an ABSENT source moves "nothing" into the target: the dense
+         * struct assignment overwrote occupied targets with empty
+         * slots just as surely as with data - the old bail-out left
+         * the target's old content in place (user bug 2026-11-14:
+         * deleting columns C>D kept the old D; deleting rows 4>7 kept
+         * c and e) */
+        if (dp->n) {
+            int j = cs_row_find(dp, tc);
+            if (j < dp->n && dp->e[j].col == tc)
+                cs_free_cell_at(tc, tr);
+        }
+        return;
+    }
     ref = sp->e[i].ref;
     memmove(&sp->e[i], &sp->e[i + 1],
             (size_t) (sp->n - i - 1) * sizeof(CsIdxEnt));

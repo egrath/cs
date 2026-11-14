@@ -184,6 +184,7 @@ typedef enum {
     FN_SQRT, FN_LOG, FN_LN, FN_ABS, FN_EXP,
     FN_REGR, FN_PROJ, FN_DEPD, FN_SLOPE, FN_UNKNOWN,
     FN_SIN, FN_COS, FN_TAN, FN_ASIN, FN_ACOS, FN_ATAN, FN_PI, FN_E,
+    FN_ROW, FN_COL,
     FN_SIGN, FN_MOD, FN_POWER, FN_LOG10, FN_DEGREES, FN_RADIANS,
     FN_DEG, FN_RAD,
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
@@ -215,6 +216,8 @@ static int fnid(const char *name)
     if (!strcmp(name, "ACOS"))  return FN_ACOS;
     if (!strcmp(name, "ATAN"))  return FN_ATAN;
     if (!strcmp(name, "PI"))    return FN_PI;
+    if (!strcmp(name, "ROW"))   return FN_ROW;
+    if (!strcmp(name, "COL"))   return FN_COL;
     if (!strcmp(name, "E"))     return FN_E;
     if (!strcmp(name, "SIGN"))  return FN_SIGN;
     if (!strcmp(name, "MOD"))   return FN_MOD;
@@ -478,6 +481,21 @@ static Val parse_primary(P *ps)
                 else { val_err(&v, 6); return v; }
                 val_free(&v);
                 csn_e(&v.num); v.good = 1;
+                return v;
+            }
+            if (f == FN_ROW || f == FN_COL) {
+                /* the CURRENT cell cursor's row/column, 1-indexed
+                 * (user request 2026-11-14): evaluated against the
+                 * cursor AT EVALUATION TIME - a stored formula
+                 * re-evaluates against wherever the cursor sits
+                 * during ;R (flagged semantics, like the manual's
+                 * "@" cursor concept) */
+                if (*ps->p == ')') ps->p++;
+                else { val_err(&v, 6); return v; }
+                val_free(&v);
+                csn_from_int(&v.num, f == FN_ROW ?
+                             (long) (curRow + 1) : (long) (curCol + 1));
+                v.good = 1;
                 return v;
             }
             if (f == FN_REF) {

@@ -768,6 +768,25 @@ Batch workflow (do all steps before reporting done):
   ;D R flow pty-verified: the inverse "ERROR: would delete ref(s) at
   B1" message instead of the freeze.
 
+- **THE RELINK ABSENT-SOURCE BUG (user report 2026-11-14, branch
+  "DOS")**: cs_relink_cell RETURNED when the source was absent, but
+  the dense semantics it replaced (`cells[t] = cells[s]`) move
+  "empty" over occupied targets too — deleting columns C>D kept the
+  old D (3.00), deleting rows 4>7 kept c and e (the user's exact
+  traces).  Fix: an absent source RELEASES an occupied target
+  (a degenerate source==target relink is a no-op).  Pinned with both
+  user cases as exact final states (B3..E3=1..4, delete C>D ->
+  1.00/4.00/empty; a,b,c,d,e,f,(empty),x, delete rows 4>7 ->
+  a/f/empty/x); the interactive column case pty-verified.
+- **ROW() AND COL() (user request 2026-11-14)**: the current cell
+  cursor's row/column, 1-indexed, evaluated against the cursor AT
+  EVALUATION TIME (curRow+1/curCol+1) — a stored formula
+  re-evaluates against wherever the cursor sits during ;R (FLAGGED
+  semantics, like the manual's cursor concept — documented in
+  README).  The zero-arg family's convention: arguments are Error 6
+  (PI/E), not the REF family's 3.  Pinned at A1 and C3 plus the
+  arg-count errors.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.
