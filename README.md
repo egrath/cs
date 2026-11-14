@@ -654,6 +654,15 @@ intact for another `;R A`.
 
 ### Running "Hello, World!"
 
+A ready-made sheet ships in `examples/brainf.csd` — load it and
+recalculate:
+
+```text
+./build/calcstar examples/brainf.csd      ;R A       ;G S7
+```
+
+To build it by hand instead, follow the recipe below.
+
 The classic program, minus its final `.` (the trailing newline byte
 10 is outside `CHR`'s printable 32..127 domain):
 
