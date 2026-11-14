@@ -350,7 +350,7 @@ static int cs_commit_core(int col, int rw, const char *entry)
         if (err == KW_ABORT) return 0;      /* interrupt already reported */
         if (err) cs_msg("Error %d-> %s", err <= 0 ? 0 : err, tmp);
         else if (str) {
-            cs_msg_plain("%s", str);
+            cs_msg_str(str);
             free(str);
         } else {
             /* format with up to 10 decimals, then strip trailing zeros

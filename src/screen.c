@@ -528,7 +528,8 @@ void cs_draw(void)
  * and the FIRST keystroke clears it (that key then acts normally). */
 void cs_start_msg(const char *text)
 {
-    snprintf(startmsg, sizeof(startmsg), "%s", text);
+    strncpy(startmsg, text, sizeof(startmsg) - 1);
+    startmsg[sizeof(startmsg) - 1] = '\0';
     startmsg_on = 1;
     cs_msg_text(startmsg, A_REVERSE);
 }
@@ -550,9 +551,13 @@ void cs_msg(const char *fmt, ...)
     va_list ap;
     promptvis = 0;
     va_start(ap, fmt);
-    vsnprintf(lastmsg, sizeof(lastmsg), fmt, ap);   /* BOUNDED: long
-                                                     * formulas must
-                                                     * never overflow */
+    /* C89 (no vsnprintf): the bound is by ANALYSIS of every cs_msg
+     * call site - the only variable-width argument is a formula or
+     * coordinate text of at most CS_EDITMAX (120) chars, the fixed
+     * text around it stays under 60, so the expansion is always
+     * below lastmsg's 256 (the paste-crash fix 2026-11-13 keeps its
+     * guarantee by that analysis). */
+    vsprintf(lastmsg, fmt, ap);
     va_end(ap);
     lastmsg[75] = '\0';
     cs_msg_text(lastmsg, A_REVERSE);
@@ -563,8 +568,23 @@ void cs_msg_plain(const char *fmt, ...)
     va_list ap;
     promptvis = 0;
     va_start(ap, fmt);
-    vsnprintf(lastmsg, sizeof(lastmsg), fmt, ap);   /* BOUNDED */
+    /* the same analysis: cs_msg_plain's %s arguments are bounded
+     * number buffers (the =-answer); long STRING results go through
+     * cs_msg_str, which copies bounded */
+    vsprintf(lastmsg, fmt, ap);
     va_end(ap);
+    lastmsg[75] = '\0';
+    cs_msg_text(lastmsg, A_NORMAL);
+}
+
+/* an unbounded STRING result on the message row: copied bounded
+ * (the string results are only ever DISPLAYED to 75 chars) */
+void cs_msg_str(const char *s)
+{
+    promptvis = 0;
+    if (!s) s = "";
+    strncpy(lastmsg, s, sizeof(lastmsg) - 1);
+    lastmsg[sizeof(lastmsg) - 1] = '\0';
     lastmsg[75] = '\0';
     cs_msg_text(lastmsg, A_NORMAL);
 }

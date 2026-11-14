@@ -143,6 +143,7 @@ extern struct CsErrRec cs_errlist[256];
 extern int cs_nerrlist;
 void   cs_sticky_err(int code, const char *expr, int col, int rw);
 void   cs_start_msg(const char *text);  /* the startup banner */
+void   cs_msg_str(const char *s);       /* an unbounded string result */
 int    cs_start_msg_active(void);
 void   cs_start_msg_clear(void);
 void   cs_set_errpend(int on);             /* main.c: sticky-message walker */

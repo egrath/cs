@@ -870,6 +870,24 @@ Batch workflow (do all steps before reporting done):
   exact final states) and the +COL() case pty-verified
   (2.00/3.00/4.00/5.00/6.00 across B1..F1).
 
+- **C89 PRINTF DISCIPLINE (user request 2026-11-14, branch "DOS")**:
+  snprintf/vsnprintf are C99 - the DOS compiler must never see them.
+  All 7 sites replaced: cs_savename and print_name use explicit
+  bounded memcpy compositions (the %.100s bound spelled out);
+  cs_start_msg uses strncpy; cs_msg/cs_msg_plain use vsprintf with
+  the bound BY ANALYSIS documented at the site (every %s argument in
+  their call graphs is a formula/coordinate text <= CS_EDITMAX = 120,
+  the fixed text <= 60, so the expansion stays under lastmsg's 256 -
+  the paste-crash fix keeps its guarantee); the UNBOUNDED string
+  results (the ?-calculator) go through the new cs_msg_str, which
+  copies bounded.  THE AUDIT LESSON: grep for C99 functions before
+  the DOS build - the macOS headers declare them even under
+  -std=c89 -pedantic, so the build never warns.
+- **THE REFERENCE MANUAL PDF (user request 2026-11-14)**:
+  docs/CalcStar_UM_11_8_1982.pdf is COMMITTED (a deliberate repo
+  reference; the earlier untrack is reverted by this explicit
+  request).
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

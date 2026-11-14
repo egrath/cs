@@ -199,7 +199,7 @@ static void eval_pending(void)
         return;
     }
     if (str) {
-        cs_msg_plain("%s", str);
+        cs_msg_str(str);
         free(str);
         return;
     }

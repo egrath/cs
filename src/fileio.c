@@ -98,11 +98,23 @@ static void cs_savename(const char *name, char *out, int outn)
             toupper((unsigned char) e[1]) == 'C' &&
             toupper((unsigned char) e[2]) == 'S' &&
             toupper((unsigned char) e[3]) == 'D') {
-            snprintf(out, (size_t) outn, "%s", name);
+            /* the typed tail is kept, bounded by the output size */
+            int k = (int) n;
+            if (k > outn - 1) k = outn - 1;
+            memcpy(out, name, (size_t) k);
+            out[k] = '\0';
             return;
         }
     }
-    snprintf(out, (size_t) outn, "%.100s.csd", name);
+    /* the lowercase ".csd" appended, the name capped so the result
+     * always fits (the %.100s bound of the old snprintf, spelled out) */
+    {
+        int k = (int) n;
+        if (k > 100) k = 100;
+        if (k > outn - 5) k = outn - 5;
+        memcpy(out, name, (size_t) k);
+        memcpy(out + k, ".csd", 5);
+    }
 }
 
 int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)

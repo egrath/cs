@@ -91,10 +91,21 @@ static void print_name(const char *name, const char *ext, char *out, int outn)
 {
     const char *dot = strrchr(name, '.');
     if (dot && dot != name && dot[1] != '\0') {
-        snprintf(out, (size_t) outn, "%s", name);
+        int k = (int) strlen(name);
+        if (k > outn - 1) k = outn - 1;
+        memcpy(out, name, (size_t) k);
+        out[k] = '\0';
         return;
     }
-    snprintf(out, (size_t) outn, "%s%s", name, ext);
+    {
+        /* name + ext, capped to the output size */
+        int k = (int) strlen(name), e = (int) strlen(ext);
+        if (k > outn - 1) k = outn - 1;
+        if (e > outn - 1 - k) e = outn - 1 - k;
+        memcpy(out, name, (size_t) k);
+        memcpy(out + k, ext, (size_t) e);
+        out[k + e] = '\0';
+    }
 }
 
 void cs_print_cmd(void)
