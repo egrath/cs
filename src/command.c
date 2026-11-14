@@ -300,6 +300,10 @@ static int dep_check(int iscol, int at, char *list, int listmax)
                     found = 1;
                 }
             }
+            /* the scan advance: WITHOUT this the loop revisits the same
+             * cell forever whenever a formula references the deleted
+             * row/column (the hit path) - the reported hang */
+            c = cl->col + 1;
         }
     return found;
 }
@@ -479,7 +483,7 @@ static int parse_del_range(const char *s, int want, int *a1, int *a2)
  * range check walks every line and merges the coordinate list; the
  * message path is the one the single-line delete always used
  * (user 2026-11: keep this behavior unchanged) */
-static void dep_check_range(int iscol, int a1, int a2, char *list, int listmax)
+void dep_check_range(int iscol, int a1, int a2, char *list, int listmax)
 {
     char one[128];
     int a;

@@ -2289,6 +2289,28 @@ static void run_tests(void)
             strcmp(g, "+9.0000000000000E+1"))
             { printf("FAIL col delete moves value\n"); fails++; }
         else printf("ok   column delete moves the value to A\n");
+        /* the dependency scan must TERMINATE when a formula references
+         * the deleted row/column (the sparse-conversion hang) */
+        cs_clear_all();
+        setv(0, 3, "+A3*2");                  /* A4 references A3 (row 3 = at 2) */
+        {
+            char dl[128];
+            dl[0] = '\0';
+            dep_check_range(0, 2, 2, dl, (int) sizeof(dl));
+            if (strcmp(dl, "A4"))
+                { printf("FAIL dep scan row (%s)\n", dl); fails++; }
+            else printf("ok   dep scan row terminates: %s\n", dl);
+        }
+        {
+            char dl[128];
+            dl[0] = '\0';
+            setv(2, 0, "+B1*2");              /* C1 references B1 (col 1) */
+            dep_check_range(1, 1, 1, dl, (int) sizeof(dl));
+            if (strcmp(dl, "C1"))
+                { printf("FAIL dep scan col (%s)\n", dl); fails++; }
+            else printf("ok   dep scan col terminates: %s\n", dl);
+        }
+        cs_clear_all();
         /* range deletes: rows 1..3 of a populated sheet shift up two;
          * column range deletes shift the formats by the range width */
         colw[0] = 10; colw[1] = 20; colw[2] = 30; colw[3] = 40;

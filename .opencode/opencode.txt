@@ -27,6 +27,20 @@
   "Hello World!" in S7.  The CSD format is untouched (the file is
   byte-identical in spirit; no regeneration needed).
 
+## BATCH (branch "DOS", follow-up 3): the delete hang (2026-11-14):
+- USER BUG: deleting a row/column HUNG the app.  ROOT CAUSE: dep_check
+  (the pre-delete dependency scan) advanced its ordered-scan cursor in
+  only two of three paths — the "hit" path (a formula referencing the
+  deleted line) fell back into cs_next_cell unchanged -> the same cell
+  forever.  FIX: one line, `c = cl->col + 1` after the hit block.
+  The move logic (cs_relink_cell, same-row sources for the column
+  shift) re-traced: consistent.
+- VERIFIED: two --test pins (dep_check_range row/col: the scan
+  reports the dependent and terminates; dep_check_range is now
+  exported for the pins); the interactive ;D R flow pty-verified
+  ("ERROR: would delete ref(s) at B1" inverse message, no freeze);
+  --test 405 ok; the idle gate EXACT.
+
 ## BATCH (branch "DOS", follow-up 2): the memory audit fixes (2026-11-14):
 - THE ASSESSMENT (user-requested): at the full budget the sheet costs
   ~384 KB (pool) + ~26 KB (index) + strings; the biggest single

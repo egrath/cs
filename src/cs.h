@@ -54,6 +54,10 @@ Cell  *cs_alloc_cell(int col, int rw);   /* allocate if necessary;
                                           * NULL = budget/pool full   */
 void   cs_free_cell_at(int col, int rw); /* release + owned resources */
 void   cs_relink_cell(int fc, int fr, int tc, int tr);
+void   dep_check_range(int iscol, int a1, int a2, char *list, int lm);
+                                        /* the ;D dependency scan (also
+                                         * pinned: the scan must
+                                         * terminate) */
                                         /* move a slot between coords
                                          * (insert/delete shifts); an
                                          * occupied target is freed */

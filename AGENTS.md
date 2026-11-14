@@ -755,6 +755,19 @@ Batch workflow (do all steps before reporting done):
   port_guards()).  VERIFIED: --test 403 ok (incl. the guards), the
   idle gate EXACT, the brainf example runs.
 
+- **THE ROW/COLUMN DELETE HANG (user bug report 2026-11-14, branch
+  "DOS")**: deleting a row/column FROZE the app whenever a formula
+  referenced the deleted line.  Root cause: dep_check's ordered scan
+  advanced `c` in only two of its three paths — the "hit" path (a
+  formula referencing the deleted line) fell back into cs_next_cell
+  with the UNCHANGED coordinate, revisiting the same cell forever.
+  Fix: the scan advance `c = cl->col + 1` after the hit block.
+  dep_check_range is exported (declared in cs.h) for the regression
+  pins: a formula referencing the deleted row -> the scan reports
+  "A4" and TERMINATES; the same for a column ("C1").  The interactive
+  ;D R flow pty-verified: the inverse "ERROR: would delete ref(s) at
+  B1" message instead of the freeze.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.
