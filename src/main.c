@@ -619,25 +619,28 @@ static Cell *tread(int col, int row)
     return &empty;
 }
 
+/* the sparse store's portability guards: no single allocation may
+ * exceed 64 KiB (the 16-bit rule the design keeps for the DOS
+ * extender), and the chunk math must cover the budget exactly */
+static void port_guards(void)
+{
+    int slots = CS_BUDGET / 250;
+    if (CS_BUDGET % 250 != 0 || slots > 16)
+        { printf("FAIL pool math (%d chunks)\n", slots); fails++; }
+    else printf("ok   pool math: %d chunks of %d slots\n", slots,
+                CS_BUDGET / slots);
+    if (sizeof(Cell) * 250 > 65535)
+        { printf("FAIL chunk exceeds 64 KiB\n"); fails++; }
+    else printf("ok   a chunk is %d KiB\n",
+                (int) (sizeof(Cell) * 250 / 1024));
+}
+
 static void run_tests(void)
 {
-    /* the sparse store's portability guards: no single allocation may
-     * exceed 64 KiB (the 16-bit rule the design keeps for the DOS
-     * extender), and the chunk math must cover the budget exactly */
-    {
-        int slots = CS_BUDGET / 250;
-        if (CS_BUDGET % 250 != 0 || slots > 16)
-            { printf("FAIL pool math (%d chunks)\n", slots); fails++; }
-        else printf("ok   pool math: %d chunks of %d slots\n", slots,
-                    CS_BUDGET / slots);
-        if (sizeof(Cell) * 250 > 65535)
-            { printf("FAIL chunk exceeds 64 KiB\n"); fails++; }
-        else printf("ok   a chunk is %d KiB\n",
-                    (int) (sizeof(Cell) * 250 / 1024));
-    }
     char buf[64];
     int i;
 
+    port_guards();
     cs_clear_all();
     cs_reg_reset();
     /* manual example: 140%E4 with E4 = .02  ->  .028 */

@@ -27,6 +27,29 @@
   "Hello World!" in S7.  The CSD format is untouched (the file is
   byte-identical in spirit; no regeneration needed).
 
+## BATCH (branch "DOS", follow-up 2): the memory audit fixes (2026-11-14):
+- THE ASSESSMENT (user-requested): at the full budget the sheet costs
+  ~384 KB (pool) + ~26 KB (index) + strings; the biggest single
+  allocation WAS clone_cells' one-block snapshot (~400 KB) and the
+  STACK had two DOS4GW landmines: parse_list's Csn list[2048] (104 KB
+  frame) and the ;A course's int seq[32385] (65 KB frame).  ALSO
+  FOUND: the leftover dense cells[][] definition still emitted ~3 MB
+  of BSS (a conversion leftover) and main.c:638 had a C99
+  mixing-declarations warning.
+- FIXED ALL FOUR: the dense definition deleted; clone_cells per-row
+  (the sort reads snap[row][col], free_clones(snap, n, sh) frees rows
+  — a DOUBLE-FREE bug in my first version (free(t) twice — an edit
+  collision) was caught by ASAN (detect_leaks=0) in one run);
+  parse_list grows a heap buffer (64 -> doubling -> CS_BUDGET; every
+  error path frees; LISTMAX retired); the ;A seq is
+  static int seq[CS_BUDGET].  port_guards() holds the --test
+  portability pins.
+- VERIFIED: --test 403 ok, the idle gate EXACT, the brainf example
+  runs (1768 passes, "Hello World!" in S7).  The biggest single
+  allocation in the app is now a pool chunk (~27 KB); the one
+  oversized transient is the full-budget MED list (~208 KB), fine on
+  the 32-bit extender, documented.
+
 ## BATCH (branch "brainfuck", follow-up 7): the startup banner + the build counter (2026-11-14):
 - USER REQUEST: at startup the status bar shows (inverse, cleared on
   the first keystroke) "CalcStar 1.5, release under the terms of the

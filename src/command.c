@@ -33,30 +33,50 @@ void cs_goto_cmd(void)
 }
 
 /* ============================ helpers ============================== */
-static Cell *clone_cells(int c1, int r1, int c2, int r2, int *nret)
+/* the snapshot: one CHUNK PER ROW (each at most 127 cells ≈ 14 KB —
+ * the no-allocation-over-64-KiB rule; the old single block could
+ * reach ~400 KB for a full-sheet sort).  Row i holds columns
+ * c1..c2; the strings are cloned. */
+static Cell **clone_cells(int c1, int r1, int c2, int r2, int *nret)
 {
-    int sh = c2 - c1 + 1, sv = r2 - r1 + 1, i, n = sh * sv;
-    Cell *tmp;
-    tmp = (Cell *) malloc((size_t) n * sizeof(Cell));
-    if (!tmp) { *nret = 0; return NULL; }
-    for (i = 0; i < n; i++) {
-        Cell *cl = cs_getcell(c1 + i % sh, r1 + i / sh);
-        if (cl) tmp[i] = *cl;
-        else memset(&tmp[i], 0, sizeof(Cell));
-        if (tmp[i].cont)   tmp[i].cont   = cs_strdup(tmp[i].cont);
-        if (tmp[i].rep)    tmp[i].rep    = cs_strdup(tmp[i].rep);
-        if (tmp[i].strres) tmp[i].strres = cs_strdup(tmp[i].strres);
+    int sh = c2 - c1 + 1, sv = r2 - r1 + 1, i, j;
+    Cell **rows;
+    *nret = 0;
+    rows = (Cell **) malloc((size_t) sv * sizeof(Cell *));
+    if (!rows) return NULL;
+    for (i = 0; i < sv; i++) {
+        rows[i] = (Cell *) malloc((size_t) sh * sizeof(Cell));
+        if (!rows[i]) {
+            for (j = 0; j < i; j++) free(rows[j]);
+            free(rows);
+            return NULL;
+        }
+        for (j = 0; j < sh; j++) {
+            Cell *cl = cs_getcell(c1 + j, r1 + i);
+            Cell *t = &rows[i][j];
+            if (cl) *t = *cl;
+            else memset(t, 0, sizeof(Cell));
+            t->col = (unsigned char) (c1 + j);   /* the slot's coordinate
+                                                  * is the SNAPSHOT's */
+            t->row = (unsigned char) (r1 + i);
+            if (t->cont)   t->cont   = cs_strdup(t->cont);
+            if (t->rep)    t->rep    = cs_strdup(t->rep);
+            if (t->strres) t->strres = cs_strdup(t->strres);
+        }
     }
-    *nret = n;
-    return tmp;
+    *nret = sh * sv;
+    return rows;
 }
 
-static void free_clones(Cell *t, int n)
+static void free_clones(Cell **t, int n, int sh)
 {
-    int i;
+    int i, j;
     if (!t) return;
-    for (i = 0; i < n; i++) {
-        free(t[i].cont); free(t[i].rep); free(t[i].strres);
+    for (i = 0; i < n / sh; i++) {
+        for (j = 0; j < sh; j++) {
+            free(t[i][j].cont); free(t[i][j].rep); free(t[i][j].strres);
+        }
+        free(t[i]);
     }
     free(t);
 }
@@ -101,7 +121,7 @@ static void copy_cmd(void)
 {
     char from[40], to[40];
     int c1, r1, c2, r2, d1, e1, d2, e2, sw, sh, dw, dh, rel, rep, nfill;
-    Cell *tmp;
+    Cell **tmp;
     int n, i;
 
     if (cs_prompt_coord("from coord (>coord)", "", from, (int) sizeof(from), 0) < 0) return;
@@ -166,16 +186,17 @@ static void copy_cmd(void)
         }
     }
     tmp = clone_cells(c1, r1, c2, r2, &n);
-    if (!tmp || !n) { free_clones(tmp, n); cs_msg("MEMORY IS TOO LOW"); return; }
+    if (!tmp || !n) { free_clones(tmp, n, sw); cs_msg("MEMORY IS TOO LOW"); return; }
     for (i = 0; i < (rep ? nfill : n); i++) {
         int sc = rep ? c1 : (c1 + i % sw);
         int sr = rep ? r1 : (r1 + i / sw);
         int dc = d1 + i % dw, dr = e1 + i / dw;
         Cell *dst = cs_alloc_cell(dc, dr);
         if (!dst) { cs_msg("MEMORY IS TOO LOW"); break; }
-        copy_one(dst, &tmp[rep ? 0 : i], rel, dc - sc, dr - sr);
+        copy_one(dst, &tmp[rep ? 0 : i / sw][rep ? 0 : i % sw],
+                 rel, dc - sc, dr - sr);
     }
-    free_clones(tmp, n);
+    free_clones(tmp, n, sw);
     cs_recount_entries();
     redraw();
 }
@@ -734,7 +755,7 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
 {
     int nrows = r2 - r1 + 1, ncols = c2 - c1 + 1;
     int n = 0, i, j, r, c, ne, ne0;
-    Cell *snap;                         /* clone_cells snapshot, row-major */
+    Cell **snap;                        /* clone_cells snapshot, per row */
     int *order, *nonempty, *empties, *perm;
     Cell *kc;
 
@@ -746,14 +767,15 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
     empties = (int *) malloc((size_t) nrows * sizeof(int));
     perm = (int *) malloc((size_t) nrows * sizeof(int));
     if (!order || !nonempty || !empties || !perm) {
-        free(snap); free(order); free(nonempty); free(empties); free(perm);
+        free_clones(snap, n, ncols);
+        free(order); free(nonempty); free(empties); free(perm);
         return;
     }
     /* partition: rows with a usable key sort first, empty-key rows
      * keep their relative order and go last (both directions) */
     ne = ne0 = 0;
     for (i = 0; i < nrows; i++) {
-        kc = &snap[i * ncols + (keycol - c1)];
+        kc = &snap[i][keycol - c1];
         /* a string-result formula cell is a TEXT key (the derived
          * type, 2026-11-13) */
         if (kc->type == CE_NUM && !kc->iserr && !kc->strres)
@@ -766,9 +788,9 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
     /* stable insertion sort on the key */
     for (i = 1; i < ne; i++) {
         int t = nonempty[i];
-        kc = &snap[t * ncols + (keycol - c1)];
+        kc = &snap[t][keycol - c1];
         for (j = i - 1; j >= 0; j--) {
-            Cell *k2 = &snap[nonempty[j] * ncols + (keycol - c1)];
+            Cell *k2 = &snap[nonempty[j]][keycol - c1];
             int cv;
             if (kc->type == CE_NUM && !kc->strres &&
                 k2->type == CE_NUM && !k2->strres)
@@ -795,8 +817,9 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
         int src = order[r];
         for (c = 0; c < ncols; c++) {
             Cell *dst = cs_alloc_cell(c1 + c, r1 + r);
-            Cell *sc = &snap[src * ncols + c];
-            if (!dst) { cs_msg("MEMORY IS TOO LOW"); free(snap);
+            Cell *sc = &snap[src][c];
+            if (!dst) { cs_msg("MEMORY IS TOO LOW");
+                        free_clones(snap, n, ncols);
                         free(order); free(nonempty); free(empties);
                         free(perm); cs_recount_entries();
                         cs_mark_sheet_change(); return; }
@@ -809,7 +832,7 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
             if (dst->type != CE_EMPTY) entriesUsed++;
         }
     }
-    free(snap);
+    free_clones(snap, n, ncols);
     /* the formulas: remap in-range references to the new rows */
     {
         int r2 = 0, c2 = 0;
@@ -861,7 +884,9 @@ static void storage_cmd(void)
 /* ============================= Auto ================================ */
 static void auto_cmd(void)
 {
-    int seq[CS_MAXROW * CS_MAXCOL / 2 + 2];
+    /* the form-flag cells: at most CS_BUDGET (a 64 KB stack frame was
+     * a DOS4GW landmine; the static array is bounded by the budget) */
+    static int seq[CS_BUDGET];
     int nseq = 0;
     int i;
     char buf[CS_EDITMAX + 1];   /* was buf[2]! second char typed went out
@@ -872,7 +897,7 @@ static void auto_cmd(void)
         int sr = 0, sc = 0;
         Cell *cl;
         while ((cl = cs_next_cell(&sc, &sr)) != NULL) {
-            if (cl->formf && nseq < (int)(sizeof(seq) / sizeof(int)) - 1)
+            if (cl->formf && nseq < (int)(sizeof(seq) / sizeof(int)))
                 seq[nseq++] = sr * CS_MAXCOL + sc;
             sc = cl->col + 1;
         }

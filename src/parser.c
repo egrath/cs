@@ -9,7 +9,6 @@
 
 #define MAXDEPTH 12
 #define REGR_MAX 512
-#define LISTMAX  2048
 
 /* Val.good == 0 : error, .err holds the CalcStar evaluation error code
    (0 = value range error, 1 illegal coord, 2 bad range, 3 missing paren,
@@ -328,7 +327,7 @@ static Val parse_numarg(P *ps)
  * dereferenced References) and Bool values append, Strings are
  * skipped, a Range walks its numeric cells (an error cell in the
  * range is Error 0). */
-static Val parse_list(P *ps, Csn *list, int *cnt)
+static Val parse_list(P *ps, Csn **listp, int *capp, int *cnt)
 {
     int n = 0;
     Val rv;
@@ -350,7 +349,17 @@ static Val parse_list(P *ps, Csn *list, int *cnt)
                     /* a string-result formula cell is a TEXT value in
                      * the range: skipped like text (2026-11-13) */
                     if (cl->type == CE_NUM && !cl->iserr && !cl->strres) {
-                        if (n < LISTMAX) csn_copy(&list[n++], &cl->val);
+                        Csn *ne;
+                        if (n == *capp) {
+                            *capp = *capp * 2;
+                            if (*capp > CS_BUDGET) *capp = CS_BUDGET;
+                            if (n >= *capp) { val_err(&rv, 0); return rv; }
+                            ne = (Csn *) realloc(*listp,
+                                    (size_t) *capp * sizeof(Csn));
+                            if (!ne) { val_err(&rv, 0); return rv; }
+                            *listp = ne;
+                        }
+                        csn_copy(&(*listp)[n++], &cl->val);
                     } else if (cl->iserr && !cl->strres) { val_err(&rv, 0); return rv; }
                 }
         } else {
@@ -361,7 +370,19 @@ static Val parse_list(P *ps, Csn *list, int *cnt)
              * error (ranges SKIP their non-numerics instead - the
              * documented MED/SUM semantics) */
             if (v.type == VT_STR) { val_free(&v); val_err(&rv, 6); return rv; }
-            if (n < LISTMAX) csn_copy(&list[n++], &v.num);
+            {
+                Csn *ne;
+                if (n == *capp) {
+                    *capp = *capp * 2;
+                    if (*capp > CS_BUDGET) *capp = CS_BUDGET;
+                    if (n >= *capp) { val_err(&rv, 0); return rv; }
+                    ne = (Csn *) realloc(*listp,
+                            (size_t) *capp * sizeof(Csn));
+                    if (!ne) { val_err(&rv, 0); return rv; }
+                    *listp = ne;
+                }
+                csn_copy(&(*listp)[n++], &v.num);
+            }
         }
         val_free(&v);
         skip_ws(&ps->p);
@@ -969,18 +990,25 @@ static Val parse_primary(P *ps)
             }
             /* SUM/CNT/AVG/MAX/MIN */
             {
-                Csn list[LISTMAX];
-                int cnt = 0, err = CSN_OK;
-                Val ok = parse_list(ps, list, &cnt);
-                if (!ok.good) return ok;
+                /* the list lives on the heap (the 104 KiB stack frame
+                 * was a DOS4GW landmine): grown by parse_list up to
+                 * CS_BUDGET entries, freed at every exit */
+                Csn *list;
+                int lcap = 64, cnt = 0, err = CSN_OK;
+                Val ok;
+                list = (Csn *) malloc((size_t) lcap * sizeof(Csn));
+                if (!list) { val_err(&v, 0); return v; }
+                ok = parse_list(ps, &list, &lcap, &cnt);
+                if (!ok.good) { free(list); return ok; }
                 val_free(&ok);
                 skip_ws(&ps->p);
-                if (*ps->p != ')') { val_err(&v, 3); return v; }
+                if (*ps->p != ')') { val_err(&v, 3); free(list); return v; }
                 ps->p++;
                 val_free(&v);
                 v.good = 1;
                 if (cnt == 0) {
                     csn_zero(&v.num);
+                    free(list);
                     return v;
                 }
                 if (f == FN_SUM) {
@@ -988,7 +1016,7 @@ static Val parse_primary(P *ps)
                     csn_copy(&v.num, &list[0]);
                     for (i = 1; i < cnt; i++) {
                         err = csn_add(&v.num, &v.num, &list[i]);
-                        if (err) { val_err(&v, 0); return v; }
+                        if (err) { val_err(&v, 0); free(list); return v; }
                     }
                 } else if (f == FN_CNT) {
                     csn_from_int(&v.num, cnt);
@@ -998,11 +1026,11 @@ static Val parse_primary(P *ps)
                     csn_copy(&v.num, &list[0]);
                     for (i = 1; i < cnt; i++) {
                         err = csn_add(&v.num, &v.num, &list[i]);
-                        if (err) { val_err(&v, 0); return v; }
+                        if (err) { val_err(&v, 0); free(list); return v; }
                     }
                     csn_from_int(&ncs, cnt);
                     err = csn_div(&v.num, &v.num, &ncs);
-                    if (err) { val_err(&v, 0); return v; }
+                    if (err) { val_err(&v, 0); free(list); return v; }
                 } else if (f == FN_MAX) {
                     int i;
                     csn_copy(&v.num, &list[0]);
@@ -1031,10 +1059,10 @@ static Val parse_primary(P *ps)
                         Csn two, sum;
                         int err;
                         err = csn_add(&sum, &list[cnt / 2 - 1], &list[cnt / 2]);
-                        if (err) { val_err(&v, 0); return v; }
+                        if (err) { val_err(&v, 0); free(list); return v; }
                         csn_from_int(&two, 2);
                         err = csn_div(&v.num, &sum, &two);
-                        if (err) { val_err(&v, 0); return v; }
+                        if (err) { val_err(&v, 0); free(list); return v; }
                     }
                 } else {
                     int i;
@@ -1043,6 +1071,7 @@ static Val parse_primary(P *ps)
                         if (csn_cmp(&list[i], &v.num) < 0)
                             csn_copy(&v.num, &list[i]);
                 }
+                free(list);
                 return v;
             }
         }

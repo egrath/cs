@@ -736,6 +736,25 @@ Batch workflow (do all steps before reporting done):
   on it).  VERIFIED: --test 401 ok incl. the portability guards; the
   idle gate EXACT; the brainf example loads and runs (1768 passes).
 
+- **THE MEMORY AUDIT FOLLOW-UPS (branch "DOS", 2026-11-14)**: (1) the
+  leftover dense `Cell cells[][]` DEFINITION was deleted from cells.c
+  (unreferenced since the conversion but still emitting ~3 MB of
+  BSS!).  (2) clone_cells snapshots ONE CHUNK PER ROW now
+  (`Cell **rows`, each ≤ 127 cells ≈ 14 KB) instead of the single
+  ~400 KB block — the sort's snapshot reads `snap[row][col]` and
+  free_clones(snap, n, sh) frees row by row; the biggest single
+  allocation in the app is now a pool chunk (27 KB).  (3) parse_list's
+  `Csn list[LISTMAX]` STACK FRAME (2048 × 52 = ~104 KB — fatal under
+  DOS4GW's small stack) is a lazily-GROWING HEAP buffer (start 64
+  entries, doubling to CS_BUDGET; a full-budget MED transiently holds
+  ~208 KB — the one oversized transient, fine on the 32-bit extender);
+  LISTMAX retired; every error path frees.  (4) the ;A course's
+  `int seq[32385]` stack frame (~65 KB) is `static int seq[CS_BUDGET]`
+  (the course is not re-entrant).  (5) main.c:638's C99
+  mixing-declarations warning fixed (the guard block moved to
+  port_guards()).  VERIFIED: --test 403 ok (incl. the guards), the
+  idle gate EXACT, the brainf example runs.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

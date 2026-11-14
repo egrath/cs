@@ -3,7 +3,6 @@
 #include <string.h>
 #include "cs.h"
 
-Cell cells[CS_MAXROW][CS_MAXCOL];
 int  colw[CS_MAXCOL];
 int  colp[CS_MAXCOL];
 int  curCol = 0, curRow = 0;
