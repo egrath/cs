@@ -87,9 +87,9 @@ static int factf_recompute(int col, int rw, Cell *c)
     return 0;
 }
 
-int cs_recalc_entry(int col, int rw)
+int cs_recalc_entry_p(Cell *c)
 {
-    Cell *c = cs_cell(col, rw);
+    int col = c->col, rw = c->row;
     Csn val, old;
     char *str = NULL, *oldstr;
     int err, changed;
@@ -129,34 +129,48 @@ int cs_recalc_entry(int col, int rw)
     return 0;
 }
 
-/* the one-pass body of the recalculation (locked rows first) */
-static int cs_dbg_pass;
+int cs_recalc_entry(int col, int rw)
+{
+    Cell *c = cs_getcell(col, rw);
+    if (!c) return 0;
+    return cs_recalc_entry_p(c);
+}
+
+/* the one-pass body: the populated cells in the recalculation order
+ * (row-major L-R, column-major T-B - the machinery's wiring order).
+ * The list is collected once per pass; cells created DURING the pass
+ * (SET writes) are inert that pass (their entry text re-evaluates to
+ * the stored value) and join the next pass, exactly as the dense
+ * matrix's later-coordinate visits did. */
+typedef struct { unsigned char col, row; } CsPassEnt;
+static CsPassEnt cs_passlist[CS_BUDGET];
+
+static int cs_pass_cmp_col(const void *a, const void *b)
+{
+    const CsPassEnt *pa = (const CsPassEnt *) a;
+    const CsPassEnt *pb = (const CsPassEnt *) b;
+    if (pa->col != pb->col) return pa->col < pb->col ? -1 : 1;
+    return pa->row < pb->row ? -1 : (pa->row > pb->row ? 1 : 0);
+}
+
 static void recalc_pass(void)
 {
-    int r, c;
+    int n = 0, i;
+    int c = 0, r = 0;
+    Cell *cl;
     cs_nerrlist = 0;                    /* fresh queue per recalculation */
-    if (getenv("BFDBG") && cs_cell(2, 4)->cont) {
-        char q0[48], q1[48], q2[48], q3[48];
-        if (++cs_dbg_pass <= 9) {
-            csn_canon(&cs_cell(1, 0)->val, q0, 48);
-            csn_canon(&cs_cell(5, 0)->val, q1, 48);
-            csn_canon(&cs_cell(0, 0)->val, q2, 48);
-            csn_canon(&cs_cell(1, 4)->val, q3, 48);
-            fprintf(stderr,
-                    "PASS %d: pc=%s mode=%s t1=%s c=%s (cerr=%d) J5err=%d\n",
-                    cs_dbg_pass, q0, q1, q2, q3, cs_cell(1, 4)->iserr,
-                    cs_cell(8, 4)->iserr);
+    while ((cl = cs_next_cell(&c, &r)) != NULL) {
+        if (n < CS_BUDGET) {
+            cs_passlist[n].col = cl->col;
+            cs_passlist[n].row = cl->row;
+            n++;
         }
+        c = cl->col + 1;
     }
-    if (dirTB) {
-        for (c = 0; c < CS_MAXCOL; c++)
-            for (r = 0; r < CS_MAXROW; r++)
-                cs_recalc_entry(c, r);
-    } else {
-        for (r = 0; r < CS_MAXROW; r++)
-            for (c = 0; c < CS_MAXCOL; c++)
-                cs_recalc_entry(c, r);
-    }
+    if (dirTB)
+        qsort(cs_passlist, (size_t) n, sizeof(CsPassEnt), cs_pass_cmp_col);
+    for (i = 0; i < n; i++)
+        cs_recalc_entry(cs_passlist[i].col, cs_passlist[i].row);
 }
 
 /* 1 = the last driver run exhausted the pass limit without stabilizing
@@ -273,8 +287,8 @@ int cs_commit_entry(int col, int rw, const char *entry)
     strncpy(buf, entry, CS_EDITMAX);
     buf[CS_EDITMAX] = '\0';
     n = (int) strlen(buf);
-    c = cs_cell(col, rw);
-    if (!c) return 0;
+    c = cs_alloc_cell(col, rw);
+    if (!c) { cs_msg("MEMORY IS TOO LOW"); return 0; }
 
     /* the FACTORIAL ENTRY (user-ext 2026-11-13): "5!", "A5!",
      * "REF(2,5)!" - the content keeps the entry verbatim, the window
@@ -294,7 +308,6 @@ int cs_commit_entry(int col, int rw, const char *entry)
             e = cs_eval_fact_source(pfx, &src);
             fe = 0;
             if (!e) fe = csn_fact(&fv, &src);
-            if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
             cs_set_num(c, buf, &fv, (e || fe) ? 1 : 0, NULL);
             c->factf = 1;
             cs_recount_entries();
@@ -336,7 +349,6 @@ int cs_commit_entry(int col, int rw, const char *entry)
 
     /* ---- input-formula: !110%! ---- */
     if (buf[0] == '!' && buf[n - 1] == '!' && n > 2) {
-        if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
         cs_free_cell(c);
         c->type = CE_NUM;
         c->just = 'R';
@@ -357,7 +369,6 @@ int cs_commit_entry(int col, int rw, const char *entry)
                 if (c->type == CE_TEXT) c->just = just;
                 return 0;
             }
-            if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
             cs_set_text(c, buf + 2, just);
             return 0;
         }
@@ -366,7 +377,6 @@ int cs_commit_entry(int col, int rw, const char *entry)
             return 0;
         }
         /* '/page' etc: plain text stored as typed */
-        if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
         cs_set_text(c, buf, 'L');
         return 0;
     }
@@ -377,7 +387,6 @@ int cs_commit_entry(int col, int rw, const char *entry)
      * characters typed with no ceremony - flagged refinement
      * 2026-11-13) */
     if (n == 1 && !(buf[0] >= '0' && buf[0] <= '9')) {
-        if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
         cs_set_text(c, buf, 'L');
         return 0;
     }
@@ -385,7 +394,6 @@ int cs_commit_entry(int col, int rw, const char *entry)
         Csn val;
         char *str = NULL;
         int err;
-        if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
         err = cs_eval_formula(buf, &val, &str);
         if (err == KW_ABORT) return 0;      /* interrupt already reported */
         if (err) {
@@ -399,7 +407,6 @@ int cs_commit_entry(int col, int rw, const char *entry)
         cs_run_recalc_passes(0);
         return err;
     }
-    if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
     cs_set_text(c, buf, 'L');
     return 0;
 }

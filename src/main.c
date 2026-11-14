@@ -223,7 +223,7 @@ static void entry_commit(void)
     strcpy(saved, g_edit);
     cs_recalc_limit_reset();          /* fresh overrun state per commit */
     ec = cs_commit_entry(col, row, g_edit);   /* eval error code, 0 = none */
-    c = cs_cell(col, row);
+    c = cs_getcell(col, row);
     edit_clear();
     curCol = col;               /* commit lands on the entry cell */
     curRow = row;
@@ -249,7 +249,7 @@ static void entry_commit(void)
  * reversible (numeric "1/4" shows as 1/4 text; text "1/4" shows 0.25) */
 static void toggle_celltype(void)
 {
-    Cell *c = cs_cell(curCol, curRow);
+    Cell *c = cs_getcell(curCol, curRow);
     if (!c) return;
     if (c->type == CE_NUM) {
         c->type = CE_TEXT;
@@ -327,7 +327,7 @@ void run_session(void)
                 cs_prompt_hide();
                 redraw();
                 cs_sticky_err(cs_errlist[errq_i].code,
-                              cs_cell(cs_errlist[errq_i].col,
+                              cs_getcell(cs_errlist[errq_i].col,
                                       cs_errlist[errq_i].row)->cont,
                               cs_errlist[errq_i].col,
                               cs_errlist[errq_i].row);
@@ -520,12 +520,21 @@ static void ckc(const char *name, const char *expr, const char *want)
 }
 
 /* set a cell's value from an exact decimal text */
+/* the tests' allocation helper: alloc or die (the budget is never
+ * reached by the test sheets) */
+static Cell *tcell(int col, int row)
+{
+    Cell *c = cs_alloc_cell(col, row);
+    if (!c) { printf("FAIL alloc (%d,%d)\n", col, row); exit(1); }
+    return c;
+}
+
 static void setv(int col, int row, const char *txt)
 {
     Csn v;
     csn_parse(txt, &v);
-    cs_free_cell(cs_cell(col, row));
-    cs_set_num(cs_cell(col, row), txt, &v, 0, NULL);
+    cs_free_cell_at(col, row);
+    cs_set_num(tcell(col, row), txt, &v, 0, NULL);
 }
 
 /* the brainfuck machinery (user-ext 2026-11-13): 17 formula cells in
@@ -578,15 +587,17 @@ static void bf_build(const char *prog, const char *inp)
     cb[1] = '\0';
     for (i = 0; i < n; i++) {
         cb[0] = prog[i];
-        cs_set_text(cs_cell(1 + i, 2), cb, 'L');    /* row 3, B.. */
+        cs_set_text(tcell(1 + i, 2), cb, 'L');    /* row 3, B.. */
     }
     if (inp)
         for (i = 0; inp[i]; i++) {
             cb[0] = inp[i];
-            cs_set_text(cs_cell(19, 19 + i), cb, 'L');      /* T20.. */
+            cs_set_text(tcell(19, 19 + i), cb, 'L');      /* T20.. */
         }
 }
 
+/* the tests' allocation helper: alloc or die (the budget is never
+ * reached by the test sheets) */
 /* window-scroll check: 1 on failure (added to `fails` by the caller) */
 static int scrck(int cond, const char *what)
 {
@@ -595,8 +606,35 @@ static int scrck(int cond, const char *what)
     return 1;
 }
 
+/* the tests' read helper: an absent cell reads as empty (the sparse
+ * store's documented rule) */
+static Cell *tread(int col, int row)
+{
+    static Cell empty;
+    Cell *c = cs_getcell(col, row);
+    if (c) return c;
+    memset(&empty, 0, sizeof(empty));
+    empty.type = CE_EMPTY;
+    empty.prec = -1;
+    return &empty;
+}
+
 static void run_tests(void)
 {
+    /* the sparse store's portability guards: no single allocation may
+     * exceed 64 KiB (the 16-bit rule the design keeps for the DOS
+     * extender), and the chunk math must cover the budget exactly */
+    {
+        int slots = CS_BUDGET / 250;
+        if (CS_BUDGET % 250 != 0 || slots > 16)
+            { printf("FAIL pool math (%d chunks)\n", slots); fails++; }
+        else printf("ok   pool math: %d chunks of %d slots\n", slots,
+                    CS_BUDGET / slots);
+        if (sizeof(Cell) * 250 > 65535)
+            { printf("FAIL chunk exceeds 64 KiB\n"); fails++; }
+        else printf("ok   a chunk is %d KiB\n",
+                    (int) (sizeof(Cell) * 250 / 1024));
+    }
     char buf[64];
     int i;
 
@@ -667,7 +705,7 @@ static void run_tests(void)
         int ec = cs_commit_entry(2, 100, "+XYZ(A1)");   /* C101, headless */
         if (ec != 4) { printf("FAIL commit code %d want 4\n", ec); fails++; }
         else printf("ok   commit returns manual code 4\n");
-        cs_free_cell(cs_cell(2, 100));
+        cs_free_cell_at(2, 100);
     }
     /* !n!: "column is not wide enough" (both manuals' entry-error token) */
     {
@@ -698,15 +736,15 @@ static void run_tests(void)
         /* SET: evaluate-first (A11's OLD value), numeric assign; the
          * branch needs exactly one value piece */
         csn_parse("5", &v);
-        cs_set_num(cs_cell(0, 10), "5", &v, 0, NULL);   /* A11 = 5 */
+        cs_set_num(tcell(0, 10), "5", &v, 0, NULL);   /* A11 = 5 */
         e = cs_eval_formula("+(1>0):SET(A11,A11+1);A11:0", &v, NULL);
-        csn_canon(&cs_cell(0, 10)->val, g, (int) sizeof(g));
+        csn_canon(&tread(0, 10)->val, g, (int) sizeof(g));
         if (e != 0 || strcmp(g, "+6.0000000000000E+1"))
             { printf("FAIL SET eval-first e=%d got %s\n", e, g); fails++; }
         else printf("ok   SET(A11,A11+1) evaluates then assigns 6\n");
         /* SET text with the justification escape */
         e = cs_eval_formula("+(1>0):SET(A11,\"\\rtest\");\"t\":0", &v, NULL);
-        c = cs_cell(0, 10);
+        c = tread(0, 10);
         if (e != 0 || c->type != CE_TEXT || c->just != 'R' ||
             !c->cont || strcmp(c->cont, "test"))
             { printf("FAIL SET text e=%d\n", e); fails++; }
@@ -714,7 +752,7 @@ static void run_tests(void)
         /* the unselected branch must not execute its side effects */
         cs_clear_all();
         e = cs_eval_formula("+(1>0):0:SET(A11,9);1", &v, NULL);
-        if (e != 0 || cs_cell(0, 10)->type != CE_EMPTY)
+        if (e != 0 || tread(0, 10)->type != CE_EMPTY)
             { printf("FAIL unselected SET ran e=%d\n", e); fails++; }
         else printf("ok   unselected branch did not execute\n");
         /* exactly one value piece */
@@ -733,13 +771,13 @@ static void run_tests(void)
          * cs_recalc_all (A11 counts 5..0, A12 = the done-marker) */
         cs_clear_all();
         csn_parse("5", &v);
-        cs_set_num(cs_cell(0, 10), "5", &v, 0, NULL);   /* A11 = 5 */
+        cs_set_num(tcell(0, 10), "5", &v, 0, NULL);   /* A11 = 5 */
         cs_commit_entry(0, 12, "+(A11>0):SET(A11,A11-1);RECALC();0:\"finished\"");
-        csn_canon(&cs_cell(0, 10)->val, g, (int) sizeof(g));
+        csn_canon(&tread(0, 10)->val, g, (int) sizeof(g));
         if (strcmp(g, "0") && strcmp(g, "+0.0000000000000E+0"))
             { printf("FAIL countdown A11 got %s\n", g); fails++; }
         else printf("ok   RECALC iteration: A11 counts down to 0\n");
-        c = cs_cell(0, 12);
+        c = tread(0, 12);
         if (c->type != CE_NUM || c->iserr ||
             !c->strres || strcmp(c->strres, "finished"))
             { printf("FAIL countdown marker type=%d strres='%s'\n",
@@ -752,16 +790,16 @@ static void run_tests(void)
          * and settles on the string "done" */
         cs_clear_all();
         csn_parse("5", &v);
-        cs_set_num(cs_cell(0, 2), "5", &v, 0, NULL);    /* A3 = 5 */
+        cs_set_num(tcell(0, 2), "5", &v, 0, NULL);    /* A3 = 5 */
         csn_parse("10", &v);
-        cs_set_num(cs_cell(0, 3), "10", &v, 0, NULL);   /* A4 = 10 */
+        cs_set_num(tcell(0, 3), "10", &v, 0, NULL);   /* A4 = 10 */
         cs_commit_entry(2, 3,
             "(A3<A4):SET(A3,A3+1);\"counting\";RECALC(A3):\"done\"");
-        csn_canon(&cs_cell(0, 2)->val, g, (int) sizeof(g));
+        csn_canon(&tread(0, 2)->val, g, (int) sizeof(g));
         if (strcmp(g, "+1.0000000000000E+2"))
             { printf("FAIL settle A3 got %s\n", g); fails++; }
         else printf("ok   iteration settles: A3 = 10\n");
-        c = cs_cell(2, 3);
+        c = tread(2, 3);
         if (c->iserr || !c->strres || strcmp(c->strres, "done"))
             { printf("FAIL settle C4 strres='%s'\n",
                      c->strres ? c->strres : ""); fails++; }
@@ -775,7 +813,7 @@ static void run_tests(void)
         cs_recalc_all();
         {
             char g2[48];
-            csn_canon(&cs_cell(0, 0)->val, g2, (int) sizeof(g2));
+            csn_canon(&tread(0, 0)->val, g2, (int) sizeof(g2));
             if (cs_recalc_last_passes > 2 ||
                 strcmp(g2, "+7.0000000000000E+1"))
                 { printf("FAIL idempotent SET passes=%d val=%s\n",
@@ -788,7 +826,7 @@ static void run_tests(void)
         cs_recalc_all();
         {
             char g2[48];
-            csn_canon(&cs_cell(0, 0)->val, g2, (int) sizeof(g2));
+            csn_canon(&tread(0, 0)->val, g2, (int) sizeof(g2));
             if (strcmp(g2, "+9.0000000000000E+1"))
                 { printf("FAIL idempotent SET refires (%s)\n", g2); fails++; }
             else printf("ok   idempotent SET refires on change\n");
@@ -800,7 +838,7 @@ static void run_tests(void)
         cs_recalc_all();
         {
             char g2[48];
-            csn_canon(&cs_cell(0, 0)->val, g2, (int) sizeof(g2));
+            csn_canon(&tread(0, 0)->val, g2, (int) sizeof(g2));
             if (strcmp(g2, "0") && strcmp(g2, "+0.0000000000000E+0"))
                 { printf("FAIL countdown-after-fix (%s)\n", g2); fails++; }
             else printf("ok   value-changing SET still iterates\n");
@@ -1115,11 +1153,11 @@ static void run_tests(void)
         Csn v2;
         cs_clear_all();
         csn_parse("1234.5", &v2);
-        c = cs_cell(2, 1);
+        c = tcell(2, 1);
         cs_set_num(c, "1234.5", &v2, 0, NULL);
         c->notation = 1;                /* (sci) */
         csn_parse("7.5", &v2);
-        c = cs_cell(3, 1);
+        c = tcell(3, 1);
         cs_set_num(c, "7.5", &v2, 0, NULL);
         c->notation = 2;                /* (dec) */
         c->prec = 4;
@@ -1128,11 +1166,11 @@ static void run_tests(void)
         cs_clear_all();
         if (!cs_load("t_not.CSD", 0, 0, 0))
             { printf("FAIL notation load\n"); fails++; }
-        c = cs_cell(2, 1);
+        c = tread(2, 1);
         if (c->type != CE_NUM || c->notation != 1)
             { printf("FAIL notat rt C3 (%d)\n", c->notation); fails++; }
         else printf("ok   notation round trip: C2 (sci)\n");
-        c = cs_cell(3, 1);
+        c = tread(3, 1);
         if (c->type != CE_NUM || c->notation != 2 || c->prec != 4)
             { printf("FAIL notat rt D2 (%d,%d)\n", c->notation, c->prec); fails++; }
         else printf("ok   notation round trip: D2 (dec) prec 4\n");
@@ -1173,8 +1211,8 @@ static void run_tests(void)
         cke("REF(\"x\",1)", "REF(\"x\",1)", 6);
         /* C: VAL of empty, text and error cells */
         cke("VAL empty", "VAL(C9)", 1);
-        cs_free_cell(cs_cell(0, 1));
-        cs_set_text(cs_cell(0, 1), "hello", 'L');
+        cs_free_cell_at(0, 1);
+        cs_set_text(tcell(0, 1), "hello", 'L');
         {
             Csn r;
             char *sf = NULL;
@@ -1233,31 +1271,31 @@ static void run_tests(void)
         setv(1, 0, "21");                       /* B1 = 21 */
         setv(1, 1, "7");                        /* B2 = 7 */
         cke("SET stmt", "1:SET(A1,100);1", 0);
-        c = cs_cell(0, 0);
+        c = tread(0, 0);
         csn_canon(&c->val, buf, (int) sizeof(buf));
         if (c->type != CE_NUM || strcmp(buf, "+1.0000000000000E+3"))
             { printf("FAIL SET wrote A1 (%s)\n", buf); fails++; }
         else printf("ok   SET(A1,100) writes 100\n");
         cke("SET REF target", "1:SET(REF(2,5),200);1", 0);
-        c = cs_cell(1, 4);
+        c = tread(1, 4);
         csn_canon(&c->val, buf, (int) sizeof(buf));
         if (c->type != CE_NUM || strcmp(buf, "+2.0000000000000E+3"))
             { printf("FAIL SET REF target (%s)\n", buf); fails++; }
         else printf("ok   SET(REF(2,5),200) writes B5\n");
         cke("SET dyn target", "1:SET(REF(VAL(B1),VAL(B2)),3);1", 0);
-        c = cs_cell(20, 6);
+        c = tread(20, 6);
         if (c->type != CE_NUM)
             { printf("FAIL SET dyn target\n"); fails++; }
         else printf("ok   SET(REF(21,7),3) writes U7\n");
         cke("SET value expr", "1:SET(A2,VAL(B1)*2);1", 0);
-        c = cs_cell(0, 1);
+        c = tread(0, 1);
         csn_canon(&c->val, buf, (int) sizeof(buf));
         if (c->type != CE_NUM || strcmp(buf, "+4.2000000000000E+2"))
             { printf("FAIL SET value expr (%s)\n", buf); fails++; }
         else printf("ok   SET(A2,B1*2) writes 42\n");
         /* a failed SET must not partially modify the sheet */
         cke("SET bad target", "1:SET(A1>A2,5);1", 6);
-        c = cs_cell(0, 1);
+        c = tread(0, 1);
         csn_canon(&c->val, buf, (int) sizeof(buf));
         if (strcmp(buf, "+4.2000000000000E+2"))
             { printf("FAIL SET partial write (%s)\n", buf); fails++; }
@@ -1265,7 +1303,7 @@ static void run_tests(void)
         /* H: conditionals with references in both branches */
         cke("cond VAL", "VAL(B1)>0:100:0", 0);
         cke("cond branch refs", "VAL(B1)>0:SET(A3,VAL(B2));5:9", 0);
-        c = cs_cell(0, 2);
+        c = tread(0, 2);
         csn_canon(&c->val, buf, (int) sizeof(buf));
         if (c->type != CE_NUM || strcmp(buf, "+7.0000000000000E+1"))
             { printf("FAIL cond branch SET (%s)\n", buf); fails++; }
@@ -1274,7 +1312,7 @@ static void run_tests(void)
         cs_clear_all();
         setv(0, 0, "6");                        /* A1 = 6 */
         cke("SET RECALC refs", "1:SET(REF(2,1),VAL(A1)*2);RECALC(REF(2,1));0:\"done\"", 0);
-        c = cs_cell(1, 0);
+        c = tread(1, 0);
         csn_canon(&c->val, buf, (int) sizeof(buf));
         if (c->type != CE_NUM || strcmp(buf, "+1.2000000000000E+2"))
             { printf("FAIL SET/RECALC refs (%s)\n", buf); fails++; }
@@ -1297,7 +1335,7 @@ static void run_tests(void)
         setv(2, 1, "3");                        /* C2 = 3 */
         setv(1, 6, "99");                       /* B7 = 99 */
         cke("user formula", "(1):SET(REF(C1,C2),VAL(B7));0:1", 0);
-        c = cs_cell(1, 2);                      /* B3 = REF(2,3) */
+        c = tread(1, 2);                      /* B3 = REF(2,3) */
         csn_canon(&c->val, buf, (int) sizeof(buf));
         if (c->type != CE_NUM || strcmp(buf, "+9.9000000000000E+2"))
             { printf("FAIL user formula target (%s)\n", buf); fails++; }
@@ -1309,15 +1347,15 @@ static void run_tests(void)
         ckc("multi-area SUM", "SUM(A1>A5,B1>B3)", "+7.3000000000000E+2");
         ckc("cnt multi-area", "CNT(A1>A5,B1>B3)", "+6.0000000000000E+1");
         /* SET copies text through coercion (B3 holds text) */
-        cs_set_text(cs_cell(1, 2), "hi", 'L');
+        cs_set_text(tcell(1, 2), "hi", 'L');
         cke("SET copies text", "1:SET(A1,B3);0", 0);
-        c = cs_cell(0, 0);
+        c = tread(0, 0);
         if (c->type != CE_TEXT || !c->cont || strcmp(c->cont, "hi"))
             { printf("FAIL SET text copy (%d)\n", c->type); fails++; }
         else printf("ok   SET(A1,B3) copies the text hi\n");
         /* SET copies a number through coercion (B2 holds 2) */
         cke("SET copies number", "1:SET(A1,B2);0", 0);
-        c = cs_cell(0, 0);
+        c = tread(0, 0);
         csn_canon(&c->val, buf, (int) sizeof(buf));
         if (c->type != CE_NUM || strcmp(buf, "+2.0000000000000E+1"))
             { printf("FAIL SET number copy (%s)\n", buf); fails++; }
@@ -1358,30 +1396,30 @@ static void run_tests(void)
          * column A ascending - the B texts travel with their rows */
         cs_clear_all();
         setv(0, 2, "1");                        /* A3 = 1 */
-        cs_set_text(cs_cell(1, 2), "Apples", 'L');
+        cs_set_text(tcell(1, 2), "Apples", 'L');
         setv(0, 3, "5");
-        cs_set_text(cs_cell(1, 3), "Oranges", 'L');
+        cs_set_text(tcell(1, 3), "Oranges", 'L');
         setv(0, 4, "4");
-        cs_set_text(cs_cell(1, 4), "Berries", 'L');
+        cs_set_text(tcell(1, 4), "Berries", 'L');
         setv(0, 5, "2");
-        cs_set_text(cs_cell(1, 5), "Tomatoes", 'L');
+        cs_set_text(tcell(1, 5), "Tomatoes", 'L');
         cs_sort_range(0, 2, 1, 5, 0, 0);        /* A3>B6, key A, asc */
-        if (cs_cell(0, 2)->val.nd[0] != 1 ||
-            cs_cell(0, 3)->val.nd[0] != 2 ||
-            cs_cell(0, 4)->val.nd[0] != 4 ||
-            cs_cell(0, 5)->val.nd[0] != 5)
+        if (tread(0, 2)->val.nd[0] != 1 ||
+            tread(0, 3)->val.nd[0] != 2 ||
+            tread(0, 4)->val.nd[0] != 4 ||
+            tread(0, 5)->val.nd[0] != 5)
             { printf("FAIL sort asc values\n"); fails++; }
-        else if (!cs_cell(1, 3)->cont || strcmp(cs_cell(1, 3)->cont, "Tomatoes") ||
-                 !cs_cell(1, 4)->cont || strcmp(cs_cell(1, 4)->cont, "Berries") ||
-                 !cs_cell(1, 5)->cont || strcmp(cs_cell(1, 5)->cont, "Oranges"))
+        else if (!tread(1, 3)->cont || strcmp(tread(1, 3)->cont, "Tomatoes") ||
+                 !tread(1, 4)->cont || strcmp(tread(1, 4)->cont, "Berries") ||
+                 !tread(1, 5)->cont || strcmp(tread(1, 5)->cont, "Oranges"))
             { printf("FAIL sort asc texts\n"); fails++; }
         else printf("ok   sort asc: 1,2,4,5 with the texts following\n");
         /* descending */
         cs_sort_range(0, 2, 1, 5, 0, 1);
-        if (cs_cell(0, 2)->val.nd[0] != 5 ||
-            cs_cell(0, 3)->val.nd[0] != 4 ||
-            cs_cell(0, 4)->val.nd[0] != 2 ||
-            cs_cell(0, 5)->val.nd[0] != 1)
+        if (tread(0, 2)->val.nd[0] != 5 ||
+            tread(0, 3)->val.nd[0] != 4 ||
+            tread(0, 4)->val.nd[0] != 2 ||
+            tread(0, 5)->val.nd[0] != 1)
             { printf("FAIL sort desc\n"); fails++; }
         else printf("ok   sort desc\n");
         /* formulas referencing the sorted range follow the cells:
@@ -1390,13 +1428,13 @@ static void run_tests(void)
         {
             Csn v;
             csn_parse("0", &v);
-            cs_free_cell(cs_cell(1, 6));
+            cs_free_cell_at(1, 6);
             csn_parse("4", &v);
             cs_commit_entry(1, 6, "+VAL(A4)");  /* B7 references A4 */
         }
         cs_sort_range(0, 2, 1, 5, 0, 1);        /* desc: old A4's 4 -> A3 */
         {
-            Cell *c = cs_cell(1, 6);
+            Cell *c = tread(1, 6);
             if (!c->cont || strcmp(c->cont, "+VAL(A5)"))
                 { printf("FAIL sort ref remap (%s)\n",
                          c->cont ? c->cont : ""); fails++; }
@@ -1409,8 +1447,8 @@ static void run_tests(void)
                                     "Tomatoes" };
             int okk = 1, w;
             for (w = 0; w < 4; w++)
-                if (!cs_cell(1, 2 + w)->cont ||
-                    strcmp(cs_cell(1, 2 + w)->cont, want[w]) != 0)
+                if (!tread(1, 2 + w)->cont ||
+                    strcmp(tread(1, 2 + w)->cont, want[w]) != 0)
                     okk = 0;
             if (!okk) { printf("FAIL sort text keys\n"); fails++; }
             else printf("ok   sort by text keys\n");
@@ -1418,24 +1456,24 @@ static void run_tests(void)
         /* empty keys sort last; equal keys keep their order (stable) */
         cs_clear_all();
         setv(0, 2, "9");                        /* A3 = 9 */
-        cs_set_text(cs_cell(1, 2), "X", 'L');   /* B3 = X */
+        cs_set_text(tcell(1, 2), "X", 'L');   /* B3 = X */
         setv(0, 3, "9");                        /* A4 = 9 (equal key) */
-        cs_set_text(cs_cell(1, 3), "Y", 'L');   /* B4 = Y */
+        cs_set_text(tcell(1, 3), "Y", 'L');   /* B4 = Y */
         setv(0, 5, "1");                        /* A6 = 1 */
         cs_sort_range(0, 2, 1, 5, 0, 0);        /* A3>B6, key A, asc */
         {
-            int okk = cs_cell(0, 2)->val.nd[0] == 1 &&
-                      cs_cell(0, 3)->val.nd[0] == 9 &&
-                      cs_cell(0, 4)->val.nd[0] == 9 &&
-                      cs_cell(0, 5)->type == CE_EMPTY &&
-                      cs_cell(1, 3)->cont && strcmp(cs_cell(1, 3)->cont, "X") == 0 &&
-                      cs_cell(1, 4)->cont && strcmp(cs_cell(1, 4)->cont, "Y") == 0;
+            int okk = tread(0, 2)->val.nd[0] == 1 &&
+                      tread(0, 3)->val.nd[0] == 9 &&
+                      tread(0, 4)->val.nd[0] == 9 &&
+                      tread(0, 5)->type == CE_EMPTY &&
+                      tread(1, 3)->cont && strcmp(tread(1, 3)->cont, "X") == 0 &&
+                      tread(1, 4)->cont && strcmp(tread(1, 4)->cont, "Y") == 0;
             if (!okk) { printf("FAIL sort empties/stability\n"); fails++; }
             else printf("ok   sort: empties last, equal keys stable\n");
         }
         /* a key column outside the range: no work */
         cs_sort_range(0, 2, 1, 5, 3, 0);
-        if (cs_cell(0, 2)->val.nd[0] != 1)
+        if (tread(0, 2)->val.nd[0] != 1)
             { printf("FAIL sort key outside\n"); fails++; }
         else printf("ok   sort rejects a key outside the range\n");
         /* MED(range): the median (user-ext 2026-11-13) - odd count,
@@ -1447,18 +1485,18 @@ static void run_tests(void)
         setv(0, 3, "5");                        /* A4 = 5 */
         setv(0, 4, "4");                        /* A5 = 4 */
         setv(0, 5, "2");                        /* A6 = 2 */
-        cs_set_text(cs_cell(1, 2), "Apples", 'L');   /* B3 text: ignored */
+        cs_set_text(tcell(1, 2), "Apples", 'L');   /* B3 text: ignored */
         setv(1, 3, "3");                        /* B4 = 3 */
         ckc("MED odd", "MED(A3>B6)", "+3.0000000000000E+1");
         ckc("MED rectangle", "MED(A3>B4)", "+3.0000000000000E+1");
         ckc("MED even", "MED(A3>B4,A6)", "+2.5000000000000E+1");
         ckc("MED direct mix", "MED(A3>A4,100)", "+5.0000000000000E+1");
         ckc("MED single", "MED(A3>A3)", "+1.0000000000000E+1");
-        cs_free_cell(cs_cell(0, 2));
-        cs_free_cell(cs_cell(0, 3));
-        cs_free_cell(cs_cell(0, 4));
-        cs_free_cell(cs_cell(0, 5));
-        cs_free_cell(cs_cell(1, 3));
+        cs_free_cell_at(0, 2);
+        cs_free_cell_at(0, 3);
+        cs_free_cell_at(0, 4);
+        cs_free_cell_at(0, 5);
+        cs_free_cell_at(1, 3);
         ckc("MED empty range", "MED(A3>B6)", "0");
         cs_commit_entry(0, 4, "+1/0");          /* A5 = ?n? */
         cke("MED error cell", "MED(A3>A6)", -1);
@@ -1491,8 +1529,8 @@ static void run_tests(void)
             { printf("FAIL pass cap (%d)\n", cs_recalc_last_passes); fails++; }
         else printf("ok   the pass cap: 10000 passes\n");
         /* the formula SURVIVES the self-targeting SET (2026-11-13) */
-        if (!cs_cell(0, 0)->cont ||
-            strcmp(cs_cell(0, 0)->cont, "1:SET(A1,VAL(A1)+1);RECALC();0:0"))
+        if (!tread(0, 0)->cont ||
+            strcmp(tread(0, 0)->cont, "1:SET(A1,VAL(A1)+1);RECALC();0:0"))
             { printf("FAIL self-SET keeps formula\n"); fails++; }
         else printf("ok   a self-targeting SET keeps the formula\n");
         cs_clear_all();
@@ -1502,14 +1540,14 @@ static void run_tests(void)
         cs_recalc_all();
         {
             char gb[48];
-            csn_canon(&cs_cell(0, 0)->val, gb, (int) sizeof(gb));
+            csn_canon(&tread(0, 0)->val, gb, (int) sizeof(gb));
             if (cs_recalc_last_passes >= 10000 || strcmp(gb, "+5.0000000000000E+1"))
                 { printf("FAIL bounded machine (passes=%d A1=%s)\n",
                          cs_recalc_last_passes, gb); fails++; }
             else printf("ok   a bounded machine settles (A1=5)\n");
         }
-        if (!cs_cell(1, 0)->cont ||
-            strcmp(cs_cell(1, 0)->cont,
+        if (!tread(1, 0)->cont ||
+            strcmp(tread(1, 0)->cont,
                    "(VAL(A1)<5):SET(A1,VAL(A1)+1);RECALC();0:VAL(A1)"))
             { printf("FAIL bounded machine keeps formula\n"); fails++; }
         else printf("ok   the bounded machine keeps its formula\n");
@@ -1521,10 +1559,10 @@ static void run_tests(void)
         cs_recalc_all();
         {
             char gt[48];
-            csn_canon(&cs_cell(0, 1)->val, gt, (int) sizeof(gt));
+            csn_canon(&tread(0, 1)->val, gt, (int) sizeof(gt));
             if (cs_recalc_last_passes >= 10000 ||
                 strcmp(gt, "+9.0000000000000E+1") ||
-                cs_cell(5, 0)->val.nd[0] != 3)
+                tread(5, 0)->val.nd[0] != 3)
                 { printf("FAIL bf multiply (passes=%d A2=%s)\n",
                          cs_recalc_last_passes, gt); fails++; }
             else printf("ok   bf +++[>+++<-]: tape 9, halted\n");
@@ -1532,23 +1570,23 @@ static void run_tests(void)
         bf_build("++++++++[>++++++++<-]>++++++++.", NULL);
         cs_recalc_all();
         if (cs_recalc_last_passes >= 10000 ||
-            !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "H"))
+            !tread(18, 6)->cont || strcmp(tread(18, 6)->cont, "H"))
             { printf("FAIL bf H (%s)\n",
-                     cs_cell(18, 6)->cont ? cs_cell(18, 6)->cont : "");
+                     tread(18, 6)->cont ? tread(18, 6)->cont : "");
               fails++; }
         else printf("ok   bf prints H\n");
         bf_build("++++++++[>++++++++<-]>++++++++.+++++++++++++++++++++++++++++++++.", NULL);
         cs_recalc_all();
         if (cs_recalc_last_passes >= 10000 ||
-            !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "Hi"))
+            !tread(18, 6)->cont || strcmp(tread(18, 6)->cont, "Hi"))
             { printf("FAIL bf Hi (%s)\n",
-                     cs_cell(18, 6)->cont ? cs_cell(18, 6)->cont : "");
+                     tread(18, 6)->cont ? tread(18, 6)->cont : "");
               fails++; }
         else printf("ok   bf prints Hi\n");
         bf_build(",.", "A");
         cs_recalc_all();
         if (cs_recalc_last_passes >= 10000 ||
-            !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "A"))
+            !tread(18, 6)->cont || strcmp(tread(18, 6)->cont, "A"))
             { printf("FAIL bf input\n"); fails++; }
         else printf("ok   bf reads input and echoes A\n");
         /* HELLO, WORLD! (user request 2026-11-13): the classic program
@@ -1559,9 +1597,9 @@ static void run_tests(void)
                  ".+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++", NULL);
         cs_recalc_all();
         {
-            Cell *oc = cs_cell(18, 6);
+            Cell *oc = tread(18, 6);
             if (cs_recalc_last_passes >= 10000 ||
-                cs_cell(5, 0)->val.nd[0] != 3 ||
+                tread(5, 0)->val.nd[0] != 3 ||
                 !oc->cont || strcmp(oc->cont, "Hello World!") ||
                 oc->type != CE_TEXT)
                 { printf("FAIL bf hello (passes=%d out=%s)\n",
@@ -1637,18 +1675,18 @@ static void run_tests(void)
             int k, ok = 1;
             const char *want = "+-.,[";
             for (k = 0; k < 5; k++)
-                if (cs_cell(k, 0)->type != CE_TEXT ||
-                    !cs_cell(k, 0)->cont || cs_cell(k, 0)->cont[0] != want[k])
+                if (tread(k, 0)->type != CE_TEXT ||
+                    !tread(k, 0)->cont || tread(k, 0)->cont[0] != want[k])
                     ok = 0;
             if (!ok) { printf("FAIL one-char text entries\n"); fails++; }
             else printf("ok   one-char + - . , [ entries are text\n");
         }
         cs_commit_entry(5, 0, "5");         /* a lone digit stays numeric */
-        if (cs_cell(5, 0)->type != CE_NUM)
+        if (tread(5, 0)->type != CE_NUM)
             { printf("FAIL lone digit\n"); fails++; }
         else printf("ok   a lone digit stays numeric\n");
         cs_commit_entry(6, 0, "+A");        /* a real formula: still an error cell */
-        if (cs_cell(6, 0)->type != CE_NUM || !cs_cell(6, 0)->iserr)
+        if (tread(6, 0)->type != CE_NUM || !tread(6, 0)->iserr)
             { printf("FAIL +A entry\n"); fails++; }
         else printf("ok   +A stays a formula error cell\n");
         cs_clear_all();
@@ -1657,9 +1695,9 @@ static void run_tests(void)
          * bare-reference coercion, for the display and the type line */
         cs_clear_all();
         cs_commit_entry(0, 0, "+CHR(65)&CHR(66)");   /* A1 = "AB" */
-        if (!cs_cell(0, 0)->strres || strcmp(cs_cell(0, 0)->strres, "AB"))
+        if (!tread(0, 0)->strres || strcmp(tread(0, 0)->strres, "AB"))
             { printf("FAIL derived strres (%s)\n",
-                     cs_cell(0, 0)->strres ? cs_cell(0, 0)->strres : "(null)");
+                     tread(0, 0)->strres ? tread(0, 0)->strres : "(null)");
               fails++; }
         else printf("ok   a string-result formula keeps its string\n");
         {
@@ -1694,20 +1732,20 @@ static void run_tests(void)
         }
         cs_commit_entry(2, 0, "+\"ABC\"");            /* C1 = "ABC" */
         cs_commit_entry(1, 0, "+VAL(C1)");            /* B1 = "ABC" */
-        if (!cs_cell(1, 0)->strres || strcmp(cs_cell(1, 0)->strres, "ABC"))
+        if (!tread(1, 0)->strres || strcmp(tread(1, 0)->strres, "ABC"))
             { printf("FAIL VAL text formula (%s)\n",
-                     cs_cell(1, 0)->strres ? cs_cell(1, 0)->strres : "(null)");
+                     tread(1, 0)->strres ? tread(1, 0)->strres : "(null)");
               fails++; }
         else printf("ok   +VAL(C1) shows ABC, derived type text\n");
         /* the derived type flips back: a numeric result clears the
          * string and the cell is numeric again */
         cs_commit_entry(0, 0, "+1+1");
-        if (cs_cell(0, 0)->strres != NULL)
+        if (tread(0, 0)->strres != NULL)
             { printf("FAIL derived flip-back (strres not cleared)\n"); fails++; }
         else printf("ok   a numeric result clears the string type\n");
         {
             char gb[48];
-            csn_canon(&cs_cell(0, 0)->val, gb, (int) sizeof(gb));
+            csn_canon(&tread(0, 0)->val, gb, (int) sizeof(gb));
             if (strcmp(gb, "+2.0000000000000E+1"))
                 { printf("FAIL flip-back value (%s)\n", gb); fails++; }
             else printf("ok   the cell is numeric again (2)\n");
@@ -1738,9 +1776,9 @@ static void run_tests(void)
         /* the & concatenation: String & String only */
         cs_clear_all();
         setv(0, 0, "42");
-        cs_set_text(cs_cell(0, 1), "hello", 'L');
-        cs_set_text(cs_cell(1, 0), "World", 'L');
-        cs_set_text(cs_cell(1, 1), "World", 'L');
+        cs_set_text(tcell(0, 1), "hello", 'L');
+        cs_set_text(tcell(1, 0), "World", 'L');
+        cs_set_text(tcell(1, 1), "World", 'L');
         {
             Csn r;
             char *sf = NULL;
@@ -1795,7 +1833,7 @@ static void run_tests(void)
         cs_clear_all();
         cs_commit_entry(0, 0, "2.2!");
         {
-            Cell *c = cs_cell(0, 0);
+            Cell *c = tread(0, 0);
             char g2[48];
             csn_canon(&c->val, g2, (int) sizeof(g2));
             if (c->type != CE_NUM || !c->factf ||
@@ -1808,7 +1846,7 @@ static void run_tests(void)
         cs_clear_all();
         cs_commit_entry(0, 0, "5!");
         {
-            Cell *c = cs_cell(0, 0);
+            Cell *c = tread(0, 0);
             char g2[48];
             csn_canon(&c->val, g2, (int) sizeof(g2));
             if (c->type != CE_NUM || c->factf != 1 ||
@@ -1820,15 +1858,15 @@ static void run_tests(void)
         {
             Csn v;
             csn_parse("5", &v);
-            cs_set_num(cs_cell(0, 4), "5", &v, 0, NULL);   /* A5 = 5 */
+            cs_set_num(tcell(0, 4), "5", &v, 0, NULL);   /* A5 = 5 */
             cs_commit_entry(0, 5, "A5!");                   /* A6 = FACT(A5) */
             cs_recalc_all();
-            if (cs_cell(0, 5)->val.nd[0] != 1 || cs_cell(0, 5)->val.nd[1] != 2)
+            if (tread(0, 5)->val.nd[0] != 1 || tread(0, 5)->val.nd[1] != 2)
                 { printf("FAIL A5! value\n"); fails++; }
             setv(0, 4, "3");                    /* A5 = 3 -> FACT = 6 */
             cs_recalc_all();
-            if (cs_cell(0, 5)->val.nd[0] != 6)
-                { printf("FAIL A5! recompute (%d)\n", cs_cell(0, 5)->val.nd[0]); fails++; }
+            if (tread(0, 5)->val.nd[0] != 6)
+                { printf("FAIL A5! recompute (%d)\n", tread(0, 5)->val.nd[0]); fails++; }
             else printf("ok   A5! tracks A5 through ;R\n");
         }
         /* REF(2,5)! and the non-expression fallbacks */
@@ -1836,21 +1874,21 @@ static void run_tests(void)
         {
             Csn v;
             csn_parse("4", &v);
-            cs_set_num(cs_cell(1, 4), "4", &v, 0, NULL);   /* B5 = 4 */
+            cs_set_num(tcell(1, 4), "4", &v, 0, NULL);   /* B5 = 4 */
             cs_commit_entry(2, 4, "REF(2,5)!");             /* C5 = FACT(B5) */
-            if (cs_cell(2, 4)->val.nd[0] != 2 || cs_cell(2, 4)->val.nd[1] != 4)
+            if (tread(2, 4)->val.nd[0] != 2 || tread(2, 4)->val.nd[1] != 4)
                 { printf("FAIL REF factorial (24?)\n"); fails++; }
             else printf("ok   REF(2,5)! = 24\n");
             cs_commit_entry(0, 6, "STOP!");                 /* stays text */
-            if (cs_cell(0, 6)->type != CE_TEXT)
+            if (tread(0, 6)->type != CE_TEXT)
                 { printf("FAIL STOP! not text\n"); fails++; }
             else printf("ok   STOP! stays text\n");
             cs_commit_entry(0, 7, "5!!");                   /* the old numeric path */
-            if (cs_cell(0, 7)->type != CE_NUM || !cs_cell(0, 7)->iserr)
+            if (tread(0, 7)->type != CE_NUM || !tread(0, 7)->iserr)
                 { printf("FAIL 5!! numeric error\n"); fails++; }
             else printf("ok   5!! stays text\n");
             cs_commit_entry(0, 8, "A9!");                   /* empty A9: ?n? */
-            if (cs_cell(0, 8)->type != CE_NUM || !cs_cell(0, 8)->iserr)
+            if (tread(0, 8)->type != CE_NUM || !tread(0, 8)->iserr)
                 { printf("FAIL A9! ?n?\n"); fails++; }
             else printf("ok   A9! shows ?n? until A9 is filled\n");
         }
@@ -1863,7 +1901,7 @@ static void run_tests(void)
         if (!cs_load("t_ft.CSD", 0, 0, 0))
             { printf("FAIL factf load\n"); fails++; }
         {
-            Cell *c = cs_cell(0, 0);
+            Cell *c = tread(0, 0);
             if (c->type != CE_NUM || !c->factf ||
                 c->val.nd[0] != 1 || c->val.nd[1] != 2)
                 { printf("FAIL factf round trip\n"); fails++; }
@@ -1939,10 +1977,10 @@ static void run_tests(void)
     {
         Cell *c;
         Csn v2;
-        c = cs_cell(0, 20);   /* A21 = 2 */
+        c = tcell(0, 20);
         csn_parse("2", &v2);
         cs_set_num(c, "2", &v2, 0, NULL);
-        c = cs_cell(0, 21);   /* A22 = 5 */
+        c = tcell(0, 21);
         csn_parse("5", &v2);
         cs_set_num(c, "5", &v2, 0, NULL);
         {
@@ -1956,8 +1994,8 @@ static void run_tests(void)
             if (s2) free(s2);
         }
         /* text cell referenced in the true branch */
-        cs_set_text(cs_cell(0, 22), "a23 is text", 'L');
-        cs_set_text(cs_cell(2, 23), "c24 is text", 'L');
+        cs_set_text(tcell(0, 22), "a23 is text", 'L');
+        cs_set_text(tcell(2, 23), "c24 is text", 'L');
         {
             int e; Csn vv; char *s2 = NULL;
             e = cs_eval_formula("A21<A22:A23:C24", &vv, &s2);
@@ -1975,8 +2013,8 @@ static void run_tests(void)
         int eu;
         Csn v;
         csn_parse("1/4", &v);
-        cs_set_num(cs_cell(5, 5), "1/4", &v, 0, NULL);   /* shows 0.25 */
-        c = cs_cell(5, 5);
+        cs_set_num(tcell(5, 5), "1/4", &v, 0, NULL);   /* shows 0.25 */
+        c = tread(5, 5);
         curCol = 5; curRow = 5;
         toggle_celltype();
         if (c->type == CE_TEXT && c->cont && !strcmp(c->cont, "1/4"))
@@ -1989,15 +2027,15 @@ static void run_tests(void)
         } else { printf("FAIL t->n got %d %s\n", c->type, buf); fails++; }
         /* unparseable text to numeric: error mark, reversible, no loss */
         csn_parse("JUL 20", &v);
-        cs_set_text(cs_cell(6, 5), "JUL 20", 'L');
+        cs_set_text(tcell(6, 5), "JUL 20", 'L');
         eu = entriesUsed;      /* toggles themselves never touch the pool */
         curCol = 6; curRow = 5;
-        c = cs_cell(6, 5);
+        c = tcell(6, 5);
         toggle_celltype();
         if (c->type == CE_NUM && c->iserr)
             printf("ok   toggle bad text -> numeric ?n?\n");
         else { printf("FAIL bad toggle type %d iserr %d\n", c->type, c->iserr); fails++; }
-        c = cs_cell(6, 5);
+        c = tcell(6, 5);
         toggle_celltype();           /* reversible */
         if (c->type == CE_TEXT && c->cont && !strcmp(c->cont, "JUL 20"))
             printf("ok   toggle is reversible\n");
@@ -2048,25 +2086,25 @@ static void run_tests(void)
         Csn v;
         cs_clear_all();
         csn_parse("7.25", &v);
-        cs_set_text(cs_cell(0, 0), "hello", 'L');
-        cs_free_cell(cs_cell(1, 0));
-        cs_set_text(cs_cell(1, 0), "*----*", 'W');
+        cs_set_text(tcell(0, 0), "hello", 'L');
+        cs_free_cell_at(1, 0);
+        cs_set_text(tcell(1, 0), "*----*", 'W');
         csn_zero(&v);
-        cs_set_text(cs_cell(0, 1), "rep", 'L');
-        cs_set_num(cs_cell(2, 1), "B1", &v, 0, NULL);   /* formula */
+        cs_set_text(tcell(0, 1), "rep", 'L');
+        cs_set_num(tcell(2, 1), "B1", &v, 0, NULL);   /* formula */
         csn_parse("7.25", &v);
-        cs_set_num(cs_cell(3, 1), "7.25", &v, 0, NULL);
+        cs_set_num(tcell(3, 1), "7.25", &v, 0, NULL);
         colw[2] = 13; colp[2] = 4;
         if (cs_save("t_rt", 0, 0, 5, 5, "")) {
             cs_clear_all();
             colw[2] = 10; colp[2] = 2;
             if (cs_load("t_rt", 0, 0, 0)) {
                 cs_recalc_all();
-                c = cs_cell(0, 0);
+                c = tcell(0, 0);
                 if (c->type == CE_TEXT && c->cont && !strcmp(c->cont, "hello"))
                     printf("ok   save text\n");
                 else { printf("FAIL save text\n"); fails++; }
-                c = cs_cell(1, 0);
+                c = tcell(1, 0);
                 if (c->type == CE_TEXT && c->just == 'W' && c->rep &&
                     !strcmp(c->rep, "*----*"))
                     printf("ok   save repeating\n");
@@ -2074,7 +2112,7 @@ static void run_tests(void)
                 {
                     char g[48];
                     csn_canon(&c->val, g, (int) sizeof(g));
-                    c = cs_cell(2, 1);
+                    c = tcell(2, 1);
                     csn_canon(&c->val, g, (int) sizeof(g));
                     if (c->type == CE_NUM && c->cont && !strcmp(c->cont, "B1")
                         && !strcmp(g, "0")
@@ -2082,7 +2120,7 @@ static void run_tests(void)
                         printf("ok   save formula + cols\n");
                     else { printf("FAIL save formula + cols\n"); fails++; }
                 }
-                c = cs_cell(3, 1);
+                c = tcell(3, 1);
                 {
                     char g[48];
                     csn_canon(&c->val, g, (int) sizeof(g));
@@ -2107,23 +2145,23 @@ static void run_tests(void)
         if (cs_save("t_str", 0, 0, 4, 4, "")) {
             cs_clear_all();
             if (cs_load("t_str", 0, 0, 0)) {
-                Cell *c = cs_cell(0, 0);
+                Cell * c = tcell(0, 0);
                 if (c->strres && !strcmp(c->strres, "AB") &&
                     c->type == CE_NUM && c->cont &&
                     !strcmp(c->cont, "+CHR(65)&CHR(66)"))
                     printf("ok   CSD round trip: string formula keeps "
                            "\"AB\" without ;R\n");
                 else { printf("FAIL CSD string round trip\n"); fails++; }
-                c = cs_cell(1, 0);
+                c = tread(1, 0);
                 if (c->strres && !strcmp(c->strres, "AB"))
                     printf("ok   CSD round trip: VAL(A1) keeps \"AB\"\n");
                 else { printf("FAIL CSD VAL round trip\n"); fails++; }
-                c = cs_cell(2, 0);
+                c = tread(2, 0);
                 if (c->strres && !strcmp(c->strres, "ABC"))
                     printf("ok   CSD round trip: literal formula keeps "
                            "\"ABC\"\n");
                 else { printf("FAIL CSD literal round trip\n"); fails++; }
-                c = cs_cell(3, 0);
+                c = tread(3, 0);
                 {
                     char g[48];
                     csn_canon(&c->val, g, (int) sizeof(g));
@@ -2145,13 +2183,13 @@ static void run_tests(void)
             csn_parse("0", &v);
             memset(big, 'A', 200);
             big[200] = '\0';
-            cs_set_num(cs_cell(0, 0), "+BIG", &v, 0, big);
+            cs_set_num(tcell(0, 0), "+BIG", &v, 0, big);
             free(big);
         }
         if (cs_save("t_lng", 0, 0, 2, 2, "")) {
             cs_clear_all();
             if (cs_load("t_lng", 0, 0, 0)) {
-                Cell *c = cs_cell(0, 0);
+                Cell *c = tread(0, 0);
                 int ok = c->strres && (int) strlen(c->strres) == 200;
                 {
                     int i;
@@ -2173,12 +2211,12 @@ static void run_tests(void)
         char g[48];
         Csn v;
         {
-            Cell *cc1 = cs_cell(0, 20);
-            Cell *cc2 = cs_cell(1, 20);
+            Cell *cc1 = tcell(0, 20);
+            Cell *cc2 = tcell(1, 20);
             csn_parse("11", &v); cs_set_num(cc1, "11", &v, 0, NULL); /* A21 */
             csn_parse("22", &v); cs_set_num(cc2, "22", &v, 0, NULL); /* B21 */
             {
-                Cell *cc3 = cs_cell(0, 21);
+                Cell *cc3 = tcell(0, 21);
                 csn_parse("33", &v); cs_set_num(cc3, "33", &v, 0, NULL); /* A22 */
             }
         }
@@ -2192,17 +2230,18 @@ static void run_tests(void)
             char ok1 = 0, ok2 = 0, ok3 = 0;
             {
                 char buf[8];
-                csn_canon(&cs_cell(4, 10)->val, g, (int) sizeof(g));
-                ok1 = (cs_cell(4, 10)->type == CE_NUM &&
+                csn_canon(&tread(4, 10)->val, g, (int) sizeof(g));
+                ok1 = (tread(4, 10)->type == CE_NUM &&
                        !strcmp(g, "+1.1000000000000E+2"));
-                csn_canon(&cs_cell(5, 10)->val, buf, (int) sizeof(buf));
-                ok2 = (cs_cell(5, 10)->type == CE_NUM);
-                ok3 = (cs_cell(4, 11)->type == CE_NUM);
+                csn_canon(&tread(5, 10)->val, buf, (int) sizeof(buf));
+                ok2 = (tread(5, 10)->type == CE_NUM);
+                ok3 = (tread(4, 11)->type == CE_NUM);
             }
             if (!ok1 || !ok2 || !ok3)
-                { printf("FAIL load-offset cells\n"); fails++; }
+                { printf("FAIL load-offset cells (%d %d %d g=%s)\n",
+                         ok1, ok2, ok3, g); fails++; }
             else printf("ok   load position offsets cells (E11/F11/E12)\n");
-            if (cs_cell(0, 0)->type != CE_EMPTY || cs_cell(0, 20)->type != CE_EMPTY)
+            if (tread(0, 0)->type != CE_EMPTY || tread(0, 20)->type != CE_EMPTY)
                 { printf("FAIL offset leak to origin\n"); fails++; }
             else printf("ok   no cells at original coordinates\n");
             /* edge drop: hold the same file near the corner DW/at255 */
@@ -2213,10 +2252,10 @@ static void run_tests(void)
                  * three cells (range corner A20 -> A1: A21 -> A2, ...) */
                 cs_clear_all();
                 if (cs_load("t_of", 0, 0, 1) &&
-                    cs_cell(0, 1)->type == CE_NUM &&
-                    cs_cell(1, 1)->type == CE_NUM &&
-                    cs_cell(0, 2)->type == CE_NUM) {
-                    csn_canon(&cs_cell(0, 1)->val, g, (int) sizeof(g));
+                    tread(0, 1)->type == CE_NUM &&
+                    tread(1, 1)->type == CE_NUM &&
+                    tread(0, 2)->type == CE_NUM) {
+                    csn_canon(&tread(0, 1)->val, g, (int) sizeof(g));
                     if (strcmp(g, "+1.1000000000000E+2"))
                         { printf("FAIL edge-drop desync\n"); fails++; }
                     else printf("ok   edge drop keeps stream in sync\n");
@@ -2237,13 +2276,13 @@ static void run_tests(void)
         colw[0] = 10; colp[0] = 2;
         colw[1] = 38; colp[1] = 12;
         csn_parse("9", &v);
-        cs_set_num(cs_cell(1, 0), "9", &v, 0, NULL);    /* B1 */
+        cs_set_num(tcell(1, 0), "9", &v, 0, NULL);    /* B1 */
         cs_delete_columns(0, 0);
         if (colw[0] != 38 || colp[0] != 12)
             { printf("FAIL col delete keeps format\n"); fails++; }
         else printf("ok   column delete shifts width/precision\n");
-        csn_canon(&cs_cell(0, 0)->val, g, (int) sizeof(g));
-        if (cs_cell(0, 0)->type != CE_NUM ||
+        csn_canon(&tread(0, 0)->val, g, (int) sizeof(g));
+        if (tread(0, 0)->type != CE_NUM ||
             strcmp(g, "+9.0000000000000E+1"))
             { printf("FAIL col delete moves value\n"); fails++; }
         else printf("ok   column delete moves the value to A\n");
@@ -2251,12 +2290,12 @@ static void run_tests(void)
          * column range deletes shift the formats by the range width */
         colw[0] = 10; colw[1] = 20; colw[2] = 30; colw[3] = 40;
         colp[0] = 2; colp[1] = 4; colp[2] = 6; colp[3] = 8;
-        csn_parse("1", &v); cs_set_num(cs_cell(0, 4), "1", &v, 0, NULL);
-        csn_parse("2", &v); cs_set_num(cs_cell(0, 5), "2", &v, 0, NULL);
-        csn_parse("3", &v); cs_set_num(cs_cell(0, 6), "3", &v, 0, NULL);
+        csn_parse("1", &v); cs_set_num(tcell(0, 4), "1", &v, 0, NULL);
+        csn_parse("2", &v); cs_set_num(tcell(0, 5), "2", &v, 0, NULL);
+        csn_parse("3", &v); cs_set_num(tcell(0, 6), "3", &v, 0, NULL);
         cs_delete_rows(0, 1);               /* rows 1..2 */
-        csn_canon(&cs_cell(0, 4)->val, g, (int) sizeof(g));
-        if (cs_cell(0, 4)->type != CE_NUM ||
+        csn_canon(&tread(0, 4)->val, g, (int) sizeof(g));
+        if (tread(0, 4)->type != CE_NUM ||
             strcmp(g, "+3.0000000000000E+1") || colw[2] != 30 || colp[2] != 6)
             { printf("FAIL row range delete\n"); fails++; }
         else printf("ok   row range delete shifts cells up\n");
@@ -2267,14 +2306,14 @@ static void run_tests(void)
         /* From-To clear: cells freed, pool bookkeeping stays honest */
         {
             int before = entriesUsed;
-            csn_parse("7", &v); cs_set_num(cs_cell(0, 8), "7", &v, 0, NULL);
-            csn_parse("8", &v); cs_set_num(cs_cell(1, 8), "8", &v, 0, NULL);
+            csn_parse("7", &v); cs_set_num(tcell(0, 8), "7", &v, 0, NULL);
+            csn_parse("8", &v); cs_set_num(tcell(1, 8), "8", &v, 0, NULL);
             if (entriesUsed != before + 2)
                 { printf("FAIL clear range pool pre\n"); fails++; }
             cs_clear_range(0, 8, 1, 8);
             if (entriesUsed != before ||
-                cs_cell(0, 8)->type != CE_EMPTY ||
-                cs_cell(1, 8)->type != CE_EMPTY)
+                tread(0, 8)->type != CE_EMPTY ||
+                tread(1, 8)->type != CE_EMPTY)
                 { printf("FAIL clear range pool\n"); fails++; }
             else printf("ok   From-To clear frees the rectangle\n");
         }
@@ -2284,7 +2323,7 @@ static void run_tests(void)
         cs_clear_all();
         colw[0] = 10; colp[0] = 2;      /* cs_clear_all resets formats */
         csn_parse("5", &v);
-        cs_set_num(cs_cell(1, 1), "5", &v, 0, NULL);    /* B2 */
+        cs_set_num(tcell(1, 1), "5", &v, 0, NULL);    /* B2 */
         ec = cs_commit_entry(1, 2, "+B2*10");           /* B3 */
         if (ec != 0) { printf("FAIL B3 commit err %d\n", ec); fails++; }
         cs_save("t_id", 0, 0, CS_MAXCOL - 1, CS_MAXROW - 1, "");
@@ -2292,18 +2331,18 @@ static void run_tests(void)
         if (!cs_load("t_id", 0, 0, 0))
             { printf("FAIL identity load\n"); fails++; }
         else {
-            csn_canon(&cs_cell(1, 1)->val, g, (int) sizeof(g));
-            if (cs_cell(1, 1)->type != CE_NUM ||
+            csn_canon(&tread(1, 1)->val, g, (int) sizeof(g));
+            if (tread(1, 1)->type != CE_NUM ||
                 strcmp(g, "+5.0000000000000E+1"))
                 { printf("FAIL identity B2 got %s\n", g); fails++; }
             else printf("ok   All+load(A1): B2 stays at B2\n");
-            if (!cs_cell(1, 2)->cont ||
-                strcmp(cs_cell(1, 2)->cont, "+B2*10"))
+            if (!tread(1, 2)->cont ||
+                strcmp(tread(1, 2)->cont, "+B2*10"))
                 { printf("FAIL identity B3 formula\n"); fails++; }
             else printf("ok   All+load(A1): formula unchanged\n");
             cs_recalc_all();
-            csn_canon(&cs_cell(1, 2)->val, g, (int) sizeof(g));
-            if (cs_cell(1, 2)->type != CE_NUM ||
+            csn_canon(&tread(1, 2)->val, g, (int) sizeof(g));
+            if (tread(1, 2)->type != CE_NUM ||
                 strcmp(g, "+5.0000000000000E+2"))
                 { printf("FAIL identity B3 recalc got %s\n", g); fails++; }
             else printf("ok   All+load(A1): formula evaluates 50\n");
@@ -2331,11 +2370,11 @@ static void run_tests(void)
         {
             Csn v;
             csn_parse("100", &v);
-            cs_set_num(cs_cell(0, 0), "100", &v, 0, NULL);   /* A1 */
+            cs_set_num(tcell(0, 0), "100", &v, 0, NULL);   /* A1 */
             csn_parse("200", &v);
-            cs_set_num(cs_cell(1, 0), "200", &v, 0, NULL);   /* B1 */
+            cs_set_num(tcell(1, 0), "200", &v, 0, NULL);   /* B1 */
             ec = cs_commit_entry(1, 3, "+A1+B1");
-            cs_free_cell(cs_cell(1, 3));
+            cs_free_cell_at(1, 3);
             if (ec != 0)
                 { printf("FAIL @-ref commit err %d\n", ec); fails++; }
             else printf("ok   @-ref entry evaluates\n");
@@ -2372,8 +2411,8 @@ static void run_tests(void)
     }
     /* form mode (manual 11.3): flag survives commits and save/load */
     {
-        Cell *c = cs_cell(30, 25);              /* far from other tests */
-        Cell *d = cs_cell(31, 25);
+        Cell *c = tcell(30, 25);              /* far from other tests */
+        Cell *d = tcell(31, 25);
         Csn v;
         c->formf = 1;
         d->formf = 1;
@@ -2385,20 +2424,20 @@ static void run_tests(void)
         cs_save("t_fm", 0, 0, CS_MAXCOL - 1, CS_MAXROW - 1, "");
         cs_clear_all();
         if (cs_load("t_fm", 0, 0, 0)) {
-            Cell *l = cs_cell(30, 25);
+            Cell *l = tread(30, 25);
             if (!l->formf)
-                { printf("FAIL form flag lost in save/load\n"); fails++; }
+                { printf("FAIL form flag lost in save/load (formf=%d "
+                         "type=%d)\n", l->formf, l->type); fails++; }
             else printf("ok   form flag survives save/load\n");
             remove("t_fm.csd");
         } else { printf("FAIL form save/load\n"); fails++; }
     }
     cs_clear_all();
     {
-        /* ...and cs_clear_all does reset the flags (sheet is pristine) */
-        int fl = 0, r, c;
-        for (r = 0; r < CS_MAXROW; r++)
-            for (c = 0; c < CS_MAXCOL; c++)
-                if (cells[r][c].formf) fl = 1;
+        /* ...and cs_clear_all does reset the flags (sheet is pristine):
+         * the ordered scan must find nothing at all */
+        int fl = 0, r = 0, c = 0;
+        if (cs_next_cell(&c, &r) != NULL) fl = 1;
         if (fl) { printf("FAIL cs_clear_all left form flags\n"); fails++; }
         else printf("ok   cs_clear_all resets form flags\n");
     }

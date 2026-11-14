@@ -14,12 +14,16 @@
 #define CS_MAX_P 24   /* visible decimals; engineering extension (manual: 12) */
 #define CS_EDITMAX 120
 #define CS_VERSION "1.5"       /* the startup message's version string */
-#define CS_BUDGET 2000         /* emulated entry pool for ';?' */
+#define CS_BUDGET 4000         /* emulated entry pool for ';?' (4000
+                                * on the 386 target, flagged deviation:
+                                * the sparse store makes it affordable) */
 
 typedef enum { CE_EMPTY = 0, CE_ALLOC = 1, CE_TEXT = 2, CE_NUM = 3 } CellType;
 
 typedef struct {
     CellType type;
+    unsigned char col, row;  /* the cell's own coordinate (the sparse
+                              * store: frees and the sort need it) */
     char just;      /* 'L','R','C' justification; 'W' = repeating */
     char *rep;      /* repeat pattern when just=='W' */
     char *cont;     /* contents as typed (plain text, or formula) */
@@ -39,7 +43,23 @@ typedef struct {
 #define EDIT_EDITING 1
 #define EDIT_COMMITTED 2
 
-extern Cell cells[CS_MAXROW][CS_MAXCOL];   /* cells[row][col], 0-based */
+/* ---- the sparse cell store (2026-11-14, the DOS branch) --------
+ * The dense 255x127 matrix is replaced by a chunked pool plus a
+ * per-row sorted index; memory follows populated cells only.  The
+ * lookup/allocation distinction is EXPLICIT: get never allocates,
+ * alloc reuses an existing cell first.  A returned NULL on get means
+ * "absent" and behaves like an empty cell for the caller. */
+Cell  *cs_getcell(int col, int rw);      /* NULL = absent/invalid     */
+Cell  *cs_alloc_cell(int col, int rw);   /* allocate if necessary;
+                                          * NULL = budget/pool full   */
+void   cs_free_cell_at(int col, int rw); /* release + owned resources */
+void   cs_relink_cell(int fc, int fr, int tc, int tr);
+                                        /* move a slot between coords
+                                         * (insert/delete shifts); an
+                                         * occupied target is freed */
+Cell  *cs_next_cell(int *col, int *rw);  /* the ordered scan: the first
+                                          * populated cell at or after
+                                          * (*col,*rw) (row-major)    */
 extern int  colw[CS_MAXCOL];
 extern int  colp[CS_MAXCOL];
 
@@ -75,7 +95,7 @@ extern int  g_entry_num;        /* pending entry is numeric */
 extern int  g_entryrow, g_entrycol; /* 'current' location of pending entry */
 
 /* cells.c */
-Cell  *cs_cell(int col, int rw);
+
 char  *cs_strdup(const char *s);
 int    cs_name_to_col(const char *s);
 void   cs_col_name(int col, char *buf);

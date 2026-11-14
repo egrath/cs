@@ -20,7 +20,7 @@ static void wait_space(void)
 /* a row is a page break if the leading cell of the spoke is "/page" */
 static int is_pagebreak_row(int row, int c1, int c2)
 {
-    Cell *c = cs_cell(c1, row);
+    Cell *c = cs_getcell(c1, row);
     if (c2 < c1) c2 = c1;
     return c && c->type == CE_TEXT && c->cont &&
            strncmp(c->cont, "/page", 5) == 0 && c->cont[5] == '\0';
@@ -29,7 +29,7 @@ static int is_pagebreak_row(int row, int c1, int c2)
 /* cell print text: values right-justified formatted, text as displayed */
 static void print_render(int col, int row, char *out, int width)
 {
-    Cell *c = cs_cell(col, row);
+    Cell *c = cs_getcell(col, row);
     out[0] = '\0';
     memset(out, ' ', (size_t) width);
     out[width] = '\0';
@@ -156,13 +156,15 @@ void cs_print_cmd(void)
         /* bottom-most row containing data */
         for (rr = CS_MAXROW - 1; rr >= r1; rr--) {
             for (cc = c1; cc < CS_MAXCOL; cc++)
-                if (cs_cell(cc, rr)->type != CE_EMPTY) { d2r = rr; goto gothr; }
+                { Cell *cl = cs_getcell(cc, rr);
+                  if (cl && cl->type != CE_EMPTY) { d2r = rr; goto gothr; } }
         }
 gothr:
         /* right-most column containing data */
         for (cc = CS_MAXCOL - 1; cc >= c1; cc--) {
             for (rr = r1; rr < CS_MAXROW; rr++)
-                if (cs_cell(cc, rr)->type != CE_EMPTY) { d2c = cc; goto gotc2; }
+                { Cell *cl = cs_getcell(cc, rr);
+                  if (cl && cl->type != CE_EMPTY) { d2c = cc; goto gotc2; } }
         }
 gotc2:
         cs_col_name(d2c, cn);
@@ -180,13 +182,15 @@ gotc2:
         c2 = c1; r2 = r1;
         for (r2 = CS_MAXROW - 1; r2 >= r1; r2--) {
             for (col = 0; col < CS_MAXCOL; col++)
-                if (cs_cell(col, r2)->type != CE_EMPTY) goto gotrow;
+                { Cell *cl = cs_getcell(col, r2);
+                  if (cl && cl->type != CE_EMPTY) goto gotrow; }
         }
 gotrow:
         if (r2 < r1) r2 = r1;
         for (c2 = CS_MAXCOL - 1; c2 >= c1; c2--) {
             for (row = 0; row < CS_MAXROW; row++)
-                if (cs_cell(c2, row)->type != CE_EMPTY) goto gotcol;
+                { Cell *cl = cs_getcell(c2, row);
+                  if (cl && cl->type != CE_EMPTY) goto gotcol; }
         }
 gotcol:
         if (c2 < c1) c2 = c1;
@@ -369,7 +373,7 @@ gotcol:
                 char lab[16], rend[CS_MAX_W + 2];
                 int cc;
                 if (fix) {
-                    Cell *h = cs_cell(c1 - 1, row);
+                    Cell *h = cs_getcell(c1 - 1, row);
                     if (c1 > 0 && h && h->type != CE_EMPTY) {
                         lab[0] = '\0';
                         print_render(c1 - 1, row, lab, 6);
@@ -386,7 +390,7 @@ gotcol:
                 char lab[16], rend[CS_MAX_W + 2];
                 int cc;
                 if (fix) {
-                    Cell *h = cs_cell(c1 - 1, row);
+                    Cell *h = cs_getcell(c1 - 1, row);
                     if (c1 > 0 && h && h->type != CE_EMPTY) {
                         lab[0] = '\0';
                         print_render(c1 - 1, row, lab, 6);

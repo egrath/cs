@@ -696,6 +696,30 @@ The run takes a few seconds; you watch the tape and output fill in
 live, one pass at a time.  (Other keys typed while the machine runs
 are not lost — they stay queued and act when it settles.)
 
+## Internals: the sparse cell store (the DOS branch, 2026-11-14)
+
+The dense 255x127 cell matrix is gone.  Cells live in a **chunked
+pool** (250-slot chunks, allocated on demand, each chunk well under
+64 KiB — the 16-bit-portability rule the design keeps) plus a
+**per-row sorted index** of `{col, ref}` entries.  Memory follows
+populated cells only; the full coordinate space (255 rows, 127
+columns) still works.  The lookup/allocation distinction is explicit:
+
+```text
+cs_getcell(col,row)     NULL = absent (reads treat absent as empty)
+cs_alloc_cell(col,row)  allocates when absent, reuses otherwise
+cs_free_cell_at(col,row) releases the cell and its owned strings
+cs_relink_cell(...)     moves a slot between coordinates (shifts)
+cs_next_cell(&c,&r)     ordered scan, row-major coordinate order
+cs_clear_all()          releases everything
+```
+
+The entry budget is `CS_BUDGET` (4000 — a flagged deviation from the
+emulated 2000, affordable on the 386 target): 16 chunks of 250 slots,
+about 440 KiB worst case, and the index stays bounded by the budget,
+not by the coordinate space.  `;?` shows the room; the low-memory
+warning scales with the budget.
+
 ## Startup banner and build number
 
 The application starts with the message

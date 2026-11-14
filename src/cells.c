@@ -36,11 +36,247 @@ int  g_editstate = EDIT_IDLE;
 int  g_entry_num = 1;
 int  g_entryrow = 0, g_entrycol = 0;
 
-Cell *cs_cell(int col, int rw)
+/* ---- the sparse cell store -------------------------------------
+ * A chunked pool of Cell slots plus a per-row sorted index.  The pool
+ * allocates 250-slot chunks on demand (each chunk well under 64 KiB,
+ * the 16-bit-portability rule; 16 chunks cover the 4000 budget).  A
+ * free slot is threaded onto cs_freelist through its cont field.  The
+ * per-row index holds {col, ref} entries sorted by column; total
+ * index memory is bounded by the budget, not by the coordinate space.
+ * Refs are 1-based (0 = none): ref-1 = chunk * CS_CHUNK + slot. */
+#define CS_CHUNK   250
+#define CS_NCHUNK  (CS_BUDGET / CS_CHUNK)
+
+typedef struct {
+    unsigned char col;      /* 0-based, < CS_MAXCOL               */
+    unsigned short ref;     /* 1-based slot reference, 0 = none   */
+} CsIdxEnt;
+
+typedef struct {
+    unsigned char n, cap;   /* entries; cap 0 = the array is NULL */
+    CsIdxEnt *e;
+} CsRow;
+
+static Cell  *cs_chunks[CS_NCHUNK];
+static int    cs_chunks_used = 0;
+static Cell  *cs_freelist = NULL;
+static CsRow  cs_rows[CS_MAXROW];
+
+static Cell *cs_ref_ptr(unsigned short ref)
 {
+    unsigned short r = (unsigned short) (ref - 1);
+    return &cs_chunks[r / CS_CHUNK][r % CS_CHUNK];
+}
+
+/* the ref of a pool slot, found by scanning the chunk table (used
+ * only at take time) */
+static unsigned short cs_ptr_ref(const Cell *c)
+{
+    int k;
+    for (k = 0; k < cs_chunks_used; k++)
+        if (c >= cs_chunks[k] && c < cs_chunks[k] + CS_CHUNK)
+            return (unsigned short) (1 + (c - cs_chunks[k]) +
+                     k * CS_CHUNK);
+    return 0;
+}
+
+/* take a slot from the free list (or a fresh chunk); the caller only
+ * receives it after the index insert succeeds, otherwise the slot
+ * returns to the list */
+static Cell *cs_pool_take(int col, int rw, unsigned short *refout)
+{
+    Cell *c;
+    int i;
+    if (entriesUsed >= CS_BUDGET) return NULL;
+    if (!cs_freelist) {
+        Cell *ch;
+        if (cs_chunks_used >= CS_NCHUNK) return NULL;
+        ch = (Cell *) malloc(sizeof(Cell) * (size_t) CS_CHUNK);
+        if (!ch) return NULL;
+        cs_chunks[cs_chunks_used++] = ch;
+
+        for (i = CS_CHUNK - 1; i >= 0; i--) {
+            ch[i].cont = (char *) cs_freelist;
+            cs_freelist = &ch[i];
+        }
+    }
+    c = cs_freelist;
+    cs_freelist = (Cell *) c->cont;
+    /* the dense matrix's never-written state */
+    memset(c, 0, sizeof(Cell));
+    c->type = CE_EMPTY;
+    c->just = 'L';
+    c->prec = -1;
+    c->col = (unsigned char) col;
+    c->row = (unsigned char) rw;
+    if (refout)
+        *refout = cs_ptr_ref(c);
+    return c;
+}
+
+
+/* ---- the public sparse API ------------------------------------- */
+
+static int cs_row_find(const CsRow *rp, int col)
+{
+    int lo = 0, hi = rp->n;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (rp->e[mid].col < col) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+Cell *cs_getcell(int col, int rw)
+{
+    CsRow *rp;
+    int i;
     if (col < 0 || col >= CS_MAXCOL || rw < 0 || rw >= CS_MAXROW)
         return NULL;
-    return &cells[rw][col];
+    rp = &cs_rows[rw];
+    if (rp->n == 0) return NULL;
+    i = cs_row_find(rp, col);
+    if (i >= rp->n || rp->e[i].col != col) return NULL;
+    return cs_ref_ptr(rp->e[i].ref);
+}
+
+static Cell *cs_row_insert(int col, int rw, Cell *c, unsigned short ref)
+{
+    CsRow *rp = &cs_rows[rw];
+    int i;
+    if (rp->n == rp->cap) {
+        int nc = rp->cap ? rp->cap * 2 : 4;
+        CsIdxEnt *ne = (CsIdxEnt *) realloc(rp->e,
+                        (size_t) nc * sizeof(CsIdxEnt));
+        if (!ne) return NULL;
+        rp->e = ne;
+        rp->cap = (unsigned char) nc;
+    }
+    i = cs_row_find(rp, col);
+    memmove(&rp->e[i + 1], &rp->e[i],
+            (size_t) (rp->n - i) * sizeof(CsIdxEnt));
+    rp->e[i].col = (unsigned char) col;
+    rp->e[i].ref = ref;
+    rp->n++;
+    return c;
+}
+
+Cell *cs_alloc_cell(int col, int rw)
+{
+    CsRow *rp;
+    Cell *c;
+    unsigned short ref = 0;
+    int i;
+    if (col < 0 || col >= CS_MAXCOL || rw < 0 || rw >= CS_MAXROW)
+        return NULL;
+    rp = &cs_rows[rw];
+    if (rp->n) {
+        /* reuse an existing slot even if it indexes an empty cell */
+        i = cs_row_find(rp, col);
+        if (i < rp->n && rp->e[i].col == col)
+            return cs_ref_ptr(rp->e[i].ref);
+    }
+    c = cs_pool_take(col, rw, &ref);
+    if (!c) return NULL;
+    if (!cs_row_insert(col, rw, c, ref)) {
+        /* the index could not grow: the slot goes back unused */
+        c->cont = (char *) cs_freelist;
+        cs_freelist = c;
+        return NULL;
+    }
+    return c;
+}
+
+void cs_free_cell_at(int col, int rw)
+{
+    CsRow *rp;
+    Cell *c;
+    unsigned short ref = 0;
+    int i;
+    if (col < 0 || col >= CS_MAXCOL || rw < 0 || rw >= CS_MAXROW)
+        return;
+    rp = &cs_rows[rw];
+    if (rp->n == 0) return;
+    i = cs_row_find(rp, col);
+    if (i >= rp->n || rp->e[i].col != col) return;
+    ref = rp->e[i].ref;
+    memmove(&rp->e[i], &rp->e[i + 1],
+            (size_t) (rp->n - i - 1) * sizeof(CsIdxEnt));
+    rp->n--;
+    c = cs_ref_ptr(ref);
+    cs_free_cell(c);            /* the owned resources + the resets */
+    c->cont = (char *) cs_freelist;
+    cs_freelist = c;
+}
+
+/* relink a slot from (fc,fr) to (tc,tr) without moving it in the pool
+ * (row/column insert and delete shifts).  An occupied target is
+ * released first - the dense struct-assignment overwrote it and
+ * leaked its strings.  An absent source does nothing. */
+void cs_relink_cell(int fc, int fr, int tc, int tr)
+{
+    CsRow *sp = &cs_rows[fr], *dp = &cs_rows[tr];
+    Cell *c;
+    unsigned short ref;
+    int i;
+    if (fc < 0 || fc >= CS_MAXCOL || fr < 0 || fr >= CS_MAXROW ||
+        tc < 0 || tc >= CS_MAXCOL || tr < 0 || tr >= CS_MAXROW)
+        return;
+    i = cs_row_find(sp, fc);
+    if (i >= sp->n || sp->e[i].col != fc) return;
+    ref = sp->e[i].ref;
+    memmove(&sp->e[i], &sp->e[i + 1],
+            (size_t) (sp->n - i - 1) * sizeof(CsIdxEnt));
+    sp->n--;
+    if (dp->n) {                    /* an occupied target: release it */
+        int j = cs_row_find(dp, tc);
+        if (j < dp->n && dp->e[j].col == tc)
+            cs_free_cell_at(tc, tr);
+    }
+    c = cs_ref_ptr(ref);
+    c->col = (unsigned char) tc;
+    c->row = (unsigned char) tr;
+    if (dp->n == dp->cap) {
+        int nc = dp->cap ? dp->cap * 2 : 4;
+        CsIdxEnt *ne = (CsIdxEnt *) realloc(dp->e,
+                        (size_t) nc * sizeof(CsIdxEnt));
+        if (!ne) {                  /* the slot is lost from the index:
+                                     * keep it consistent (freelist) */
+            c->cont = (char *) cs_freelist;
+            cs_freelist = c;
+            if (c->type != CE_EMPTY) entriesUsed--;
+            c->type = CE_EMPTY;
+            return;
+        }
+        dp->e = ne;
+        dp->cap = (unsigned char) nc;
+    }
+    i = cs_row_find(dp, tc);
+    memmove(&dp->e[i + 1], &dp->e[i],
+            (size_t) (dp->n - i) * sizeof(CsIdxEnt));
+    dp->e[i].col = (unsigned char) tc;
+    dp->e[i].ref = ref;
+    dp->n++;
+}
+
+/* the ordered scan: the first populated cell at or after (*col,*rw).
+ * The caller advances with *col = cl->col + 1, *rw = cl->row. */
+Cell *cs_next_cell(int *col, int *rw)
+{
+    int c = *col, r = *rw;
+    for (; r < CS_MAXROW; r++) {
+        CsRow *rp = &cs_rows[r];
+        int i;
+        if (rp->n == 0) continue;
+        i = (r == *rw) ? cs_row_find(rp, c) : 0;
+        if (i < rp->n) {
+            *col = rp->e[i].col;
+            *rw = r;
+            return cs_ref_ptr(rp->e[i].ref);
+        }
+    }
+    return NULL;
 }
 
 char *cs_strdup(const char *s)
@@ -259,19 +495,19 @@ void cs_free_cell(Cell *c)
 void cs_clear_all(void)
 {
     int r, c;
-    for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++)
-            cs_free_cell(&cells[r][c]);
-    for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++)
-            cells[r][c].formf = 0;
+    for (r = 0; r < CS_MAXROW; r++) {
+        if (cs_rows[r].e) { free(cs_rows[r].e); cs_rows[r].e = NULL; }
+        cs_rows[r].n = 0;
+        cs_rows[r].cap = 0;
+    }
+    for (r = 0; r < cs_chunks_used; r++) {
+        free(cs_chunks[r]);
+        cs_chunks[r] = NULL;
+    }
+    cs_chunks_used = 0;
+    cs_freelist = NULL;
+    entriesUsed = 0;
     for (c = 0; c < CS_MAXCOL; c++) { colw[c] = CS_DEF_W; colp[c] = CS_DEF_P; }
-    for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++) {
-            cells[r][c].prec = -1;
-            cells[r][c].notation = 0;   /* (auto) */
-            cells[r][c].factf = 0;
-        }
 }
 
 int cs_ensure_room(void)
@@ -305,10 +541,12 @@ void cs_fname_disp(const char *name, char *out, int outn)
  * from the count; the auto/memory warning and ";? Room for" rely on it) */
 void cs_recount_entries(void)
 {
-    int r, c, n = 0;
-    for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++)
-            if (cells[r][c].type != CE_EMPTY) n++;
+    int r, i, n = 0;
+    for (r = 0; r < CS_MAXROW; r++) {
+        const CsRow *rp = &cs_rows[r];
+        for (i = 0; i < rp->n; i++)
+            if (cs_ref_ptr(rp->e[i].ref)->type != CE_EMPTY) n++;
+    }
     entriesUsed = n;
 }
 

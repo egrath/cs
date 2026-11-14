@@ -110,11 +110,13 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
     char path[128];
     FILE *f;
     int r, c, count = 0;
+    Cell *cl;
 
     cs_savename(name, path, (int) sizeof(path));
     for (r = r1; r <= r2; r++)
         for (c = c1; c <= c2; c++)
-            if (cells[r][c].type != CE_EMPTY) count++;
+            if ((cl = cs_getcell(c, r)) != NULL && cl->type != CE_EMPTY)
+                count++;
     f = fopen(path, "wb");
     if (!f) { cs_msg("can't open file"); return 0; }
     fwrite("CSD4", 1, 4, f);
@@ -129,12 +131,15 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
     fputc(pw ? (int) strlen(pw) : 0, f);
     if (pw && pw[0]) fwrite(pw, 1, strlen(pw), f);
     wr16(f, count);
-    for (r = r1; r <= r2; r++)
-        for (c = c1; c <= c2; c++) {
-            Cell *cl = &cells[r][c];
+    /* the populated cells in coordinate order (the ordered scan) */
+    c = c1; r = r1;
+    while (r <= r2) {
+        cl = cs_next_cell(&c, &r);
+        if (!cl || r > r2) break;
+        if (c > c2) { c = c1; r++; continue; }
+        if (cl->type != CE_EMPTY) {
             char just;
             int len;
-            if (cl->type == CE_EMPTY) continue;
             fputc(c, f);
             wr16(f, r);
             fputc((int) cl->type, f);
@@ -159,6 +164,9 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
             wr16(f, len);
             if (len) fwrite(cl->rep, 1, (size_t) len, f);
         }
+        c = cl->col + 1;
+        if (c > c2) { c = c1; r++; }
+    }
     if (ferror(f)) { fclose(f); cs_msg("WRITE ERROR"); return 0; }
     if (fclose(f) == EOF) { cs_msg("WRITE CLOSE ERROR"); return 0; }
     return 1;
@@ -224,7 +232,13 @@ int cs_load(const char *name, int c0, int r0, int merge)
         dr = r0 + rr - basrr;
         drop = (dc >= CS_MAXCOL || dr >= CS_MAXROW || dc < 0 || dr < 0);
         memset(&scratch, 0, sizeof(scratch));
-        cl = drop ? &scratch : &cells[dr][dc];
+        cl = drop ? &scratch : cs_alloc_cell(dc, dr);
+        if (!drop && !cl) {
+            /* the entry pool is exhausted: report and stop cleanly */
+            fclose(f);
+            cs_msg("MEMORY IS TOO LOW");
+            return 0;
+        }
         /* merge overlays: release the destination cell's old content
          * first (bookkeeping stays exact) */
         if (!drop && cl->type != CE_EMPTY)

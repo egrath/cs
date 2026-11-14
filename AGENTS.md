@@ -690,6 +690,52 @@ Batch workflow (do all steps before reporting done):
   the banner before the capture).  LICENSE (MPL-2.0) ships verbatim
   from mozilla.org; CS_VERSION "1.5" in cs.h.
 
+- **THE SPARSE CELL STORE (branch "DOS", 2026-11-14, the biggest
+  architectural change)**: the dense `Cell cells[255][127]` matrix
+  (~2.2 MiB on a 16-bit compiler, 104-112 bytes per Cell) is replaced
+  by a chunked pool + a per-row sorted index in cells.c.  THE TARGET:
+  a 386 in protected mode under a DOS4GW-style extender (32-bit), but
+  the design KEEPS the 16-bit discipline: no single allocation exceeds
+  64 KiB (--test pins the chunk math).  LAYOUT: `CS_CHUNK 250` slots
+  per chunk (`malloc(sizeof(Cell) * 250)` ≈ 25 KiB), up to
+  `CS_NCHUNK = CS_BUDGET/250` = 16 chunks (CS_BUDGET raised 2000 ->
+  4000, a FLAGGED deviation from the emulated pool, user decision);
+  free slots thread through their `cont` field (cs_freelist); refs are
+  1-based `1 + chunk*250 + slot` (0 = none), resolved through an
+  8..16-entry chunk table.  The per-row index: `CsRow {u8 n, u8 cap;
+  CsIdxEnt *e}` with `{u8 col; u16 ref}` entries SORTED by column —
+  total index memory ≤ budget × 4 B, NOT proportional to the 32,385
+  coordinate space.  Cell GAINED `unsigned char col, row` (its own
+  coordinate: frees, relinks, the sort).  API (explicit lookup vs
+  allocation): cs_getcell (NULL = absent/invalid; absent ≡ empty for
+  readers), cs_alloc_cell (allocates when absent, REUSES an existing
+  slot otherwise — including indexed-CE_EMPTY slots; NULL = budget or
+  pool exhausted), cs_free_cell_at, cs_relink_cell (moves a slot
+  between coordinates WITHOUT touching the pool — insert/delete
+  shifts; an occupied target is released first, fixing the dense
+  struct-assignment leak), cs_next_cell (the ordered row-major scan:
+  callers advance with col = cl->col + 1), cs_clear_all (frees every
+  row array and chunk).  cs_cell IS RETIRED (no shim): every call site
+  became get/alloc explicitly (~250 sites; the --test reads use the
+  tread helper: absent reads as an empty static cell; the test seeds
+  use tcell = alloc-or-die).  INVARIANTS: (1) a Cell* is stable until
+  THAT cell is freed (the pool never moves slots); (2) the evaluator
+  only allocates, so cs_recalc_entry_p holds its cell across the eval;
+  (3) recalc_pass PRECOLLECTS the populated coordinates once per pass
+  into cs_passlist (row-major L-R; qsorted column-major for T-B) —
+  the machinery's wiring order is preserved and the 32,385-coordinate
+  walk became a ~populated-count walk (the pass cap runs in ~1 s
+  instead of hanging); cells created mid-pass (SET writes) are inert
+  that pass and join the next, matching the dense visits; (4) the
+  save walks the ordered scan (coordinate order preserved); the load
+  allocs and reports MEMORY IS TOO LOW cleanly when the pool/budget
+  is exhausted mid-file (flagged: a >4000-entry file truncates);
+  (5) cs_recount_entries walks the index.  ALLOCATION SLOTS: pool
+  take/return is cs_pool_take/cs_free_cell_at ONLY — cs_free_cell
+  clears content but keeps the slot live (cs_set_num/cs_set_text rely
+  on it).  VERIFIED: --test 401 ok incl. the portability guards; the
+  idle gate EXACT; the brainf example loads and runs (1768 passes).
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

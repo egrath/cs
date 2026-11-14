@@ -167,7 +167,7 @@ int cs_cell_x(int col)
 /* render one cell into buffer of exactly `width` chars */
 static void cell_render(int col, int row, char *out, int width)
 {
-    Cell *c = cs_cell(col, row);
+    Cell *c = cs_getcell(col, row);
     out[0] = '\0';
     if (!c || c->type == CE_EMPTY || c->type == CE_ALLOC) return;
     if (c->type == CE_TEXT && !showForm) {
@@ -388,7 +388,7 @@ static int cont_is_number(const char *s)
 
 static void draw_typecont(void)
 {
-    Cell *c = cs_cell(curCol, curRow);
+    Cell *c = cs_getcell(curCol, curRow);
 
     cputn(line_type, 0, "current||", 9);
     cputn(line_cont, 0, "data   ||", 9);

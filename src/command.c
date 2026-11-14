@@ -40,7 +40,9 @@ static Cell *clone_cells(int c1, int r1, int c2, int r2, int *nret)
     tmp = (Cell *) malloc((size_t) n * sizeof(Cell));
     if (!tmp) { *nret = 0; return NULL; }
     for (i = 0; i < n; i++) {
-        tmp[i] = cells[r1 + i / sh][c1 + i % sh];
+        Cell *cl = cs_getcell(c1 + i % sh, r1 + i / sh);
+        if (cl) tmp[i] = *cl;
+        else memset(&tmp[i], 0, sizeof(Cell));
         if (tmp[i].cont)   tmp[i].cont   = cs_strdup(tmp[i].cont);
         if (tmp[i].rep)    tmp[i].rep    = cs_strdup(tmp[i].rep);
         if (tmp[i].strres) tmp[i].strres = cs_strdup(tmp[i].strres);
@@ -154,7 +156,7 @@ static void copy_cmd(void)
     }
     rel = 0;
     for (i = 0; i < (rep ? 1 : sw * sh); i++) {
-        Cell *s = cs_cell(c1 + i % sw, r1 + i / sh);
+        Cell *s = cs_getcell(c1 + i % sw, r1 + i / sh);
         if (s && s->type == CE_NUM) {
             int ch = cs_prompt_char("R)elative or N)o adjustment");
             redraw();
@@ -169,7 +171,9 @@ static void copy_cmd(void)
         int sc = rep ? c1 : (c1 + i % sw);
         int sr = rep ? r1 : (r1 + i / sw);
         int dc = d1 + i % dw, dr = e1 + i / dw;
-        copy_one(cs_cell(dc, dr), &tmp[rep ? 0 : i], rel, dc - sc, dr - sr);
+        Cell *dst = cs_alloc_cell(dc, dr);
+        if (!dst) { cs_msg("MEMORY IS TOO LOW"); break; }
+        copy_one(dst, &tmp[rep ? 0 : i], rel, dc - sc, dr - sr);
     }
     free_clones(tmp, n);
     cs_recount_entries();
@@ -179,31 +183,23 @@ static void copy_cmd(void)
 /* ====================== Insert row/column ========================== */
 static void shift_all_refs(int iscol, int at, int insert)
 {
-    int r, c;
-    for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++) {
-            Cell *cl = &cells[r][c];
-            char *nu;
-            if (!cl->cont) continue;
-            nu = cs_shift_refs(cl->cont, iscol, at, insert);
-            if (nu) {
-                free(cl->cont);
-                cl->cont = nu;
-            }
+    int r = 0, c = 0;
+    Cell *cl;
+    while ((cl = cs_next_cell(&c, &r)) != NULL) {
+        char *nu;
+        if (!cl->cont) { c = cl->col + 1; continue; }
+        nu = cs_shift_refs(cl->cont, iscol, at, insert);
+        if (nu) {
+            free(cl->cont);
+            cl->cont = nu;
         }
+        c = cl->col + 1;
+    }
 }
 
 static void blank_cell_rowcol(int r, int c)
 {
-    cells[r][c].type = CE_EMPTY;
-    cells[r][c].cont = NULL;
-    cells[r][c].rep = NULL;
-    cells[r][c].strres = NULL;
-    cells[r][c].just = 'L';
-    csn_zero(&cells[r][c].val);
-    cells[r][c].iserr = 0;
-    cells[r][c].formf = 0;
-    cells[r][c].prec = -1;
+    cs_free_cell_at(c, r);
 }
 
 static void insert_cmd(void)
@@ -217,14 +213,14 @@ static void insert_cmd(void)
         shift_all_refs(0, at, 1);
         for (r = CS_MAXROW - 1; r > at; r--)
             for (c = 0; c < CS_MAXCOL; c++)
-                cells[r][c] = cells[r - 1][c];
+                cs_relink_cell(c, r - 1, c, r);
         for (c = 0; c < CS_MAXCOL; c++) blank_cell_rowcol(at, c);
     } else if (ch == 'C' || ch == 'c') {
         at = curCol;
         shift_all_refs(1, at, 1);
         for (r = 0; r < CS_MAXROW; r++)
             for (c = CS_MAXCOL - 1; c > at; c--)
-                cells[r][c] = cells[r][c - 1];
+                cs_relink_cell(c - 1, r, c, r);
         for (r = 0; r < CS_MAXROW; r++) blank_cell_rowcol(r, at);
     } else return;
     redraw();
@@ -233,14 +229,13 @@ static void insert_cmd(void)
 /* ====================== Delete row/column/all ====================== */
 static int dep_check(int iscol, int at, char *list, int listmax)
 {
-    int r, c, found = 0;
+    int r = 0, c = 0, found = 0;
+    Cell *cl;
     list[0] = '\0';
-    for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++) {
-            Cell *cl = &cells[r][c];
+    while ((cl = cs_next_cell(&c, &r)) != NULL) {
             char buf[10];
-            if (iscol ? c == at : r == at) continue;
-            if (!cl->cont || cl->type != CE_NUM) continue;
+            if (iscol ? c == at : r == at) { c = cl->col + 1; continue; }
+            if (!cl->cont || cl->type != CE_NUM) { c = cl->col + 1; continue; }
             {
                 const char *s = cl->cont;
                 int hit = 0, cc, rr, inq = 0;
@@ -294,23 +289,21 @@ void cs_delete_rows(int r1, int r2)
 {
     int n = r2 - r1 + 1, rr, c;
     if (n < 1) return;
-    for (rr = 0; rr < CS_MAXROW; rr++)
-        for (c = 0; c < CS_MAXCOL; c++) {
-            Cell *cl = &cells[rr][c];
+    {
+        int r = 0, cc = 0;
+        Cell *cl;
+        while ((cl = cs_next_cell(&cc, &r)) != NULL) {
             char *nu;
-            if (!cl->cont) continue;
-            nu = cs_shift_refs_n(cl->cont, 0, r2, -n);
-            if (nu) {
-                free(cl->cont);
-                cl->cont = nu;
+            if (cl->cont) {
+                nu = cs_shift_refs_n(cl->cont, 0, r2, -n);
+                if (nu) { free(cl->cont); cl->cont = nu; }
             }
+            cc = cl->col + 1;
         }
+    }
     for (rr = r1; rr < CS_MAXROW - n; rr++)
         for (c = 0; c < CS_MAXCOL; c++)
-            cells[rr][c] = cells[rr + n][c];
-    for (rr = CS_MAXROW - n; rr < CS_MAXROW; rr++)
-        for (c = 0; c < CS_MAXCOL; c++)
-            cs_free_cell(&cells[rr][c]);
+            cs_relink_cell(c, rr + n, c, rr);
     if (winRow > r2) winRow -= n;
     else if (winRow > r1) winRow = r1;
     if (lockRows > r2) lockRows -= n;
@@ -325,23 +318,21 @@ void cs_delete_columns(int c1, int c2)
 {
     int n = c2 - c1 + 1, r, cc;
     if (n < 1) return;
-    for (r = 0; r < CS_MAXROW; r++)
-        for (cc = 0; cc < CS_MAXCOL; cc++) {
-            Cell *cl = &cells[r][cc];
+    {
+        int r = 0, c0 = 0;
+        Cell *cl;
+        while ((cl = cs_next_cell(&c0, &r)) != NULL) {
             char *nu;
-            if (!cl->cont) continue;
-            nu = cs_shift_refs_n(cl->cont, 1, c2, -n);
-            if (nu) {
-                free(cl->cont);
-                cl->cont = nu;
+            if (cl->cont) {
+                nu = cs_shift_refs_n(cl->cont, 1, c2, -n);
+                if (nu) { free(cl->cont); cl->cont = nu; }
             }
+            c0 = cl->col + 1;
         }
+    }
     for (r = 0; r < CS_MAXROW; r++)
         for (cc = c1; cc < CS_MAXCOL - n; cc++)
-            cells[r][cc] = cells[r][cc + n];
-    for (r = 0; r < CS_MAXROW; r++)
-        for (cc = CS_MAXCOL - n; cc < CS_MAXCOL; cc++)
-            cs_free_cell(&cells[r][cc]);
+            cs_relink_cell(cc + n, r, cc, r);
     for (cc = c1; cc < CS_MAXCOL - n; cc++) {
         colw[cc] = colw[cc + n];
         colp[cc] = colp[cc + n];
@@ -365,7 +356,7 @@ void cs_clear_range(int c1, int r1, int c2, int r2)
     int r, c;
     for (r = r1; r <= r2; r++)
         for (c = c1; c <= c2; c++)
-            cs_free_cell(&cells[r][c]);
+            cs_free_cell_at(c, r);
 }
 
 /* one side of a delete-range answer.  want = 1 (rows): a bare row
@@ -489,7 +480,7 @@ static void delete_cmd(void)
     redraw();
     if (ch == 27) return;
     if (ch == 'E' || ch == 'e') {
-        cs_free_cell(cs_cell(curCol, curRow));
+        cs_free_cell_at(curCol, curRow);
         redraw();
         return;
     }
@@ -557,7 +548,7 @@ static void format_cmd(void)
     int ch;
     char pw[24], tmpb[24];
     char label[88];
-    Cell *cur = cs_cell(curCol, curRow);
+    Cell *cur = cs_getcell(curCol, curRow);
 
     sprintf(pw, "%d", colw[curCol]);
     sprintf(label,
@@ -657,9 +648,12 @@ static void recalc_cmd(void)
     if (cs_nerrlist) {
         /* the manual's error replay: the ?n? cells report one after
          * another, confirmed with Space (see main.c walker) */
-        cs_sticky_err(cs_errlist[0].code,
-                      cs_cell(cs_errlist[0].col, cs_errlist[0].row)->cont,
-                      cs_errlist[0].col, cs_errlist[0].row);
+        {
+            Cell *ec2 = cs_getcell(cs_errlist[0].col, cs_errlist[0].row);
+            cs_sticky_err(cs_errlist[0].code,
+                          ec2 ? ec2->cont : "",
+                          cs_errlist[0].col, cs_errlist[0].row);
+        }
         cs_set_errpend(1);
     }
     if (cs_recalc_limit_hit())
@@ -708,8 +702,8 @@ static void what_cmd(void)
      * COLUMN heading lives in row 1 at the cursor's column (the two
      * reads were swapped: ";W" printed "A1,-" for an empty A7) */
     char rt[80], ct[80];
-    what_heading(cs_cell(0, curRow), 0, rt, (int) sizeof(rt));
-    what_heading(cs_cell(curCol, 0), curCol, ct, (int) sizeof(ct));
+    what_heading(cs_getcell(0, curRow), 0, rt, (int) sizeof(rt));
+    what_heading(cs_getcell(curCol, 0), curCol, ct, (int) sizeof(ct));
     cs_msg("row, column  = %s,%s", rt, ct);
 }
 
@@ -796,14 +790,19 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
     /* write back: release the block, then place the snapshot rows */
     for (r = 0; r < nrows; r++)
         for (c = 0; c < ncols; c++)
-            if (cells[r1 + r][c1 + c].type != CE_EMPTY)
-                cs_free_cell(&cells[r1 + r][c1 + c]);
+            cs_free_cell_at(c1 + c, r1 + r);
     for (r = 0; r < nrows; r++) {
         int src = order[r];
         for (c = 0; c < ncols; c++) {
-            Cell *dst = &cells[r1 + r][c1 + c];
+            Cell *dst = cs_alloc_cell(c1 + c, r1 + r);
             Cell *sc = &snap[src * ncols + c];
+            if (!dst) { cs_msg("MEMORY IS TOO LOW"); free(snap);
+                        free(order); free(nonempty); free(empties);
+                        free(perm); cs_recount_entries();
+                        cs_mark_sheet_change(); return; }
             *dst = *sc;
+            dst->col = (unsigned char) (c1 + c);
+            dst->row = (unsigned char) (r1 + r);
             if (dst->cont)   dst->cont   = cs_strdup(dst->cont);
             if (dst->rep)    dst->rep    = cs_strdup(dst->rep);
             if (dst->strres) dst->strres = cs_strdup(dst->strres);
@@ -812,14 +811,18 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
     }
     free(snap);
     /* the formulas: remap in-range references to the new rows */
-    for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++) {
-            Cell *cl = &cells[r][c];
+    {
+        int r2 = 0, c2 = 0;
+        Cell *cl;
+        while ((cl = cs_next_cell(&c2, &r2)) != NULL) {
             char *nc2;
-            if (!cl->cont || cl->type == CE_EMPTY) continue;
-            nc2 = cs_sort_refs(cl->cont, c1, r1, c2, r2, perm);
-            if (nc2) { free(cl->cont); cl->cont = nc2; }
+            if (cl->cont && cl->type != CE_EMPTY) {
+                nc2 = cs_sort_refs(cl->cont, c1, r1, c2, r2, perm);
+                if (nc2) { free(cl->cont); cl->cont = nc2; }
+            }
+            c2 = cl->col + 1;
         }
+    }
     free(order); free(nonempty); free(empties); free(perm);
     cs_recount_entries();
     cs_mark_sheet_change();
@@ -860,16 +863,20 @@ static void auto_cmd(void)
 {
     int seq[CS_MAXROW * CS_MAXCOL / 2 + 2];
     int nseq = 0;
-    int r, c, i;
+    int i;
     char buf[CS_EDITMAX + 1];   /* was buf[2]! second char typed went out
                                  * of bounds and smashed loop state */
     int k;
 
-    for (r = 0; r < CS_MAXROW; r++)
-        for (c = 0; c < CS_MAXCOL; c++)
-            if (cells[r][c].formf && nseq < (int)(sizeof(seq) / sizeof(int)) - 1) {
-                seq[nseq++] = r * CS_MAXCOL + c;
-            }
+    {
+        int sr = 0, sc = 0;
+        Cell *cl;
+        while ((cl = cs_next_cell(&sc, &sr)) != NULL) {
+            if (cl->formf && nseq < (int)(sizeof(seq) / sizeof(int)) - 1)
+                seq[nseq++] = sr * CS_MAXCOL + sc;
+            sc = cl->col + 1;
+        }
+    }
     if (nseq == 0) { cs_msg("no form flags"); return; }
     g_edit[0] = '\0';
     g_editlen = 0;
@@ -929,8 +936,11 @@ static void auto_cmd(void)
             ec = cs_commit_entry(cc, cr, buf);
             /* numeric eval error -> message (space is data inside Auto:
              * no "hit space" confirm here) */
-            if (cells[cr][cc].iserr)
-                cs_msg("Error %d-> %s", ec <= 0 ? 0 : ec, buf);
+            {
+                Cell *fc3 = cs_getcell(cc, cr);
+                if (fc3 && fc3->iserr)
+                    cs_msg("Error %d-> %s", ec <= 0 ? 0 : ec, buf);
+            }
             if (cs_recalc_limit_hit())
                 cs_msg("Recalculation limit reached");
         }

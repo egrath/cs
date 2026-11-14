@@ -21,7 +21,7 @@
  * and VAL() retrieves its value (option-3 semantics: references
  * coerce to values where a value is consumed) */
 typedef struct {
-    int col;       /* 0-based, fits cs_cell(col,row) */
+    int col;       /* 0-based coordinate */
     int row;
 } CsRef;
 
@@ -75,7 +75,7 @@ static int val_deref(Val *v)
     if (v->type == VT_NUM || v->type == VT_BOOL || v->type == VT_STR)
         return -1;
     if (v->type != VT_REF) return 6;    /* a Range is not a value here */
-    cl = cs_cell(v->ref.col, v->ref.row);
+    cl = cs_getcell(v->ref.col, v->ref.row);
     /* a formula whose current result is a string IS a text value
      * (the derived type, user report 2026-11-13) */
     if (cl && cl->strres && !cl->iserr) {
@@ -345,7 +345,7 @@ static Val parse_list(P *ps, Csn *list, int *cnt)
             int c, r;
             for (r = v.rng.start.row; r <= v.rng.end.row; r++)
                 for (c = v.rng.start.col; c <= v.rng.end.col; c++) {
-                    Cell *cl = cs_cell(c, r);
+                    Cell *cl = cs_getcell(c, r);
                     if (!cl) continue;
                     /* a string-result formula cell is a TEXT value in
                      * the range: skipped like text (2026-11-13) */
@@ -513,7 +513,7 @@ static Val parse_primary(P *ps)
                 skip_ws(&ps->p);
                 if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
                 ps->p++;
-                cl = cs_cell(a.ref.col, a.ref.row);
+                cl = cs_getcell(a.ref.col, a.ref.row);
                 val_free(&a);
                 val_free(&v);
                 memset(&v, 0, sizeof(v));
@@ -818,8 +818,8 @@ static Val parse_primary(P *ps)
                         int rr = vertical ? r1 + i : r1;
                         int dc = vertical ? c3 : c3 + i;
                         int dr = vertical ? r3 + i : r3;
-                        Cell *x = cs_cell(cc, rr);
-                        Cell *y = cs_cell(dc, dr);
+                        Cell *x = cs_getcell(cc, rr);
+                        Cell *y = cs_getcell(dc, dr);
                         Csn px;
                         if (!x || !y || x->type != CE_NUM || x->iserr ||
                             y->type != CE_NUM || y->iserr) { val_err(&v, 9); return v; }
@@ -1439,8 +1439,8 @@ static void exec_set_stmt(const char *args, int *err)
         return;
     }
     if (tgt.type != VT_REF) { val_free(&tgt); *err = 6; return; }
-    cell = cs_cell(tgt.ref.col, tgt.ref.row);
-    if (!cell) { val_free(&tgt); *err = 1; return; }
+    cell = cs_alloc_cell(tgt.ref.col, tgt.ref.row);
+    if (!cell) { cs_msg("MEMORY IS TOO LOW"); val_free(&tgt); *err = 0; return; }
     skip_ws(&sub.p);
     if (*sub.p != ',') { val_free(&tgt); *err = 7; return; }
     sub.p++;
@@ -1458,14 +1458,8 @@ static void exec_set_stmt(const char *args, int *err)
     if (e >= 0) { val_free(&v); val_free(&tgt); *err = e; return; }
     if (v.type == VT_RANGE) { val_free(&v); val_free(&tgt); *err = 6; return; }
 
-    /* the entry-pool budget for a newly allocated cell */
-    if (cell->type == CE_EMPTY && !cs_ensure_room()) {
-        cs_msg("MEMORY IS TOO LOW");
-        *err = 0;                       /* the value-range class */
-        val_free(&v);
-        val_free(&tgt);
-        return;
-    }
+    /* the entry-pool budget was checked by cs_alloc_cell (NULL =>
+     * MEMORY IS TOO LOW at the target resolution) */
 
     /* the change notification is HONEST (the stability criterion is
      * "a pass changes no stored value"): snapshot the old state and

@@ -1,3 +1,32 @@
+## BATCH (branch "DOS" -> to be merged): the sparse cell store (2026-11-14):
+- USER: implement the sparse storage (planned for real-mode DOS,
+  retargeted: a 386 in protected mode under a DOS4GW extender, 32
+  bit); CS_BUDGET 2000 -> 4000 (user decision, flagged).  The branch
+  "DOS" from master.
+- THE ENGINE (cells.c): chunked pool (250 slots/chunk, 16 chunks,
+  ~25 KiB each — the 64 KiB rule kept as a --test pin) + a per-row
+  sorted index ({u8 col, u16 ref} entries; ≤ budget*4 bytes total) +
+  Cell gained u8 col,row.  API: cs_getcell / cs_alloc_cell /
+  cs_free_cell_at / cs_relink_cell / cs_next_cell / cs_clear_all;
+  cs_cell RETIRED — every one of ~250 call sites converted explicitly
+  (the compiler drove the audit).  --test reads = tread (absent
+  reads as empty), seeds = tcell (alloc-or-die).
+- BUGS CAUGHT DURING THE CONVERSION: (1) recalc_pass's 32,385
+  coordinate walk became a binary-search-per-cell — the pass cap
+  HUNG for minutes; fixed with the per-pass precollected list
+  (row-major; qsort column-major for T-B; mid-pass SET-created cells
+  are inert that pass).  (2) my first save-loop rewrite never
+  advanced the scan column — cs_save hung writing one cell (found
+  via lldb attach: the loop in wr16).  (3) the tread blanket
+  conversion broke the test SEEDING sites (writes into the static
+  empty cell) — 7 round-trip failures; fixed by converting the
+  write-target sites to tcell (the write-detection heuristics missed
+  some: cc1/cc2/cc3 and the form-flag seeds — fixed by hand).
+- VERIFIED: --test 401 ok incl. the pool-math/chunk guards; the idle
+  gate EXACT; examples/brainf.csd loads, runs 1768 live passes,
+  "Hello World!" in S7.  The CSD format is untouched (the file is
+  byte-identical in spirit; no regeneration needed).
+
 ## BATCH (branch "brainfuck", follow-up 7): the startup banner + the build counter (2026-11-14):
 - USER REQUEST: at startup the status bar shows (inverse, cleared on
   the first keystroke) "CalcStar 1.5, release under the terms of the
