@@ -1,3 +1,25 @@
+## BATCH (branch "brainfuck", follow-up 7): the startup banner + the build counter (2026-11-14):
+- USER REQUEST: at startup the status bar shows (inverse, cleared on
+  the first keystroke) "CalcStar 1.5, release under the terms of the
+  MPL-2.0 license (build N)" with N = an increasing build counter in
+  a file.  DECISIONS (user): the counter increments on
+  SOURCE-CHANGING builds only; CS_VERSION defines "1.5" (cs.h); a
+  LICENSE file (MPL-2.0) ships verbatim from mozilla.org.
+- MECHANISM: cs_start_msg/_active/_clear (screen.c); the banner is
+  re-painted by a cs_draw frame hook until the main loop's first key
+  clears it (resize-safe).  The banner paints BEFORE the CLI load;
+  a successful load keeps it, a load ERROR clears the flag so the
+  error message wins (pty-verified both ways).
+- BUILD NUMBER: tools/buildno.sh bumps build.count (root, committed,
+  survives make clean) and writes build/buildno.h
+  (#define CS_BUILDNO); the Makefile regenerates the header as a rule
+  depending on $(SRCS) — no-op makes do NOT increment.  GOTCHA BIT:
+  the rule must sit AFTER build/calcstar or it hijacks the default
+  goal ("build/buildno.h is up to date", nothing built).
+  VERIFIED: build 1 -> no-op stays 1 -> source touch (with a 2s mtime
+  gap!) -> 2 -> clean+build -> 3; pty: the banner up at startup,
+  ^D clears it and moves; --test 401 ok; idle gate EXACT.
+
 ## BATCH (branch "brainfuck", follow-up 6): the fname box + the accumulating output (2026-11-14):
 - USER BUG: the loaded filename overran its 10-char status box and
   cut the `]`.  FIX: cs_fname_disp (basename, last extension

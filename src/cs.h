@@ -13,6 +13,7 @@
 #define CS_DEF_P 2
 #define CS_MAX_P 24   /* visible decimals; engineering extension (manual: 12) */
 #define CS_EDITMAX 120
+#define CS_VERSION "1.5"       /* the startup message's version string */
 #define CS_BUDGET 2000         /* emulated entry pool for ';?' */
 
 typedef enum { CE_EMPTY = 0, CE_ALLOC = 1, CE_TEXT = 2, CE_NUM = 3 } CellType;
@@ -110,6 +111,9 @@ struct CsErrRec { int col, row, code; };
 extern struct CsErrRec cs_errlist[256];
 extern int cs_nerrlist;
 void   cs_sticky_err(int code, const char *expr, int col, int rw);
+void   cs_start_msg(const char *text);  /* the startup banner */
+int    cs_start_msg_active(void);
+void   cs_start_msg_clear(void);
 void   cs_set_errpend(int on);             /* main.c: sticky-message walker */
 
 void   cs_reg_reset(void);   /* zero the REGR() state */

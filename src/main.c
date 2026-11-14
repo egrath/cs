@@ -2,8 +2,10 @@
    entry engine (@-references, " toggle, ESC cancel, trailing ? calc),
    and a --test self-test mode for the evaluator */
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <curses.h>
+#include "buildno.h"
 #include "cs.h"
 
 static int paint_pending;   /* a repaint was deferred (input queued) */
@@ -278,11 +280,22 @@ void run_session(void)
     if (curs_set(2) == ERR) curs_set(1); /* blink, else just visible */
     edit_clear();
     redraw();
+    /* the startup banner first: a CLI load then happens on top of it
+     * (a successful load keeps the banner via the frame hook; a load
+     * ERROR message is the more important text, so the banner stands
+     * down) */
+    {
+        char bm[96];
+        sprintf(bm, "CalcStar %s, release under the terms of the MPL-2.0"
+                    " license (build %d)", CS_VERSION, CS_BUILDNO);
+        cs_start_msg(bm);
+    }
     /* load the file given on the command line, if any */
     if (cs_cmdfile[0]) {
         if (cs_load(cs_cmdfile, 0, 0, 0))
             redraw();            /* repaint the loaded sheet */
-        /* on failure cs_msg put the error on the status row; leave it */
+        else
+            cs_start_msg_clear();    /* the load error message wins */
     }
     while (running) {
         int ch;
@@ -298,6 +311,12 @@ void run_session(void)
         } else
             ch = getch();
         if (cs_was_resize(ch)) continue;   /* terminal resized */
+        if (cs_start_msg_active()) {
+            /* the first keystroke clears the banner; that key then
+             * acts normally */
+            cs_start_msg_clear();
+            redraw();
+        }
         if (errpend) {
             /* the error message is cleared by ANY key; Space confirms:
              * while the ';R' error-cell queue has more entries, Space

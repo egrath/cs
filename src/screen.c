@@ -34,6 +34,11 @@ static char lastmsg[256];   /* the formatted text; the DISPLAY still
                              * truncates at 75 (the status row) - the
                              * buffer itself is big enough for long
                              * formulas in the sticky-error line */
+static char startmsg[96];   /* the startup banner: painted inverse on
+                             * the status row at startup and cleared by
+                             * the FIRST keystroke (the banner survives
+                             * repaints until then) */
+static int  startmsg_on;
 static char prompttxt[80];
 static int  promptvis = 0;
 
@@ -495,6 +500,8 @@ static void draw_memwarn(void)
     cput(extended ? 0 : 4, x, msg);
 }
 
+static void cs_msg_text(const char *s, chtype attr);
+
 void cs_draw(void)
 {
     cs_compute_layout();
@@ -508,13 +515,35 @@ void cs_draw(void)
     draw_editline_idle();
     /* the last row is cleared by clear(); messages are transient: they
      * are painted by cs_msg() and vanish as soon as the next key causes
-     * any repaint */
+     * any repaint.  The STARTUP banner is the exception: it survives
+     * repaints until the first keystroke clears it. */
+    if (startmsg_on) cs_msg_text(startmsg, A_REVERSE);
     promptvis = 0;   /* a repaint always ends prompt mode */
     place_cursor();
     refresh();
 }
 
-static void cs_msg_text(const char *s, chtype attr);
+/* the startup banner (user request 2026-11-14): "CalcStar 1.5, ...
+ * (build N)" painted inverse on the status row; it survives repaints
+ * and the FIRST keystroke clears it (that key then acts normally). */
+void cs_start_msg(const char *text)
+{
+    snprintf(startmsg, sizeof(startmsg), "%s", text);
+    startmsg_on = 1;
+    cs_msg_text(startmsg, A_REVERSE);
+}
+
+int cs_start_msg_active(void)
+{
+    return startmsg_on;
+}
+
+void cs_start_msg_clear(void)
+{
+    startmsg_on = 0;
+    startmsg[0] = '\0';
+}
+
 
 void cs_msg(const char *fmt, ...)
 {

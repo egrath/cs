@@ -696,6 +696,22 @@ The run takes a few seconds; you watch the tape and output fill in
 live, one pass at a time.  (Other keys typed while the machine runs
 are not lost — they stay queued and act when it settles.)
 
+## Startup banner and build number
+
+The application starts with the message
+
+```text
+CalcStar 1.5, release under the terms of the MPL-2.0 license (build N)
+```
+
+painted inverse on the status row; the FIRST keystroke clears it (that
+key acts normally).  `N` is the build number: a counter in
+`build.count` that increases on every source-changing build (the
+generated header `build/buildno.h` depends on the sources, so a no-op
+`make` does not touch it and `make clean` keeps the count).  The
+version string lives in `CS_VERSION` (cs.h).  The license text is
+`LICENSE` (MPL-2.0).
+
 ## Build & run
 
 ```

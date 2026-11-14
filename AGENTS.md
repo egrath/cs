@@ -670,6 +670,26 @@ Batch workflow (do all steps before reporting done):
   tail of any case is kept as entered, never doubled (`cs_savename`,
   shared by save/load/merge/password-probe).
 
+- **THE STARTUP BANNER (user request 2026-11-14)**: at startup the
+  status row paints inverse `CalcStar <CS_VERSION>, release under the
+  terms of the MPL-2.0 license (build <CS_BUILDNO>)`; the FIRST
+  keystroke clears it and acts normally (after the resize check, so a
+  resize keeps the banner).  Mechanism: cs_start_msg/_active/_clear in
+  screen.c; the banner survives repaints via a frame hook in cs_draw
+  (unlike ordinary transient messages).  The banner paints BEFORE the
+  CLI load: a successful load keeps it via the frame hook; a load
+  ERROR clears the flag so the `write error ... not found` text wins
+  (verified in a pty both ways).  CS_BUILDNO comes from the GENERATED
+  build/buildno.h (-Ibuild; tools/buildno.sh bumps build.count) — the
+  rule depends on the SOURCES, so the counter increments on every
+  SOURCE-CHANGING build and a no-op make does NOT (verified: 1 ->
+  no-op stays -> source change -> 2; make clean keeps build.count).
+  Makefile gotcha: the buildno.h rule must stay AFTER the
+  build/calcstar rule or it becomes the default goal (bit once).
+  The idle-screen gate is unaffected (the capture recipes' keys clear
+  the banner before the capture).  LICENSE (MPL-2.0) ships verbatim
+  from mozilla.org; CS_VERSION "1.5" in cs.h.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.
