@@ -280,6 +280,27 @@ int cs_ensure_room(void)
     return 1;
 }
 
+/* the FILE NAME as the 10-character status box shows it (user report
+ * 2026-11-14: a long path overran the box and cut the UI): the
+ * basename after the last '/', the last extension stripped, and the
+ * rest truncated to 10 characters.  The stored fname keeps the full
+ * name so ;S re-saves into the same place. */
+void cs_fname_disp(const char *name, char *out, int outn)
+{
+    const char *b, *dot;
+    int n;
+    out[0] = '\0';
+    if (!name || !name[0]) return;
+    b = strrchr(name, '/');
+    b = b ? b + 1 : name;
+    dot = strrchr(b, '.');
+    n = dot ? (int) (dot - b) : (int) strlen(b);
+    if (n > 10) n = 10;
+    if (n >= outn) n = outn - 1;
+    if (n > 0) memcpy(out, b, (size_t) n);
+    out[n] = '\0';
+}
+
 /* re-count real entries (copy writes directly into cells and can drift
  * from the count; the auto/memory warning and ";? Room for" rely on it) */
 void cs_recount_entries(void)

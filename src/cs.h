@@ -118,6 +118,7 @@ void   cs_fmt_num(const Csn *v, int width, int prec, int iserr, int notation,
                   char *buf, int bufn);
 int    cs_ensure_room(void);
 void   cs_recount_entries(void);
+void   cs_fname_disp(const char *name, char *out, int outn);
 int    cs_is_inputf(const Cell *c);
 int    cs_is_factf(const Cell *c);  /* a factorial entry: "5!"/"A5!" */
 

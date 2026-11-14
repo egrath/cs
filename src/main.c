@@ -523,7 +523,7 @@ static const char *bf_mach[17] = {
     "+(VAL(F1)=0)*(VAL(B5)=45):SET(REF(1,VAL(D1)),VAL(REF(1,VAL(D1)))-1);SET(B1,VAL(B1)+1);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=62):SET(D1,VAL(D1)+1);SET(B1,VAL(B1)+1);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=60):SET(D1,VAL(D1)-1);SET(B1,VAL(B1)+1);0:0",
-    "+(VAL(F1)=0)*(VAL(B5)=46):SET(REF(19,VAL(J1)+7),CHR(VAL(REF(1,VAL(D1)))));SET(J1,VAL(J1)+1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=46):SET(REF(19,7),VAL(REF(19,7))&CHR(VAL(REF(1,VAL(D1)))));SET(J1,VAL(J1)+1);SET(B1,VAL(B1)+1);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=44):SET(REF(1,VAL(D1)),ORD(VAL(REF(20,VAL(K1)+20))));SET(K1,VAL(K1)+1);SET(B1,VAL(B1)+1);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))=0):SET(F1,1);SET(H1,0);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))<>0):SET(B1,VAL(B1)+1);0:0",
@@ -555,6 +555,7 @@ static void bf_build(const char *prog, const char *inp)
     setv(11, 0, lbuf);                      /* L1 program length */
     for (i = 0; i < 60; i++) setv(0, i, "0");       /* the tape */
     for (i = 0; i < 17; i++) cs_commit_entry(1 + i, 4, bf_mach[i]);
+    cs_commit_entry(18, 6, "+\"\"");        /* S7: the output cell, empty */
     cb[1] = '\0';
     for (i = 0; i < n; i++) {
         cb[0] = prog[i];
@@ -1513,14 +1514,17 @@ static void run_tests(void)
         cs_recalc_all();
         if (cs_recalc_last_passes >= 10000 ||
             !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "H"))
-            { printf("FAIL bf H\n"); fails++; }
+            { printf("FAIL bf H (%s)\n",
+                     cs_cell(18, 6)->cont ? cs_cell(18, 6)->cont : "");
+              fails++; }
         else printf("ok   bf prints H\n");
         bf_build("++++++++[>++++++++<-]>++++++++.+++++++++++++++++++++++++++++++++.", NULL);
         cs_recalc_all();
         if (cs_recalc_last_passes >= 10000 ||
-            !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "H") ||
-            !cs_cell(18, 7)->cont || strcmp(cs_cell(18, 7)->cont, "i"))
-            { printf("FAIL bf Hi\n"); fails++; }
+            !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "Hi"))
+            { printf("FAIL bf Hi (%s)\n",
+                     cs_cell(18, 6)->cont ? cs_cell(18, 6)->cont : "");
+              fails++; }
         else printf("ok   bf prints Hi\n");
         bf_build(",.", "A");
         cs_recalc_all();
@@ -1536,18 +1540,15 @@ static void run_tests(void)
                  ".+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++", NULL);
         cs_recalc_all();
         {
-            const char *want = "Hello World!";
-            int k, ok = 1;
-            for (k = 0; want[k]; k++)
-                if (!cs_cell(18, 6 + k)->cont ||
-                    cs_cell(18, 6 + k)->cont[0] != want[k])
-                    ok = 0;
+            Cell *oc = cs_cell(18, 6);
             if (cs_recalc_last_passes >= 10000 ||
-                cs_cell(5, 0)->val.nd[0] != 3 || !ok)
-                { printf("FAIL bf hello (passes=%d mode=%d)\n",
+                cs_cell(5, 0)->val.nd[0] != 3 ||
+                !oc->cont || strcmp(oc->cont, "Hello World!") ||
+                oc->type != CE_TEXT)
+                { printf("FAIL bf hello (passes=%d out=%s)\n",
                          cs_recalc_last_passes,
-                         cs_cell(5, 0)->val.nd[0]); fails++; }
-            else printf("ok   bf hello, world! (%d passes, 12 chars)\n",
+                         oc->cont ? oc->cont : ""); fails++; }
+            else printf("ok   bf hello, world! (%d passes, one cell)\n",
                         cs_recalc_last_passes);
         }
         cs_clear_all();
@@ -1584,6 +1585,27 @@ static void run_tests(void)
             if (sf) free(sf);
         }
         cke("-CHR(65)", "-CHR(65)", 6);     /* a unary '-' stays an error */
+        /* the STATUS-BOX file name: basename, no extension, at most
+         * 10 chars (user report 2026-11-14) */
+        {
+            char nb[24];
+            struct { const char *in; const char *want; } fc[] = {
+                { "examples/brainf.csd", "brainf" },
+                { "a/b/c.CSD", "c" },
+                { "1234567890123.csd", "1234567890" },
+                { "", "" },
+                { "noext", "noext" },
+                { "x.sheet.csd", "x.sheet" },
+            };
+            int q, ok = 1;
+            for (q = 0; q < 6; q++) {
+                cs_fname_disp(fc[q].in, nb, (int) sizeof(nb));
+                if (strcmp(nb, fc[q].want))
+                    { printf("FAIL fname %d (%s)\n", q, nb); ok = 0; }
+            }
+            if (!ok) fails++;
+            else printf("ok   the status-box file name\n");
+        }
         /* a ONE-CHARACTER entry that is not a digit is TEXT (the bf
          * program cells, flagged refinement 2026-11-13) */
         cs_clear_all();

@@ -349,8 +349,15 @@ static void draw_cursorline(void)
         sprintf(curcb, "%s%d", cn, g_entryrow + 1);
     } else
         strcpy(curcb, cb);
-    /* filename box + cursor/current + entry direction */
-    sprintf(lbuf, "[%-10s]", fname[0] ? fname : "");
+    /* filename box + cursor/current + entry direction: the name is
+     * shown as the 10-char box wants it (basename, no extension,
+     * truncated) - a long stored name used to overrun the box and
+     * cut the closing bracket off the UI (user report 2026-11-14) */
+    {
+        char nb[16];
+        cs_fname_disp(fname, nb, (int) sizeof(nb));
+        sprintf(lbuf, "[%-10.10s]", nb);
+    }
     cputn(line_cursor, 0, lbuf, 12);
     sprintf(lbuf, "  cursor:%6s      current:%6s     %s",
             cb, curcb, dirTB ? "T-B" : "L-R");

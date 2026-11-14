@@ -1,3 +1,20 @@
+## BATCH (branch "brainfuck", follow-up 6): the fname box + the accumulating output (2026-11-14):
+- USER BUG: the loaded filename overran its 10-char status box and
+  cut the `]`.  FIX: cs_fname_disp (basename, last extension
+  stripped, 10-char truncate) + the paint `[%-10.10s]` (the `]` always
+  in place); fname keeps the full name (the ;S prefill keeps the
+  path).  Pinned (6 cases).  The idle screen is byte-exact.
+- USER REQUEST: the Hello World output builds up in ONE cell S7.
+  The `.` executor appends: SET(REF(19,7), VAL(REF(19,7))&CHR(...));
+  the seed is the EMPTY-STRING formula `+""` (strres="" — VAL gives
+  the empty String, no special first-output case).  The cell becomes
+  CE_TEXT via SET's text path; the display builds "H","He","Hel",...
+  The example file was REGENERATED (new machinery + the seed) and
+  re-verified (probe round trip 1769 passes; pty: ;R A then ;G S7 ->
+  the cell shows "Hello Worl" (10-wide window) with the contents line
+  "Hello World!", the status box [brainf    ]).
+- VERIFIED: --test 401 ok, warning-free; idle gate EXACT.
+
 ## BATCH (branch "brainfuck", follow-up 5): the shipped example (2026-11-14):
 - USER REQUEST: a loadable file with the bf Hello World ->
   examples/brainf.csd (4176 bytes, All-mode CSD4, pristine state so

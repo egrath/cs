@@ -574,6 +574,29 @@ Batch workflow (do all steps before reporting done):
   the queue drains) — the per-key full redraw could not keep up with a
   paste and the tty buffer overflowed and DROPPED bytes; 200 pasted
   chars now cost 4 repaints instead of 213.
+- **THE STATUS-BOX FILE NAME (user bug report 2026-11-14)**: the
+  filename box painted `[%-10s]` — a MINIMUM width — so a long stored
+  name ("examples/brainf.csd") overran the box and the cputn clip
+  removed the closing bracket (the UI looked cut).  Fix: cs_fname_disp
+  (cells.c, exported, pinned) = the basename after the last '/', the
+  LAST extension stripped, truncated to 10; the paint uses
+  `[%-10.10s]` so the `]` always sits at its column.  fname KEEPS the
+  full name internally: ;S prefills from it and cs_savename re-saves
+  into the same place.  The empty-name idle case is byte-exact
+  (verified against cs1.txt).
+- **THE OUTPUT ACCUMULATES IN ONE CELL (user request 2026-11-14)**:
+  the `.` executor (mach G5) now APPENDS to the fixed output cell
+  S7: `SET(REF(19,7),VAL(REF(19,7))&CHR(...))` — the user watches
+  "H", "He", "Hel", ... build up in ONE cell.  The seed: S7 = the
+  EMPTY-STRING FORMULA `+""` (cs_eval_formula returns the empty
+  strres; VAL yields the empty String so the first `&` works without
+  a special case — the empty-string-seed is a documented pattern).
+  The written cell becomes a real CE_TEXT (SET's text path), the type
+  line shows text, the display left-justifies.  The H/Hi/hello/, pins
+  check S7's cont (the hello pin also pins CE_TEXT); the example file
+  was regenerated (machinery + the S7 seed) and re-verified (load +
+  ;R A -> 1769 passes, "Hello World!" in S7; pty: the cell visible
+  with the contents line showing the full string).
 - **The shipped example `examples/brainf.csd` (user request
   2026-11-14)**: the complete Hello World sheet — pristine state
   (B1=2, D1=1, F1=0, H1=0, J1=0, K1=0, L1=105), the seeded tape, the
