@@ -559,6 +559,32 @@ Batch workflow (do all steps before reporting done):
   normalized to the EXECUTED pass count (at the cap exit the for-loop
   has already incremented past the limit: `(pass > CS_MAX_PASSES) ?
   pass - 1 : pass`).
+- **KEY-STREAM INTEGRITY (user-ext 2026-11-13, two fixes)**: (a) a
+  one-CHARACTER entry that is not a digit is TEXT (cs_commit_entry,
+  before the numeric branch) — the bf program cells (+ - . , [ ] < >)
+  can be typed with no toggle; a lone digit stays numeric and real
+  formulas still error into ?n?; (b) cs_poll_escape and the driver's
+  per-pass read PUSH BACK non-ESC keys (cs_getch_nodelay + ungetch) —
+  the old read-and-discard ate queued keystrokes during evaluations:
+  during a fast paste the machinery commits' statement polls consumed
+  the user's cursor moves (the commits then stacked in one cell and
+  fragmented).  (c) REPAINT BATCHING: redraw() defers the full-screen
+  paint while keys are queued (cs_input_pending / cs_getch_nodelay in
+  screen.c, paint_pending in main.c's loop; the loop paints as soon as
+  the queue drains) — the per-key full redraw could not keep up with a
+  paste and the tty buffer overflowed and DROPPED bytes; 200 pasted
+  chars now cost 4 repaints instead of 213.
+- **The Hello World run (user request 2026-11-13)**: the classic
+  program minus its final `.` (byte 10 is outside CHR's 32..127) —
+  105 chars, ~1768-1770 passes, tape cells 1..7, output "Hello World!"
+  at S7..S18.  The output-row offset in G5 moved +1 -> +7 (below the
+  machinery) so the output never collides with the program row for
+  any program length (the third output used to write into the program
+  cell at column 19 — harmless-by-luck before).  The H/Hi/, pins moved
+  to (18,6)/(18,7); the full run is pinned in --test (bf_build +
+  "Hello World!" assertion).  The interactive recipe is documented in
+  README ("Running Hello, World!") and verified END TO END in a pty
+  (build keystroke by keystroke, ;R A, the output visible at S7).
 - **The brainfuck interpreter, built from documented formulas**
   (user-ext 2026-11-13, proof of concept for the string batch; NOT a
   command): 17 machinery formulas in row 5 columns B..R (evaluated

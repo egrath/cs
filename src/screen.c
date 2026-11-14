@@ -773,14 +773,40 @@ void cs_kb_nodelay_set(int on)
 }
 
 /* poll for an ESC keystroke: non-blocking read, 1 = ESC seen, else 0.
- * Used by the side-effect statement machinery for the user interrupt. */
+ * Used by the side-effect statement machinery for the user interrupt.
+ * A key that is NOT ESC is pushed back: the poll must not consume user
+ * input - during a fast paste the queued keystrokes belong to the
+ * stream after the evaluation (a hard read once ate the cursor moves
+ * between the machinery commits, user report 2026-11-13). */
 int cs_poll_escape(void)
+{
+    int ch = cs_getch_nodelay();
+    if (ch == 27) return 1;
+    if (ch != ERR) ungetch(ch);
+    return 0;
+}
+
+/* non-blocking read: the next queued key, or ERR when none.  Restores
+ * the wanted (driver) nodelay mode afterwards, like cs_poll_escape. */
+int cs_getch_nodelay(void)
 {
     int ch;
     nodelay(stdscr, TRUE);
     ch = getch();
     nodelay(stdscr, cs_kb_nodelay);     /* restore the wanted mode */
-    return (ch == 27);
+    return ch;
+}
+
+/* 1 = a keystroke is already queued: the caller can skip an expensive
+ * repaint and batch it until the input drains (a fast paste would
+ * otherwise overflow the tty buffer and DROP bytes - the per-key full
+ * redraw cannot keep up). */
+int cs_input_pending(void)
+{
+    int ch = cs_getch_nodelay();
+    if (ch == ERR) return 0;
+    ungetch(ch);
+    return 1;
 }
 
 /* position the physical (blinking) terminal cursor.  It always rests at

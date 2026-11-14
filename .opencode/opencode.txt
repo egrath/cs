@@ -1,3 +1,37 @@
+## BATCH (branch "brainfuck", follow-up 4): Hello World + key-stream fixes (2026-11-14):
+- USER REQUEST: run the classic bf Hello World in the app + document
+  it.  DECISIONS: (a) the program runs WITHOUT its final '.' (byte 10
+  outside CHR's 32..127 — the user's own spec); (b) the output-row
+  offset G5 +1 -> +7 (the third output used to land on the program
+  cell at column 19 — harmless-by-luck; now the output never touches
+  the program row).
+- THE FLAGSHIP PIN: bf_build + the 105-char program -> 1770 passes,
+  mode 3, S7..S18 = "Hello World!" (--test).
+- TWO APP BUGS FOUND BY THE END-TO-END PTY (the recipe was right; the
+  app was wrong): (1) cs_poll_escape and the driver's per-pass getch
+  DISCARDED non-ESC keys — during a fast paste the machinery commits'
+  statement polls ATE the queued cursor moves (the commits stacked in
+  B5 and fragmented); fixed: cs_getch_nodelay + ungetch for non-ESC in
+  both readers.  (2) the per-key full-screen redraw could not keep up
+  with a paste — the tty buffer overflowed and DROPPED bytes; fixed:
+  redraw() defers while keys are queued (cs_input_pending +
+  paint_pending; the loop paints when the queue drains; the deferred
+  cs_draw is a full repaint from state so no update is lost).  200
+  pasted chars: 213 -> 4 repaints.
+- THE ONE-CHAR ENTRY RULE: a single non-digit entry is TEXT (the bf
+  program chars typed with no toggle) — pinned (+ - . , [ ] text; a
+  lone digit numeric; "+A" still a formula error cell).
+- PTY VERIFIED END TO END: keystroke-by-keystroke build (tape via ^X,
+  state/program/machinery via RETURN+^D), ;R A -> 1768 "Calculating"
+  passes LIVE, the output "H e l l..." visible at S7 with the derived
+  type.  HARNESS LESSONS: expect's `expect timeout` (bare) waits for
+  the TEXT "timeout" — use sleeps; the payload must NOT trail keys
+  into the driver's run (the ESC poll eats nothing now, but trailing
+  Gotos race the machine); split build / wait / navigate.
+- README: the machinery table's G5 shows +7; the layout says output
+  rows 7..; the new "Running Hello, World!" walkthrough (the exact
+  cell recipe, keystrokes, the newline note).
+
 ## BATCH (branch "brainfuck", follow-up 3): CSD round trip (2026-11-13):
 - USER REQUEST: persist the string result in the CSD format.  FINDING:
   the CSD4 layout ALREADY persists strres (per type==3 cell:

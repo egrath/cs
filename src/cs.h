@@ -139,6 +139,8 @@ void   cs_draw(void);
 void   cs_draw_prompt_text(const char *txt, const char *dots);
 void   cs_msg_plain(const char *fmt, ...);
 int    cs_poll_escape(void);   /* screen.c: non-blocking ESC poll */
+int    cs_input_pending(void); /* screen.c: 1 = a key is queued (batch paints) */
+int    cs_getch_nodelay(void); /* screen.c: the queued key, or ERR */
 void   cs_kb_nodelay_set(int on);  /* screen.c: wanted input mode */
 void   cs_msg(const char *fmt, ...);
 int    cs_get_key(void);

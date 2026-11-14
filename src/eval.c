@@ -215,11 +215,12 @@ void cs_run_recalc_passes(int always_one)
          * wipes the status rows) */
         cs_draw();
         cs_msg("Calculating ... (pass %d)", pass);
-        ch = getch();                   /* non-blocking: ERR when idle */
+        ch = cs_getch_nodelay();        /* non-blocking: ERR when idle */
         if (ch == 27) {
             cs_msg("User interrupted execution");
             break;
         }
+        if (ch != ERR) ungetch(ch);     /* a non-ESC key stays queued */
     }
     cs_kb_nodelay_set(0);
     /* the executed pass count (at the cap exit the for-loop has
@@ -371,6 +372,15 @@ int cs_commit_entry(int col, int rw, const char *entry)
     }
 
     /* ---- numeric or text, per pending toggle ---- */
+    /* a ONE-CHARACTER entry that is not a digit is text: it can never
+     * be a formula (the bf program cells need the bare instruction
+     * characters typed with no ceremony - flagged refinement
+     * 2026-11-13) */
+    if (n == 1 && !(buf[0] >= '0' && buf[0] <= '9')) {
+        if (!cs_ensure_room()) { cs_msg("MEMORY IS TOO LOW"); return 0; }
+        cs_set_text(c, buf, 'L');
+        return 0;
+    }
     if (g_entry_num && numeric_start((unsigned char) buf[0])) {
         Csn val;
         char *str = NULL;

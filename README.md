@@ -582,7 +582,9 @@ row 3   B3..         the program: ONE character per cell, columns
                      B, C, D, ... (type them as text!)
 row 5   B5..R5       the machinery (17 formulas, below)
 col A   A1..A250     the tape: seed the cells you will use with 0
-col S   S1..         the output: one character per row, read downward
+col S   S7..         the output: one character per row starting at
+                     row 7 (below the machinery - it never touches
+                     the program row no matter how long the program)
 col T   T20..        the input characters, one per cell (read by `,`)
 ```
 
@@ -602,7 +604,7 @@ C5  +(VAL(F1)=0)*(VAL(B5)=43):SET(REF(1,VAL(D1)),VAL(REF(1,VAL(D1)))+1);SET(B1,V
 D5  +(VAL(F1)=0)*(VAL(B5)=45):SET(REF(1,VAL(D1)),VAL(REF(1,VAL(D1)))-1);SET(B1,VAL(B1)+1);0:0
 E5  +(VAL(F1)=0)*(VAL(B5)=62):SET(D1,VAL(D1)+1);SET(B1,VAL(B1)+1);0:0
 F5  +(VAL(F1)=0)*(VAL(B5)=60):SET(D1,VAL(D1)-1);SET(B1,VAL(B1)+1);0:0
-G5  +(VAL(F1)=0)*(VAL(B5)=46):SET(REF(19,VAL(J1)+1),CHR(VAL(REF(1,VAL(D1)))));SET(J1,VAL(J1)+1);SET(B1,VAL(B1)+1);0:0
+G5  +(VAL(F1)=0)*(VAL(B5)=46):SET(REF(19,VAL(J1)+7),CHR(VAL(REF(1,VAL(D1)))));SET(J1,VAL(J1)+1);SET(B1,VAL(B1)+1);0:0
 H5  +(VAL(F1)=0)*(VAL(B5)=44):SET(REF(1,VAL(D1)),ORD(VAL(REF(20,VAL(K1)+20))));SET(K1,VAL(K1)+1);SET(B1,VAL(B1)+1);0:0
 I5  +(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))=0):SET(F1,1);SET(H1,0);0:0
 J5  +(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))<>0):SET(B1,VAL(B1)+1);0:0
@@ -649,6 +651,41 @@ the tape is 250 rows deep and the output column is 255 rows — a
 long-running loop can hit the 10000-pass recalculation cap, which
 shows `Recalculation limit reached` and leaves the machine's state
 intact for another `;R A`.
+
+### Running "Hello, World!"
+
+The classic program, minus its final `.` (the trailing newline byte
+10 is outside `CHR`'s printable 32..127 domain):
+
+```text
+++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++
+.>>.<-.<.+++.------.--------.>>+.>++
+```
+
+Cell by cell:
+
+1. **Seed the tape**: 0 into A1..A10 (type `0`, RETURN, `^X` down,
+   repeat — the tape is a column).
+2. **State** (`;G B1`, then type, RETURN, `^D` right to the next
+   state cell): B1=2, D1=1, F1=0, H1=0, J1=0, K1=0, L1=105 (the
+   program length).
+3. **The program**: `;G B3`, then ONE character per cell as text:
+   type the character, RETURN (the cursor stays), `^D` right, repeat.
+   A single `+`, `-`, `.`, `,`, `[`, `]`, `<` or `>` entry is stored
+   as text automatically — no toggle needed.
+4. **The machinery**: `;G B5`, then the 17 formulas from the table
+   above, one per cell (type, RETURN, `^D`).
+5. `;R A` — one instruction per pass, ~1770 passes; the machine
+   halts itself (F1 turns to 3) and `;R` settles.
+6. `;G S7` and read down column S rows 7..18:
+
+```text
+Hello World!
+```
+
+The run takes a few seconds; you watch the tape and output fill in
+live, one pass at a time.  (Other keys typed while the machine runs
+are not lost — they stay queued and act when it settles.)
 
 ## Build & run
 

@@ -6,7 +6,17 @@
 #include <curses.h>
 #include "cs.h"
 
-static void redraw(void) { cs_draw(); }
+static int paint_pending;   /* a repaint was deferred (input queued) */
+static void redraw(void)
+{
+    /* batch repaints while keys are queued: a fast paste otherwise
+     * overflows the tty buffer and DROPS bytes (the app cannot keep up
+     * with a full-screen redraw per key).  The loop's top paints as
+     * soon as the queue drains, so the idle screen stays fresh. */
+    if (cs_input_pending()) { paint_pending = 1; return; }
+    paint_pending = 0;
+    cs_draw();
+}
 
 /* ---------------- movement with window scrolling -------------------- */
 /* Window scrolling reverse-engineered from real CalcStar (CP/M) with
@@ -275,7 +285,18 @@ void run_session(void)
         /* on failure cs_msg put the error on the status row; leave it */
     }
     while (running) {
-        int ch = getch();
+        int ch;
+        if (paint_pending) {
+            /* queued keys still waiting: process them WITHOUT the
+             * expensive repaint; paint only when the queue drains */
+            ch = cs_getch_nodelay();
+            if (ch == ERR) {
+                paint_pending = 0;
+                cs_draw();
+                continue;
+            }
+        } else
+            ch = getch();
         if (cs_was_resize(ch)) continue;   /* terminal resized */
         if (errpend) {
             /* the error message is cleared by ANY key; Space confirms:
@@ -502,7 +523,7 @@ static const char *bf_mach[17] = {
     "+(VAL(F1)=0)*(VAL(B5)=45):SET(REF(1,VAL(D1)),VAL(REF(1,VAL(D1)))-1);SET(B1,VAL(B1)+1);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=62):SET(D1,VAL(D1)+1);SET(B1,VAL(B1)+1);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=60):SET(D1,VAL(D1)-1);SET(B1,VAL(B1)+1);0:0",
-    "+(VAL(F1)=0)*(VAL(B5)=46):SET(REF(19,VAL(J1)+1),CHR(VAL(REF(1,VAL(D1)))));SET(J1,VAL(J1)+1);SET(B1,VAL(B1)+1);0:0",
+    "+(VAL(F1)=0)*(VAL(B5)=46):SET(REF(19,VAL(J1)+7),CHR(VAL(REF(1,VAL(D1)))));SET(J1,VAL(J1)+1);SET(B1,VAL(B1)+1);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=44):SET(REF(1,VAL(D1)),ORD(VAL(REF(20,VAL(K1)+20))));SET(K1,VAL(K1)+1);SET(B1,VAL(B1)+1);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))=0):SET(F1,1);SET(H1,0);0:0",
     "+(VAL(F1)=0)*(VAL(B5)=91)*(VAL(REF(1,VAL(D1)))<>0):SET(B1,VAL(B1)+1);0:0",
@@ -1491,22 +1512,44 @@ static void run_tests(void)
         bf_build("++++++++[>++++++++<-]>++++++++.", NULL);
         cs_recalc_all();
         if (cs_recalc_last_passes >= 10000 ||
-            !cs_cell(18, 0)->cont || strcmp(cs_cell(18, 0)->cont, "H"))
+            !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "H"))
             { printf("FAIL bf H\n"); fails++; }
         else printf("ok   bf prints H\n");
         bf_build("++++++++[>++++++++<-]>++++++++.+++++++++++++++++++++++++++++++++.", NULL);
         cs_recalc_all();
         if (cs_recalc_last_passes >= 10000 ||
-            !cs_cell(18, 0)->cont || strcmp(cs_cell(18, 0)->cont, "H") ||
-            !cs_cell(18, 1)->cont || strcmp(cs_cell(18, 1)->cont, "i"))
+            !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "H") ||
+            !cs_cell(18, 7)->cont || strcmp(cs_cell(18, 7)->cont, "i"))
             { printf("FAIL bf Hi\n"); fails++; }
         else printf("ok   bf prints Hi\n");
         bf_build(",.", "A");
         cs_recalc_all();
         if (cs_recalc_last_passes >= 10000 ||
-            !cs_cell(18, 0)->cont || strcmp(cs_cell(18, 0)->cont, "A"))
+            !cs_cell(18, 6)->cont || strcmp(cs_cell(18, 6)->cont, "A"))
             { printf("FAIL bf input\n"); fails++; }
         else printf("ok   bf reads input and echoes A\n");
+        /* HELLO, WORLD! (user request 2026-11-13): the classic program
+         * minus its final '.' - the newline byte 10 is outside CHR's
+         * printable 32..127 domain.  ~1832 passes, output "Hello
+         * World!" down column S rows 7..18. */
+        bf_build("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---"
+                 ".+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++", NULL);
+        cs_recalc_all();
+        {
+            const char *want = "Hello World!";
+            int k, ok = 1;
+            for (k = 0; want[k]; k++)
+                if (!cs_cell(18, 6 + k)->cont ||
+                    cs_cell(18, 6 + k)->cont[0] != want[k])
+                    ok = 0;
+            if (cs_recalc_last_passes >= 10000 ||
+                cs_cell(5, 0)->val.nd[0] != 3 || !ok)
+                { printf("FAIL bf hello (passes=%d mode=%d)\n",
+                         cs_recalc_last_passes,
+                         cs_cell(5, 0)->val.nd[0]); fails++; }
+            else printf("ok   bf hello, world! (%d passes, 12 chars)\n",
+                        cs_recalc_last_passes);
+        }
         cs_clear_all();
         {
             Csn r;
@@ -1541,6 +1584,33 @@ static void run_tests(void)
             if (sf) free(sf);
         }
         cke("-CHR(65)", "-CHR(65)", 6);     /* a unary '-' stays an error */
+        /* a ONE-CHARACTER entry that is not a digit is TEXT (the bf
+         * program cells, flagged refinement 2026-11-13) */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "+");
+        cs_commit_entry(1, 0, "-");
+        cs_commit_entry(2, 0, ".");
+        cs_commit_entry(3, 0, ",");
+        cs_commit_entry(4, 0, "[");
+        {
+            int k, ok = 1;
+            const char *want = "+-.,[";
+            for (k = 0; k < 5; k++)
+                if (cs_cell(k, 0)->type != CE_TEXT ||
+                    !cs_cell(k, 0)->cont || cs_cell(k, 0)->cont[0] != want[k])
+                    ok = 0;
+            if (!ok) { printf("FAIL one-char text entries\n"); fails++; }
+            else printf("ok   one-char + - . , [ entries are text\n");
+        }
+        cs_commit_entry(5, 0, "5");         /* a lone digit stays numeric */
+        if (cs_cell(5, 0)->type != CE_NUM)
+            { printf("FAIL lone digit\n"); fails++; }
+        else printf("ok   a lone digit stays numeric\n");
+        cs_commit_entry(6, 0, "+A");        /* a real formula: still an error cell */
+        if (cs_cell(6, 0)->type != CE_NUM || !cs_cell(6, 0)->iserr)
+            { printf("FAIL +A entry\n"); fails++; }
+        else printf("ok   +A stays a formula error cell\n");
+        cs_clear_all();
         /* the DERIVED TYPE (user bug report 2026-11-13): a formula
          * whose result is a string IS a text value - for VAL, for the
          * bare-reference coercion, for the display and the type line */
