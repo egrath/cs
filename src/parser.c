@@ -326,23 +326,55 @@ static Val parse_numarg(P *ps)
     return v;
 }
 
-/* collect an argument list for SUM/CNT/AVG/MAX/MIN: Numbers (also
- * dereferenced References) and Bool values append, Strings are
- * skipped, a Range walks its numeric cells (an error cell in the
- * range is Error 0). */
-static Val parse_list(P *ps, Csn **listp, int *capp, int *cnt)
+/* the streaming aggregation for SUM/CNT/AVG/MAX/MIN (2026-11-14): no
+ * value array at all - running aggregates only.  The function id
+ * selects the mode; the caller owns the error reporting. */
+typedef struct {
+    Csn sum;        /* SUM/AVG */
+    Csn ext;        /* MAX/MIN: the extreme seen so far */
+    int cnt;
+    int started;    /* an extreme was stored */
+} CsAgg;
+
+/* -1 = ok, else the error code (0 = the value-range class) */
+static int agg_item(CsAgg *ag, int f, const Csn *num)
 {
-    int n = 0;
-    Val rv;
-    memset(&rv, 0, sizeof(rv));
-    rv.type = VT_NUM;
-    rv.good = 1;
+    int err;
+    switch (f) {
+    case FN_SUM:
+    case FN_AVG:
+        err = csn_add(&ag->sum, &ag->sum, num);
+        if (err) return 0;
+        break;
+    case FN_MAX:
+        if (!ag->started || csn_cmp(num, &ag->ext) > 0)
+            csn_copy(&ag->ext, num);
+        break;
+    case FN_MIN:
+        if (!ag->started || csn_cmp(num, &ag->ext) < 0)
+            csn_copy(&ag->ext, num);
+        break;
+    default:
+        break;                      /* CNT counts only */
+    }
+    ag->cnt++;
+    ag->started = 1;
+    return -1;
+}
+
+/* stream the argument list: Numbers (also dereferenced References) and
+ * Bool values aggregate, Strings are rejected (Error 6 - the strict
+ * mixing rule), a Range walks its numeric cells (an error cell in the
+ * range is Error 0).  -1 = ok. */
+static int parse_stream(P *ps, int f, CsAgg *ag)
+{
     for (;;) {
         Val v;
+        int e;
         memset(&v, 0, sizeof(v));
         csn_zero(&v.num);
         v = parse_condexpr(ps);
-        if (!v.good) { val_free(&v); return v; }
+        if (!v.good) { e = v.err; val_free(&v); return e ? e : 0; }
         if (v.type == VT_RANGE) {
             int c, r;
             for (r = v.rng.start.row; r <= v.rng.end.row; r++)
@@ -352,39 +384,82 @@ static Val parse_list(P *ps, Csn **listp, int *capp, int *cnt)
                     /* a string-result formula cell is a TEXT value in
                      * the range: skipped like text (2026-11-13) */
                     if (cl->type == CE_NUM && !cl->iserr && !cl->strres) {
-                        Csn *ne;
-                        if (n == *capp) {
-                            *capp = *capp * 2;
-                            if (*capp > CS_BUDGET) *capp = CS_BUDGET;
-                            if (n >= *capp) { val_err(&rv, 0); return rv; }
-                            ne = (Csn *) realloc(*listp,
-                                    (size_t) *capp * sizeof(Csn));
-                            if (!ne) { val_err(&rv, 0); return rv; }
-                            *listp = ne;
-                        }
-                        csn_copy(&(*listp)[n++], &cl->val);
-                    } else if (cl->iserr && !cl->strres) { val_err(&rv, 0); return rv; }
+                        e = agg_item(ag, f, &cl->val);
+                        if (e >= 0) { val_free(&v); return e; }
+                    } else if (cl->iserr && !cl->strres) {
+                        val_free(&v); return 0;
+                    }
                 }
         } else {
-            int e = val_deref(&v);
-            if (e >= 0) { val_free(&v); val_err(&rv, e); return rv; }
+            e = val_deref(&v);
+            if (e >= 0) { val_free(&v); return e; }
             /* the STRICT mixing rule (user-refined 2026-11-13): a
              * directly-entered String argument in a numeric list is an
              * error (ranges SKIP their non-numerics instead - the
              * documented MED/SUM semantics) */
-            if (v.type == VT_STR) { val_free(&v); val_err(&rv, 6); return rv; }
+            if (v.type == VT_STR) { val_free(&v); return 6; }
+            e = agg_item(ag, f, &v.num);
+            if (e >= 0) { val_free(&v); return e; }
+        }
+        val_free(&v);
+        skip_ws(&ps->p);
+        if (*ps->p == ',') { ps->p++; continue; }
+        break;
+    }
+    return -1;
+}
+
+/* MED's collector: a bounded heap buffer (MED_MAX values).  A range
+ * beyond the bound is an ERROR (Error 0) - never a silently truncated
+ * median (user spec 2026-11-14). */
+#define MED_MAX 512
+static int parse_med_collect(P *ps, Csn **bufp, int *capp, int *cnt)
+{
+    int n = 0;
+    for (;;) {
+        Val v;
+        int e;
+        memset(&v, 0, sizeof(v));
+        csn_zero(&v.num);
+        v = parse_condexpr(ps);
+        if (!v.good) { e = v.err; val_free(&v); return e ? e : 0; }
+        if (v.type == VT_RANGE) {
+            int c, r;
+            for (r = v.rng.start.row; r <= v.rng.end.row; r++)
+                for (c = v.rng.start.col; c <= v.rng.end.col; c++) {
+                    Cell *cl = cs_getcell(c, r);
+                    if (!cl) continue;
+                    if (cl->type == CE_NUM && !cl->iserr && !cl->strres) {
+                        Csn *ne;
+                        if (n == *capp) {
+                            *capp *= 2;
+                            if (*capp > MED_MAX) *capp = MED_MAX;
+                            if (n >= *capp) { val_free(&v); return 0; }
+                            ne = (Csn *) realloc(*bufp,
+                                    (size_t) *capp * sizeof(Csn));
+                            if (!ne) { val_free(&v); return 0; }
+                            *bufp = ne;
+                        }
+                        csn_copy(&(*bufp)[n++], &cl->val);
+                    } else if (cl->iserr && !cl->strres) {
+                        val_free(&v); return 0;
+                    }
+                }
+        } else {
+            e = val_deref(&v);
+            if (e >= 0) { val_free(&v); return e; }
+            if (v.type == VT_STR) { val_free(&v); return 6; }
             {
                 Csn *ne;
                 if (n == *capp) {
-                    *capp = *capp * 2;
-                    if (*capp > CS_BUDGET) *capp = CS_BUDGET;
-                    if (n >= *capp) { val_err(&rv, 0); return rv; }
-                    ne = (Csn *) realloc(*listp,
-                            (size_t) *capp * sizeof(Csn));
-                    if (!ne) { val_err(&rv, 0); return rv; }
-                    *listp = ne;
+                    *capp *= 2;
+                    if (*capp > MED_MAX) *capp = MED_MAX;
+                    if (n >= *capp) { val_free(&v); return 0; }
+                    ne = (Csn *) realloc(*bufp, (size_t) *capp * sizeof(Csn));
+                    if (!ne) { val_free(&v); return 0; }
+                    *bufp = ne;
                 }
-                csn_copy(&(*listp)[n++], &v.num);
+                csn_copy(&(*bufp)[n++], &v.num);
             }
         }
         val_free(&v);
@@ -393,7 +468,7 @@ static Val parse_list(P *ps, Csn **listp, int *capp, int *cnt)
         break;
     }
     *cnt = n;
-    return rv;
+    return -1;
 }
 
 static Val parse_primary(P *ps)
@@ -1006,90 +1081,84 @@ static Val parse_primary(P *ps)
                 v.good = 1;
                 return v;
             }
-            /* SUM/CNT/AVG/MAX/MIN */
-            {
-                /* the list lives on the heap (the 104 KiB stack frame
-                 * was a DOS4GW landmine): grown by parse_list up to
-                 * CS_BUDGET entries, freed at every exit */
-                Csn *list;
-                int lcap = 64, cnt = 0, err = CSN_OK;
-                Val ok;
-                list = (Csn *) malloc((size_t) lcap * sizeof(Csn));
-                if (!list) { val_err(&v, 0); return v; }
-                ok = parse_list(ps, &list, &lcap, &cnt);
-                if (!ok.good) { free(list); return ok; }
-                val_free(&ok);
+            /* SUM/CNT/AVG/MAX/MIN stream; MED uses a bounded buffer
+             * (no value array for the streaming four - 2026-11-14) */
+            if (f == FN_SUM || f == FN_CNT || f == FN_AVG ||
+                f == FN_MAX || f == FN_MIN || f == FN_MED) {
+                CsAgg ag;
+                Csn *mbuf = NULL;
+                int mcap = 16, mcnt = 0, e2;
+                if (f == FN_MED) {
+                    mbuf = (Csn *) malloc((size_t) mcap * sizeof(Csn));
+                    if (!mbuf) { val_err(&v, 0); return v; }
+                    e2 = parse_med_collect(ps, &mbuf, &mcap, &mcnt);
+                } else {
+                    memset(&ag, 0, sizeof(ag));
+                    csn_zero(&ag.sum);
+                    e2 = parse_stream(ps, f, &ag);
+                }
+                if (e2 >= 0) {
+                    if (mbuf) free(mbuf);
+                    val_err(&v, e2);
+                    return v;
+                }
                 skip_ws(&ps->p);
-                if (*ps->p != ')') { val_err(&v, 3); free(list); return v; }
+                if (*ps->p != ')') {
+                    if (mbuf) free(mbuf);
+                    val_err(&v, 3);
+                    return v;
+                }
                 ps->p++;
                 val_free(&v);
                 v.good = 1;
-                if (cnt == 0) {
-                    csn_zero(&v.num);
-                    free(list);
-                    return v;
-                }
-                if (f == FN_SUM) {
-                    int i;
-                    csn_copy(&v.num, &list[0]);
-                    for (i = 1; i < cnt; i++) {
-                        err = csn_add(&v.num, &v.num, &list[i]);
-                        if (err) { val_err(&v, 0); free(list); return v; }
-                    }
-                } else if (f == FN_CNT) {
-                    csn_from_int(&v.num, cnt);
-                } else if (f == FN_AVG) {
-                    int i;
-                    Csn ncs;
-                    csn_copy(&v.num, &list[0]);
-                    for (i = 1; i < cnt; i++) {
-                        err = csn_add(&v.num, &v.num, &list[i]);
-                        if (err) { val_err(&v, 0); free(list); return v; }
-                    }
-                    csn_from_int(&ncs, cnt);
-                    err = csn_div(&v.num, &v.num, &ncs);
-                    if (err) { val_err(&v, 0); free(list); return v; }
-                } else if (f == FN_MAX) {
-                    int i;
-                    csn_copy(&v.num, &list[0]);
-                    for (i = 1; i < cnt; i++)
-                        if (csn_cmp(&list[i], &v.num) > 0)
-                            csn_copy(&v.num, &list[i]);
-                } else if (f == FN_MED) {
+                if (f == FN_MED) {
                     /* the median (user-ext 2026-11-13): the numbers
                      * sorted ascending; odd count -> the middle
                      * element, even count -> the average of the two
                      * middle elements (Excel-style); empty -> 0 like
-                     * AVG; the values are the SAME list SUM/AVG
-                     * collect (text/empties skipped, an error cell in
-                     * a range is Error 0) */
+                     * AVG */
                     int i, j;
                     Csn t;
-                    for (i = 1; i < cnt; i++) {
-                        t = list[i];
-                        for (j = i - 1; j >= 0 && csn_cmp(&list[j], &t) > 0; j--)
-                            list[j + 1] = list[j];
-                        list[j + 1] = t;
+                    for (i = 1; i < mcnt; i++) {
+                        t = mbuf[i];
+                        for (j = i - 1; j >= 0 && csn_cmp(&mbuf[j], &t) > 0; j--)
+                            mbuf[j + 1] = mbuf[j];
+                        mbuf[j + 1] = t;
                     }
-                    if (cnt % 2 == 1) {
-                        csn_copy(&v.num, &list[cnt / 2]);
+                    if (mcnt == 0) {
+                        csn_zero(&v.num);
+                    } else if (mcnt % 2 == 1) {
+                        csn_copy(&v.num, &mbuf[mcnt / 2]);
                     } else {
                         Csn two, sum;
                         int err;
-                        err = csn_add(&sum, &list[cnt / 2 - 1], &list[cnt / 2]);
-                        if (err) { val_err(&v, 0); free(list); return v; }
+                        err = csn_add(&sum, &mbuf[mcnt / 2 - 1],
+                                      &mbuf[mcnt / 2]);
+                        if (err) { val_err(&v, 0); free(mbuf); return v; }
                         csn_from_int(&two, 2);
                         err = csn_div(&v.num, &sum, &two);
-                        if (err) { val_err(&v, 0); free(list); return v; }
+                        if (err) { val_err(&v, 0); free(mbuf); return v; }
                     }
-                } else {
-                    int i;
-                    csn_copy(&v.num, &list[0]);
-                    for (i = 1; i < cnt; i++)
-                        if (csn_cmp(&list[i], &v.num) < 0)
-                            csn_copy(&v.num, &list[i]);
+                    free(mbuf);
+                    return v;
                 }
-                free(list);
+                if (ag.cnt == 0) {
+                    csn_zero(&v.num);
+                    return v;
+                }
+                if (f == FN_SUM) {
+                    csn_copy(&v.num, &ag.sum);
+                } else if (f == FN_CNT) {
+                    csn_from_int(&v.num, ag.cnt);
+                } else if (f == FN_AVG) {
+                    Csn ncs;
+                    int derr;
+                    csn_from_int(&ncs, ag.cnt);
+                    derr = csn_div(&v.num, &ag.sum, &ncs);
+                    if (derr) { val_err(&v, 0); return v; }
+                } else {
+                    csn_copy(&v.num, &ag.ext);
+                }
                 return v;
             }
         }

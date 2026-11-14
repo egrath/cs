@@ -1503,6 +1503,24 @@ static void run_tests(void)
         ckc("MED empty range", "MED(A3>B6)", "0");
         cs_commit_entry(0, 4, "+1/0");          /* A5 = ?n? */
         cke("MED error cell", "MED(A3>A6)", -1);
+        /* the MED bound (512 values): a 513-value range is an ERROR,
+         * while the streaming aggregates handle it (2026-11-14) */
+        cs_clear_all();
+        {
+            int w;
+            Csn v;
+            csn_parse("1", &v);
+            /* 513 values, column-major (the sheet is 255 rows deep) */
+            for (w = 0; w < 513; w++)
+                cs_set_num(tcell(w / 255, w % 255), "1", &v, 0, NULL);
+        }
+        cke("MED beyond bound", "MED(A1>C255)", -1);
+        ckc("SUM streams 513", "SUM(A1>C255)", "+5.1300000000000E+3");
+        ckc("AVG streams 513", "AVG(A1>C255)", "+1.0000000000000E+1");
+        ckc("MAX streams 513", "MAX(A1>C255)", "+1.0000000000000E+1");
+        ckc("MIN streams 513", "MIN(A1>C255)", "+1.0000000000000E+1");
+        ckc("CNT streams 513", "CNT(A1>C255)", "+5.1300000000000E+3");
+        cs_clear_all();
         /* CHR / ORD: the 7-bit printable range 32..127, strict
          * (user-refined 2026-11-13) */
         cs_clear_all();

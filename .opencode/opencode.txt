@@ -27,6 +27,34 @@
   "Hello World!" in S7.  The CSD format is untouched (the file is
   byte-identical in spirit; no regeneration needed).
 
+## BATCH (branch "DOS", follow-up 5): the streaming aggregates (2026-11-14):
+- USER SPEC: stream SUM/AVG/MAX/MIN (no value array), MED with a
+  bounded strategy + an honest error beyond the bound (never a
+  silently truncated median), drop the ;A seq array (no large static
+  reservations), audit the stack.  IMPLEMENTED: parse_list and the
+  heap list GONE; parse_stream + CsAgg (sum/ext/cnt/started) for the
+  streaming four; parse_med_collect with a bounded heap buffer
+  (MED_MAX 512, ~27 KB, freed at every exit; beyond -> Error 0);
+  the ;A course uses the LIVE cs_next_form scan (the seq[CS_BUDGET]
+  BSS gone).  The MED bound and the streaming semantics are
+  documented in README ("The aggregation functions").
+- FOUND BY THE PTY: the format command dereferenced
+  cs_getcell(curCol,curRow)->notation on an ABSENT cell — the app
+  CRASHED the moment ;F was opened on an empty cell (a sparse
+  conversion miss: the dense slot was never NULL).  Fixed with
+  NULL-tolerant label reads + per-branch lazy allocation
+  ("can't create").  THE AUDIT LESSON: every converted cs_cell deref
+  must be re-checked for the NULL case — the compiler catches the
+  renames but not the derefs of sites I wrote as getcell.
+- MEMORY ASSESSMENT: the streaming four cost ~68 stack bytes (no
+  heap); MED's worst transient dropped 208 KB -> 27 KB; the ;A BSS
+  -16 KB; the worst-case stack is the parser recursion (~12-16 KB)
+  — the DOS4GW build needs a >= 24 KB stack (documented).  The
+  biggest single allocation remains a pool chunk (~27 KB).
+- VERIFIED: --test 419 ok (the MED-cap pins: a 513-value range ->
+  MED errors, the streaming four handle it); the idle gate EXACT;
+  the brainf example runs; the ;A course pty-verified end to end.
+
 ## BATCH (branch "DOS", follow-up 4): the relink absent-source bug + ROW/COL (2026-11-14):
 - USER BUGS with exact traces: deleting columns C>D from
   B..E=1,2,3,4 kept the old D (3.00); deleting rows 4>7 from

@@ -787,6 +787,41 @@ Batch workflow (do all steps before reporting done):
   (PI/E), not the REF family's 3.  Pinned at A1 and C3 plus the
   arg-count errors.
 
+- **THE STREAMING AGGREGATES (branch "DOS", 2026-11-14, user spec)**:
+  parse_list and its heap value array are GONE.  SUM/CNT/AVG/MAX/MIN
+  stream through CsAgg {sum, ext, cnt, started} (~68 bytes on the
+  stack) — order-insensitive, so the semantics are identical to the
+  collected list: the strict mixing rule (a direct String -> Error 6),
+  an error cell in a range -> Error 0 aborting mid-stream, the
+  csn_add overflow -> Error 0, empty -> 0, Bools aggregate as 0/1.
+  MED keeps a BOUNDED heap buffer (MED_MAX 512 entries, ~27 KB,
+  freed at every exit): a range beyond the bound returns Error 0 —
+  never a silently truncated median (user spec); the bound is
+  documented in README.  The ;A course's static int seq[CS_BUDGET]
+  (16 KB of BSS) is replaced by the LIVE cs_next_form scan (the
+  course does not create or delete form flags, so no buffer is
+  needed); pty-verified end to end (2 Form Control Mode stops, the
+  entries committed, "Auto complete", the form flags on the type
+  line).  FOUND BY THE PTY DURING THIS BATCH: the format command
+  dereferenced cs_getcell(curCol,curRow) on an ABSENT cell (the
+  dense slot was never NULL) — CRASHED the app the moment ;F was
+  opened on an empty cell; fixed with NULL-tolerant label reads and
+  per-branch lazy allocation ("can't create" on budget failure, the
+  manual's wording).  New pins: MED over 513 values -> Error 0 while
+  SUM/AVG/MAX/MIN/CNT stream all 513 correctly.  VERIFIED: --test
+  419 ok, the idle gate EXACT, the brainf example runs.
+- **THE MEMORY SAVED BY STREAMING (the assessment)**: before: the
+  aggregation list was a heap buffer growing to budget × 52 B
+  (~208 KB transient at the full budget, plus ~7 realloc copies per
+  full-budget aggregation) and the ;A course held a permanent 16 KB
+  static array.  after: the streaming four use ~68 stack bytes
+  (ZERO heap), MED's transient is capped at ~27 KB (-181 KB at the
+  extreme), and the 16 KB BSS is gone (-16 KB permanent).  The worst-
+  case stack is now the parser recursion (~12 levels × the parse
+  chain ≈ 12-16 KB) plus small frames everywhere else (the largest
+  local ≈ 500 B in num.c's digit scratch) — the DOS4GW build should
+  reserve a ≥ 24 KB stack (a linker-file setting, documented).
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

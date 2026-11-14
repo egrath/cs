@@ -400,6 +400,14 @@ the sheet, printouts and every reference scanner.  Cells and the save
 format (CSD4) hold the BCD values as-is; older magics are refused with
 the manual's `READ ERROR`.
 
+### The aggregation functions (SUM/CNT/AVG/MAX/MIN/MED)
+
+`SUM`, `CNT`, `AVG`, `MAX` and `MIN` are **streaming**: they keep only
+running totals, no value array — a range of any size (up to the entry
+budget) aggregates in constant memory.  `MED` keeps a bounded buffer
+of **512 values**; a range beyond that returns an error rather than a
+silently truncated median.
+
 ### Sorting: the `;#` command (user-extended 2026-11-13)
 
 Reorders the rows of a rectangular range by one key column.  Not shown

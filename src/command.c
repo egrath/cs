@@ -573,14 +573,19 @@ static void format_cmd(void)
     int ch;
     char pw[24], tmpb[24];
     char label[88];
+    /* an ABSENT cell reads as unformatted: the per-cell attributes
+     * allocate the cell only when one is actually SET (the sparse
+     * store's get returns NULL - the dense slot was never NULL) */
     Cell *cur = cs_getcell(curCol, curRow);
+    int notn = cur ? cur->notation : 0;
+    int form = cur ? cur->formf : 0;
 
     sprintf(pw, "%d", colw[curCol]);
     sprintf(label,
         "P)recision (%d) or N)otation (%s) or W)idth (%d) or F)orm mode (%s)",
         colp[curCol],
-        cur->notation == 1 ? "sci" : cur->notation == 2 ? "dec" : "auto",
-        colw[curCol], cur->formf ? "set" : "clear");
+        notn == 1 ? "sci" : notn == 2 ? "dec" : "auto",
+        colw[curCol], form ? "set" : "clear");
     ch = cs_prompt_char(label);
     redraw();
     if (ch == 27) return;
@@ -588,6 +593,8 @@ static void format_cmd(void)
         /* the notation cycle (flagged ext 2026-11):
          * (auto) -> (dec) -> (sci) -> (auto) ...; the encoding is
          * 0=auto 1=sci 2=dec, so the step is +2 mod 3 */
+        if (!cur) { cur = cs_alloc_cell(curCol, curRow);
+                    if (!cur) { cs_msg("can't create"); return; } }
         cur->notation = (cur->notation + 2) % 3;
         if (cur->notation != 0 && cur->type == CE_EMPTY) {
             /* the attribute lives on the cell (like the per-cell
@@ -611,10 +618,11 @@ static void format_cmd(void)
         if (tmpb[0] == 'E' || tmpb[0] == 'e') {
             p = atoi(tmpb + 1);
             if (p < 0 || p > CS_MAX_P) { cs_msg("Prec. must be 0 - 24"); return; }
+            if (!cur) { cur = cs_alloc_cell(curCol, curRow);
+                        if (!cur) { cs_msg("can't create"); return; } }
             if (cur->type == CE_EMPTY) {
                 /* per-cell format needs the cell: manual "can't create -
                  * not enough memory to set format precision" */
-                if (!cs_ensure_room()) { cs_msg("can't create"); return; }
                 cur->type = CE_ALLOC;
                 cs_recount_entries();
             }
@@ -625,6 +633,8 @@ static void format_cmd(void)
             colp[curCol] = p;
         }
     } else if (ch == 'F' || ch == 'f') {
+        if (!cur) { cur = cs_alloc_cell(curCol, curRow);
+                    if (!cur) { cs_msg("can't create"); return; } }
         cur->formf = !cur->formf;
         if (cur->formf) {
             if (cur->type == CE_EMPTY) {
@@ -886,33 +896,39 @@ static void storage_cmd(void)
 }
 
 /* ============================= Auto ================================ */
+/* the next form-flag cell at or after (*col,*row), row-major */
+static Cell *cs_next_form(int *col, int *row)
+{
+    int c = *col, r = *row;
+    for (; r < CS_MAXROW; r++) {
+        for (; c < CS_MAXCOL; c++) {
+            Cell *cl = cs_getcell(c, r);
+            if (cl && cl->formf) { *col = c; *row = r; return cl; }
+        }
+        c = 0;
+    }
+    return NULL;
+}
+
 static void auto_cmd(void)
 {
-    /* the form-flag cells: at most CS_BUDGET (a 64 KB stack frame was
-     * a DOS4GW landmine; the static array is bounded by the budget) */
-    static int seq[CS_BUDGET];
-    int nseq = 0;
-    int i;
+    /* the form-flag cells are found LIVE: the course does not create
+     * or delete form flags (commits and SET writes keep the
+     * attribute), so no sequence buffer is needed at all - the
+     * static int seq[CS_BUDGET] (16 KB of BSS) is gone */
+    int sc = 0, sr = 0;
+    Cell *stop;
     char buf[CS_EDITMAX + 1];   /* was buf[2]! second char typed went out
                                  * of bounds and smashed loop state */
     int k;
 
-    {
-        int sr = 0, sc = 0;
-        Cell *cl;
-        while ((cl = cs_next_cell(&sc, &sr)) != NULL) {
-            if (cl->formf && nseq < (int)(sizeof(seq) / sizeof(int)))
-                seq[nseq++] = sr * CS_MAXCOL + sc;
-            sc = cl->col + 1;
-        }
-    }
-    if (nseq == 0) { cs_msg("no form flags"); return; }
+    if (!cs_next_form(&sc, &sr)) { cs_msg("no form flags"); return; }
     g_edit[0] = '\0';
     g_editlen = 0;
     g_entry_num = 1;
     g_editstate = EDIT_EDITING;   /* show "edit: <text>" during Auto */
-    for (i = 0; i < nseq; i++) {
-        int cr = seq[i] / CS_MAXCOL, cc = seq[i] % CS_MAXCOL;
+    for (;;) {
+        int cr = sr, cc = sc;
         curCol = cc; curRow = cr;
         g_entryrow = cr;          /* "current:" must show the stop cell */
         g_entrycol = cc;
@@ -975,6 +991,11 @@ static void auto_cmd(void)
         }
         g_edit[0] = '\0';
         g_editlen = 0;
+        /* the next form-flag stop at or after this one */
+        sc = cc + 1;
+        sr = cr;
+        stop = cs_next_form(&sc, &sr);
+        if (!stop) break;
     }
     g_editstate = EDIT_IDLE;
     cs_recalc_all();
