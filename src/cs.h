@@ -58,6 +58,9 @@ void   dep_check_range(int iscol, int a1, int a2, char *list, int lm);
 void   cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
                      int dw, int dh, int rep, int nfill, int rel);
                                         /* the copy core (also pinned) */
+void   cs_fill_block(int c1, int r1, int c2, int r2, int d1, int e1,
+                     int d2, int e2, int rel);
+                                        /* the chained fill (also pinned) */
                                         /* the ;D dependency scan (also
                                          * pinned: the scan must
                                          * terminate) */

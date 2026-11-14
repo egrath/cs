@@ -2469,6 +2469,63 @@ static void run_tests(void)
             else printf("ok   +ROW() copied down off-origin yields 3..10\n");
         }
         cs_clear_all();
+        /* the FILL copy (user request 2026-11-14): the vertical case */
+        cs_clear_all();
+        setv(0, 0, "1"); setv(1, 0, "2");
+        cs_commit_entry(0, 1, "+A1+1");
+        cs_commit_entry(1, 1, "+B1+2");
+        cs_fill_block(0, 1, 1, 1, 0, 9, 1, 9, 1);
+        {
+            int w, okf = 1;
+            Csn want;
+            for (w = 3; w <= 10; w++) {
+                csn_from_int(&want, w);
+                if (csn_cmp(&tread(0, w - 1)->val, &want) != 0) okf = 0;
+            }
+            for (w = 3; w <= 10; w++) {
+                csn_from_int(&want, 2 * w);
+                if (csn_cmp(&tread(1, w - 1)->val, &want) != 0) okf = 0;
+            }
+            if (!okf) { printf("FAIL fill vertical\n"); fails++; }
+            else printf("ok   fill down: 3..10 and 6..20\n");
+        }
+        cs_clear_all();
+        /* the horizontal fill */
+        setv(0, 0, "1"); setv(0, 1, "2");
+        cs_commit_entry(1, 0, "+A1+1");
+        cs_commit_entry(1, 1, "+A2+2");
+        cs_fill_block(1, 0, 1, 1, 2, 0, 5, 1, 1);
+        {
+            int w, okh = 1;
+            Csn want;
+            for (w = 3; w <= 6; w++) {
+                csn_from_int(&want, w);
+                if (csn_cmp(&tread(w - 1, 0)->val, &want) != 0) okh = 0;
+            }
+            for (w = 3; w <= 6; w++) {
+                csn_from_int(&want, 2 * w);
+                if (csn_cmp(&tread(w - 1, 1)->val, &want) != 0) okh = 0;
+            }
+            if (!okh) { printf("FAIL fill horizontal\n"); fails++; }
+            else printf("ok   fill right: 3..6 and 6..12\n");
+        }
+        cs_clear_all();
+        /* the mirrored fill: UP toward the source (the chain builds
+         * upward with the empty-as-zero rule) */
+        cs_clear_all();
+        cs_commit_entry(0, 8, "+ROW()");      /* A9 = 9 */
+        cs_fill_block(0, 8, 0, 8, 0, 1, 0, 1, 1);
+        {
+            int w, oku = 1;
+            Csn want;
+            for (w = 2; w <= 8; w++) {
+                csn_from_int(&want, w);
+                if (csn_cmp(&tread(0, w - 1)->val, &want) != 0) oku = 0;
+            }
+            if (!oku) { printf("FAIL fill up\n"); fails++; }
+            else printf("ok   fill up mirrors: A2..A8 = 2..8\n");
+        }
+        cs_clear_all();
         /* the user's copy-down: +ROW() at A1 copied to A2>A10 -> 2..10 */
         cs_clear_all();
         cs_commit_entry(0, 0, "+ROW()");

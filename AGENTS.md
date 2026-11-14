@@ -888,6 +888,29 @@ Batch workflow (do all steps before reporting done):
   reference; the earlier untrack is reverted by this explicit
   request).
 
+- **THE FILL COPY (user request 2026-11-14, branch "DOS")**: a
+  straight range-to-range copy (the same column span or the same row
+  span, mirrored directions included) asks "F)ill or D)estination"
+  (the last question, after R/N; ESC cancels; anything else
+  re-prompts).  D = the current single copy; F = the chained fill
+  (cs_fill_block, exported): the source TILED and re-shifted at
+  every intermediate distance, evaluated nearest-to-source first
+  (the tiling rule: the target takes the source cell at distance
+  mod the source's dimension with the shift from that cell — the
+  user's 1-row example degenerates to the per-distance shift; a
+  2-row source alternates).  The stored formulas are
+  self-consistent across ;R.  The fill's region = the span between
+  the source and the destination plus the destination block; the
+  budget exhaustion mid-fill reports MEMORY IS TOO LOW and stops
+  (a partial fill, flagged).  Pinned: the vertical fill (3..10 and
+  6..20), the horizontal fill (3..6 and 6..12), the mirrored fill
+  up (A2..A8 = 2..8 — the chain builds upward with the empty-as-
+  zero rule).  pty-verified: the user's exact vertical grid.
+  THE CONVERSION BUG: my first fill indexed the snapshot
+  tmp[col][row] AND row-indexed past the 1-row snapshot — the
+  crash led to the tiling helper fill_one (also the double-fill
+  in the loop-condition probe cleaned).
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

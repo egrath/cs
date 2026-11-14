@@ -27,6 +27,27 @@
   "Hello World!" in S7.  The CSD format is untouched (the file is
   byte-identical in spirit; no regeneration needed).
 
+## BATCH (branch "DOS", follow-up 10): the fill copy (2026-11-14):
+- USER SPEC: a straight range->range copy asks "F)ill or
+  D)estination" (the last question); D = the current single copy,
+  F = copy to all the cells between the source and the target (the
+  mirrored directions confirmed).  The fill = the source TILED and
+  re-shifted at every intermediate distance, evaluated
+  nearest-first (the chains: +A1+1 -> 3..10; +B1+2 -> 6..20).
+- IMPLEMENTED: the F/D prompt in copy_cmd (after R/N; ESC cancels;
+  other keys re-prompt; the condition: sw*sh > 1 AND the same
+  column span OR the same row span) + cs_fill_block (exported) with
+  the tiling helper fill_one (the source cell at (distance mod the
+  dimension), the shift from that cell; the negative modulo
+  adjusted for the up/left fills).  BUGS IN MY FIRST VERSION: the
+  snapshot indexed tmp[col][row] AND past the 1-row snapshot
+  (the crash) -> the tiling helper; a redundant loop-condition
+  probe double-filled one cell (cleaned).
+- PINS: the vertical fill (3..10/6..20), the horizontal fill
+  (3..6/6..12), the mirrored fill up, the D-answer single (the
+  existing pins).  pty: the user's exact vertical grid.
+  VERIFIED: --test 431 ok; the idle gate EXACT.
+
 ## BATCH (branch "DOS", follow-up 9): C89 printf + the manual PDF (2026-11-14):
 - USER: snprintf/vsnprintf are C99 - fix; add the PDF (a new
   reference manual).  DONE: all 7 sites replaced (cs_savename/

@@ -184,6 +184,25 @@ static void copy_cmd(void)
             break;
         }
     }
+    /* the straight range-to-range copy (the same column span or the
+     * same row span): the last question is fill vs single (user
+     * request 2026-11-14) - a fill chains the source through every
+     * cell between the source and the destination */
+    if (sw * sh > 1 && ((c1 == d1 && c2 == d2) || (r1 == e1 && r2 == e2))) {
+        int fill = 0;
+        for (;;) {
+            int ch2 = cs_prompt_char("F)ill or D)estination");
+            redraw();
+            if (ch2 == 27) return;
+            if (ch2 == 'F' || ch2 == 'f') { fill = 1; break; }
+            if (ch2 == 'D' || ch2 == 'd') { fill = 0; break; }
+        }
+        if (fill) {
+            cs_fill_block(c1, r1, c2, r2, d1, e1, d2, e2, rel);
+            redraw();
+            return;
+        }
+    }
     cs_copy_block(c1, r1, c2, r2, d1, e1, dw, dh, rep, nfill, rel);
     redraw();
 }
@@ -222,7 +241,92 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
     cs_recount_entries();
 }
 
-/* ====================== Insert row/column ========================== */
+/* the chained fill (user request 2026-11-14): the source TILED and
+ * re-shifted at every intermediate distance, evaluated NEAREST TO THE
+ * SOURCE FIRST so relative chains build exactly like a sequence of
+ * single-step copies (+A1+1 down a column: 3, 4, 5, ...).  The region
+ * is the span between the source and the destination plus the
+ * destination block; mirrored for the upward/leftward destinations.
+ * The tiling rule is the spreadsheet's: the target takes the source
+ * cell at (distance mod the source's own dimension) with the shift =
+ * the distance from that source cell. */
+static int fill_one(Cell **tmp, int sw, int sh,
+                    int c1, int r1, int cc, int rr, int rel,
+                    int vertical)
+{
+    int sr, sc, dc, dr;
+    Cell *dst, *src;
+    int so, sc2, sr2;
+    dst = cs_alloc_cell(cc, rr);
+    if (!dst) { cs_msg("MEMORY IS TOO LOW"); return 0; }
+    if (vertical) {
+        sr = r1 + (((rr - r1) % sh) + sh) % sh;   /* the tiled row */
+        sc = cc;
+        dc = 0;
+        dr = rr - sr;
+    } else {
+        sc = c1 + (((cc - c1) % sw) + sw) % sw;   /* the tiled column */
+        sr = rr;
+        dc = cc - sc;
+        dr = 0;
+    }
+    src = &tmp[sr - r1][sc - c1];
+    so = cs_eval_ctx_on; sc2 = cs_eval_ctx_col; sr2 = cs_eval_ctx_row;
+    cs_eval_ctx_on = 1;
+    cs_eval_ctx_col = cc;
+    cs_eval_ctx_row = rr;
+    copy_one(dst, src, rel, dc, dr);
+    cs_eval_ctx_on = so; cs_eval_ctx_col = sc2; cs_eval_ctx_row = sr2;
+    return 1;
+}
+
+void cs_fill_block(int c1, int r1, int c2, int r2, int d1, int e1,
+                   int d2, int e2, int rel)
+{
+    int sw = c2 - c1 + 1, sh = r2 - r1 + 1;
+    int vertical = (c1 == d1 && c2 == d2);
+    int horizontal = (r1 == e1 && r2 == e2);
+    Cell **tmp;
+    int n;
+    if (vertical == horizontal) return;     /* not straight: no fill */
+    tmp = clone_cells(c1, r1, c2, r2, &n);
+    if (!tmp) { cs_msg("MEMORY IS TOO LOW"); return; }
+    if (vertical) {
+        int rr, cc;
+        if (e1 > r2) {                      /* down: the rows after the source */
+            for (rr = r2 + 1; rr <= e2; rr++)
+                for (cc = c1; cc <= c2; cc++)
+                    if (!fill_one(tmp, sw, sh, c1, r1, cc, rr, rel, 1)) {
+                        free_clones(tmp, n, sw); return;
+                    }
+        } else {                            /* up: toward the source */
+            for (rr = r1 - 1; rr >= e2; rr--)
+                for (cc = c1; cc <= c2; cc++)
+                    if (!fill_one(tmp, sw, sh, c1, r1, cc, rr, rel, 1)) {
+                        free_clones(tmp, n, sw); return;
+                    }
+        }
+    } else {
+        int rr, cc;
+        if (d1 > c2) {                      /* right: the columns after the source */
+            for (cc = c2 + 1; cc <= d2; cc++)
+                for (rr = r1; rr <= r2; rr++)
+                    if (!fill_one(tmp, sw, sh, c1, r1, cc, rr, rel, 0)) {
+                        free_clones(tmp, n, sw); return;
+                    }
+        } else {                            /* left: toward the source */
+            for (cc = c1 - 1; cc >= d2; cc--)
+                for (rr = r1; rr <= r2; rr++)
+                    if (!fill_one(tmp, sw, sh, c1, r1, cc, rr, rel, 0)) {
+                        free_clones(tmp, n, sw); return;
+                    }
+        }
+    }
+    free_clones(tmp, n, sw);
+    cs_recount_entries();
+}
+
+/* ====================== Insert row/column ========================== *//* ====================== Insert row/column ========================== */
 static void shift_all_refs(int iscol, int at, int insert)
 {
     int r = 0, c = 0;

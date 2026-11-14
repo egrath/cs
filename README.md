@@ -217,6 +217,22 @@ fractional coordinates (`REF(1,1.5)` → Error 0), zero or negative
 rows 1..255 — `REF(128,1)`, `REF(1,256)` → Error 1), wrong types
 (`REF("x",1)` → Error 6), wrong argument counts (Error 3).
 
+### The copy's fill question
+
+Copying a **range** to a range that is straight with it — the same
+column span (vertically) or the same row span (horizontally),
+mirrored directions included — asks one more question:
+
+```text
+F)ill or D)estination
+```
+
+`D` is the plain copy (the source shifted once, landing on the
+destination).  `F` chains it: the source is re-shifted and evaluated
+at **every** intermediate distance, nearest to the source first, so
+`+A1+1` filled down from row 2 produces 3, 4, 5, … in each row, and
+the stored formulas stay self-consistent across `;R`.
+
 ### Empty referenced cells are zero
 
 A bare reference to an empty (or allocated-empty) cell yields **0** in
