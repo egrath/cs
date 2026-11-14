@@ -93,16 +93,7 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
         else
             use = cs_strdup(src->cont);
         if (!use) return;
-        {
-            int so = cs_eval_ctx_on, sc2 = cs_eval_ctx_col,
-                sr2 = cs_eval_ctx_row;
-            cs_eval_ctx_on = 1;
-            cs_eval_ctx_col = dc;
-            cs_eval_ctx_row = dr;
-            err = cs_eval_formula(use, &val, &str);
-            cs_eval_ctx_on = so; cs_eval_ctx_col = sc2;
-            cs_eval_ctx_row = sr2;
-        }
+        err = cs_eval_formula(use, &val, &str);
         cs_free_cell(dst);
         dst->type = CE_NUM;
         dst->just = 'R';
@@ -213,8 +204,19 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
         int dc = d1 + i % dw, dr = e1 + i / dw;
         Cell *dst = cs_alloc_cell(dc, dr);
         if (!dst) { cs_msg("MEMORY IS TOO LOW"); break; }
-        copy_one(dst, &tmp[rep ? 0 : i / sw][rep ? 0 : i % sw],
-                 rel, dc - sc, dr - sr);
+        {
+            /* the DESTINATION is the evaluation context (ROW()/COL()):
+             * the dc/dr of copy_one are the relative SHIFT deltas */
+            int so = cs_eval_ctx_on, sc2 = cs_eval_ctx_col,
+                sr2 = cs_eval_ctx_row;
+            cs_eval_ctx_on = 1;
+            cs_eval_ctx_col = dc;
+            cs_eval_ctx_row = dr;
+            copy_one(dst, &tmp[rep ? 0 : i / sw][rep ? 0 : i % sw],
+                     rel, dc - sc, dr - sr);
+            cs_eval_ctx_on = so; cs_eval_ctx_col = sc2;
+            cs_eval_ctx_row = sr2;
+        }
     }
     free_clones(tmp, n, sw);
     cs_recount_entries();

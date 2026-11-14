@@ -858,6 +858,18 @@ Batch workflow (do all steps before reporting done):
   nd[0]-as-value trap for 2-digit values!); the user's copy-down
   case (2..10).  pty-verified: the copy down shows 2.00..9.00.
 
+- **THE COPY CONTEXT DELTA BUG (user report 2026-11-14, branch
+  "DOS")**: +COL() at B1 copied to C1>F1 yielded 2,3,4,5 (off by one)
+  and +ROW() at A2 copied down yielded 2..9 — copy_one set the
+  evaluation context from its dc/dr parameters, which are the
+  RELATIVE SHIFT DELTAS, not coordinates (my origin-source pin passed
+  by luck: at A1 the deltas equal the coordinates).  Fix: the context
+  assignment moved OUT of copy_one into cs_copy_block's loop with the
+  true destination coordinates; copy_one keeps the shift-delta
+  meaning of its parameters.  Pinned with both user cases (the
+  exact final states) and the +COL() case pty-verified
+  (2.00/3.00/4.00/5.00/6.00 across B1..F1).
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

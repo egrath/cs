@@ -2434,6 +2434,41 @@ static void run_tests(void)
             { printf("FAIL stored ROW (%d)\n",
                      tread(5, 6)->val.nd[0]); fails++; }
         else printf("ok   a stored +ROW() is its own row\n");
+        /* the user's cases with NON-ORIGIN sources (the shift-delta
+         * bug): +COL() at B1 -> C1>F1 = 3,4,5,6; +ROW() at A2 ->
+         * A3>A10 = 3..10 */
+        cs_clear_all();
+        cs_commit_entry(1, 0, "+COL()");      /* B1 = 2 */
+        cs_copy_block(1, 0, 1, 0, 2, 0, 4, 1, 1, 4, 1);
+        {
+            int w, ok3 = 1;
+            Csn want;
+            for (w = 3; w <= 6; w++) {
+                csn_from_int(&want, w);
+                if (tread(w - 1, 0)->type != CE_NUM ||
+                    csn_cmp(&tread(w - 1, 0)->val, &want) != 0)
+                    ok3 = 0;
+            }
+            if (!ok3) { printf("FAIL COL copy across\n"); fails++; }
+            else printf("ok   +COL() copied across yields 3..6\n");
+        }
+        cs_clear_all();
+        setv(0, 1, "x");
+        cs_commit_entry(0, 1, "+ROW()");      /* A2 = 2 */
+        cs_copy_block(0, 1, 0, 1, 0, 2, 1, 8, 1, 8, 1);
+        {
+            int w, ok4 = 1;
+            Csn want;
+            for (w = 3; w <= 10; w++) {
+                csn_from_int(&want, w);
+                if (tread(0, w - 1)->type != CE_NUM ||
+                    csn_cmp(&tread(0, w - 1)->val, &want) != 0)
+                    ok4 = 0;
+            }
+            if (!ok4) { printf("FAIL ROW copy-down off-origin\n"); fails++; }
+            else printf("ok   +ROW() copied down off-origin yields 3..10\n");
+        }
+        cs_clear_all();
         /* the user's copy-down: +ROW() at A1 copied to A2>A10 -> 2..10 */
         cs_clear_all();
         cs_commit_entry(0, 0, "+ROW()");

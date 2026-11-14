@@ -27,6 +27,18 @@
   "Hello World!" in S7.  The CSD format is untouched (the file is
   byte-identical in spirit; no regeneration needed).
 
+## BATCH (branch "DOS", follow-up 8): the copy context delta bug (2026-11-14):
+- USER BUG with exact traces: +COL() at B1 -> C1>F1 = 2,3,4,5 and
+  +ROW() at A2 -> A3>A10 = 2..9 (both off by one).  ROOT CAUSE:
+  copy_one set the evaluation context from its dc/dr parameters —
+  which are the RELATIVE SHIFT DELTAS, not coordinates.  My
+  origin-source pin (A1) passed by luck (the deltas = the
+  coordinates at the origin).  FIX: the context assignment moved
+  into cs_copy_block's loop (the true destination); copy_one keeps
+  the shift-delta meaning.  Pinned: +COL() B1 -> C1>F1 = 3..6;
+  +ROW() A2 -> A3>A10 = 3..10; the +COL() case pty-verified.
+  VERIFIED: --test 428 ok; the idle gate EXACT.
+
 ## BATCH (branch "DOS", follow-up 7): the evaluation context (2026-11-14):
 - USER BUG: +ROW() copied down A1>A2>A10 yielded 1 everywhere (the
   cursor-at-eval semantics).  FIX: cs_eval_ctx_on/col/row (parser.c,
