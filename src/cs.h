@@ -124,6 +124,9 @@ char  *cs_shift_refs_n(const char *s, int iscol, int at, int delta);
 #define KW_ABORT 13   /* internal "user interrupt" code */
 int    cs_recalc_entry(int col, int rw);   /* returns eval error code */
 extern int cs_empty_strict;  /* 1 = empty refs are errors (the factorial prefix) */
+extern int cs_eval_ctx_on;     /* the evaluation context: a stored
+                                * formula's cell (ROW()/COL()) */
+extern int cs_eval_ctx_col, cs_eval_ctx_row;
 void   cs_recalc_all(void);
 void   cs_run_recalc_passes(int always_one); /* side-effect driver */
 void   cs_mark_sheet_change(void);  /* eval.c: a stored value changed */

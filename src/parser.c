@@ -68,6 +68,14 @@ static void val_err(Val *v, int code)
  * -> its content as a string (today's behavior), empty/allocated/
  * error cell -> Error 1 (cellnum's convention - never silently 0).
  * Returns -1 when *v holds a value afterwards, else the error code. */
+/* the evaluation context: WHICH cell a formula is being evaluated
+ * for.  Set by the recalculation, the commit and the copy (ROW()/
+ * COL() then answer the cell's own position); clear for the
+ * context-free evaluations (the ?-calculator, the dialogs) where the
+ * current cursor answers. */
+int cs_eval_ctx_on = 0;
+int cs_eval_ctx_col = 0, cs_eval_ctx_row = 0;
+
 int cs_empty_strict = 0;    /* 1 = an empty reference is Error 1 (the
                              * factorial entry's "?n? until filled"
                              * semantics); 0 = the manual's empty-is-
@@ -575,17 +583,22 @@ static Val parse_primary(P *ps)
                 return v;
             }
             if (f == FN_ROW || f == FN_COL) {
-                /* the CURRENT cell cursor's row/column, 1-indexed
-                 * (user request 2026-11-14): evaluated against the
-                 * cursor AT EVALUATION TIME - a stored formula
-                 * re-evaluates against wherever the cursor sits
-                 * during ;R (flagged semantics, like the manual's
-                 * "@" cursor concept) */
+                /* the row/column, 1-indexed: IN A STORED FORMULA the
+                 * cell's own position (the evaluation context set by
+                 * the recalculation, the commit and the copy);
+                 * asked context-free (the ?-calculator, the dialogs)
+                 * the current cursor answers (2026-11-14) */
                 if (*ps->p == ')') ps->p++;
                 else { val_err(&v, 6); return v; }
                 val_free(&v);
-                csn_from_int(&v.num, f == FN_ROW ?
-                             (long) (curRow + 1) : (long) (curCol + 1));
+                if (cs_eval_ctx_on)
+                    csn_from_int(&v.num, f == FN_ROW ?
+                                 (long) (cs_eval_ctx_row + 1) :
+                                 (long) (cs_eval_ctx_col + 1));
+                else
+                    csn_from_int(&v.num, f == FN_ROW ?
+                                 (long) (curRow + 1) :
+                                 (long) (curCol + 1));
                 v.good = 1;
                 return v;
             }

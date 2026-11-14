@@ -98,7 +98,14 @@ int cs_recalc_entry_p(Cell *c)
     if (c->factf) return factf_recompute(col, rw, c);
     csn_copy(&old, &c->val);
     oldstr = c->strres;                 /* kept for the change check */
-    err = cs_eval_formula(c->cont, &val, &str);
+    {
+        int so = cs_eval_ctx_on, sc2 = cs_eval_ctx_col, sr2 = cs_eval_ctx_row;
+        cs_eval_ctx_on = 1;
+        cs_eval_ctx_col = col;
+        cs_eval_ctx_row = rw;
+        err = cs_eval_formula(c->cont, &val, &str);
+        cs_eval_ctx_on = so; cs_eval_ctx_col = sc2; cs_eval_ctx_row = sr2;
+    }
     if (err == KW_ABORT) {
         /* user interrupt: the cell keeps its previous value, the
          * message is already painted by the abort site */
@@ -277,7 +284,22 @@ static int numeric_start(int ch)
  * Returns the evaluation error code (0 = no error / text commit); callers
  * paint the sticky "Error n-> ..." line with it (<=0 folds to 0: the
  * Appendix "value range error" code costs the -1 sentinel used inside). */
+static int cs_commit_core(int col, int rw, const char *entry);
+
 int cs_commit_entry(int col, int rw, const char *entry)
+{
+    /* the entry's own cell is the evaluation context (ROW()/COL()) */
+    int so = cs_eval_ctx_on, sc2 = cs_eval_ctx_col, sr2 = cs_eval_ctx_row;
+    int r;
+    cs_eval_ctx_on = 1;
+    cs_eval_ctx_col = col;
+    cs_eval_ctx_row = rw;
+    r = cs_commit_core(col, rw, entry);
+    cs_eval_ctx_on = so; cs_eval_ctx_col = sc2; cs_eval_ctx_row = sr2;
+    return r;
+}
+
+static int cs_commit_core(int col, int rw, const char *entry)
 {
     Cell *c;
     char buf[CS_EDITMAX + 1];

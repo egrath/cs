@@ -1546,12 +1546,6 @@ static void run_tests(void)
         {
             int w, ok = 1;
             char g[48];
-            for (w = 0; w < 9; w++) {
-                csn_canon(&tread(0, 2 + w)->val, g, (int) sizeof(g));
-                if (tread(0, 2 + w)->type != CE_NUM ||
-                    strcmp(g, "+%d.0000000000000E+1", 0) == 0)
-                    { }
-            }
             /* the values 3..10 */
             for (w = 3; w <= 10; w++) {
                 Csn r;
@@ -1567,6 +1561,9 @@ static void run_tests(void)
         }
         cs_clear_all();
         /* the range copy A2>B2 -> A5>B5: A5=1.00, B5=2.00 */
+        setv(0, 0, "1"); setv(1, 0, "2");
+        cs_commit_entry(0, 1, "+A1+1");
+        cs_commit_entry(1, 1, "+B1+2");
         cs_copy_block(0, 1, 1, 1, 0, 4, 2, 1, 0, 2, 1);
         if (tread(0, 4)->type != CE_NUM ||
             tread(0, 4)->val.nd[0] != 1 ||
@@ -2418,7 +2415,8 @@ static void run_tests(void)
             { printf("FAIL row delete clears targets\n"); fails++; }
         else printf("ok   row delete clears with absent sources\n");
         cs_clear_all();
-        /* ROW() and COL(): the current cell cursor, 1-indexed */
+        /* ROW() and COL(): context-free (the ?-calculator) answers
+         * the cursor; a STORED formula answers its own cell */
         curCol = 0; curRow = 0;
         ckc("ROW at A1", "ROW()", "+1.0000000000000E+1");
         ckc("COL at A1", "COL()", "+1.0000000000000E+1");
@@ -2427,6 +2425,40 @@ static void run_tests(void)
         ckc("COL at C3", "COL()", "+3.0000000000000E+1");
         cke("ROW with arg", "ROW(5)", 6);
         cke("COL with arg", "COL(1)", 6);
+        cs_clear_all();
+        /* the stored +ROW() at (5, 6) = F7 evaluates to 7 */
+        cs_commit_entry(5, 6, "+ROW()");
+        cs_recalc_all();
+        if (tread(5, 6)->type != CE_NUM ||
+            tread(5, 6)->val.nd[0] != 7)
+            { printf("FAIL stored ROW (%d)\n",
+                     tread(5, 6)->val.nd[0]); fails++; }
+        else printf("ok   a stored +ROW() is its own row\n");
+        /* the user's copy-down: +ROW() at A1 copied to A2>A10 -> 2..10 */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "+ROW()");
+        cs_copy_block(0, 0, 0, 0, 0, 1, 1, 9, 1, 9, 1);
+        {
+            int w, ok2 = 1;
+            Csn want;
+            for (w = 2; w <= 10; w++) {
+                csn_from_int(&want, w);
+                if (tread(0, w - 1)->type != CE_NUM ||
+                    csn_cmp(&tread(0, w - 1)->val, &want) != 0)
+                    ok2 = 0;
+            }
+            if (!ok2) { printf("FAIL ROW copy-down\n"); fails++; }
+            else printf("ok   +ROW() copied down yields 2..10\n");
+        }
+        cs_clear_all();
+        /* the stored +COL() at (2, 4) = C5 evaluates to 3 */
+        cs_commit_entry(2, 4, "+COL()");
+        cs_recalc_all();
+        if (tread(2, 4)->type != CE_NUM ||
+            tread(2, 4)->val.nd[0] != 3)
+            { printf("FAIL stored COL (%d)\n",
+                     tread(2, 4)->val.nd[0]); fails++; }
+        else printf("ok   a stored +COL() is its own column\n");
         cs_clear_all();
         /* range deletes: rows 1..3 of a populated sheet shift up two;
          * column range deletes shift the formats by the range width */

@@ -93,7 +93,16 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
         else
             use = cs_strdup(src->cont);
         if (!use) return;
-        err = cs_eval_formula(use, &val, &str);
+        {
+            int so = cs_eval_ctx_on, sc2 = cs_eval_ctx_col,
+                sr2 = cs_eval_ctx_row;
+            cs_eval_ctx_on = 1;
+            cs_eval_ctx_col = dc;
+            cs_eval_ctx_row = dr;
+            err = cs_eval_formula(use, &val, &str);
+            cs_eval_ctx_on = so; cs_eval_ctx_col = sc2;
+            cs_eval_ctx_row = sr2;
+        }
         cs_free_cell(dst);
         dst->type = CE_NUM;
         dst->just = 'R';

@@ -839,6 +839,25 @@ Batch workflow (do all steps before reporting done):
   A2>B2 -> A5>B5 = 1.00/2.00, pty-verified).  The copy core is
   exported as cs_copy_block (copy_cmd's mechanics, also pinned).
 
+- **THE EVALUATION CONTEXT (user bug report 2026-11-14, branch
+  "DOS")**: the user's trace showed +ROW() copied down A1>A2>A10
+  yielding 1 everywhere — the cursor-at-eval-time semantics made a
+  stored +ROW() a GLOBAL read (every copy evaluated with the parked
+  cursor; ;R re-evaluated them all against one cursor position).
+  FIX: the evaluator has a CONTEXT (cs_eval_ctx_on/col/row in
+  parser.c): ROW()/COL() in a STORED formula answer the cell's OWN
+  position; context-free evaluations (the ?-calculator, the dialogs,
+  direct evals) keep the cursor.  The context is set-and-restored
+  around the evaluation at THREE sites: cs_recalc_entry_p (the
+  recalculated cell), cs_commit_entry (now a wrapper around
+  cs_commit_core — the entry's target cell), and copy_one (the
+  DESTINATION — a copied +ROW() evaluates for its new home
+  immediately and stays stable across ;R).  factf_recompute inherits
+  the commit's context.  PINS: the interactive ckc cases unchanged;
+  a stored +ROW() at F7 = 7, +COL() at C5 = 3 (csn_cmp, not the
+  nd[0]-as-value trap for 2-digit values!); the user's copy-down
+  case (2..10).  pty-verified: the copy down shows 2.00..9.00.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

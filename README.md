@@ -226,13 +226,14 @@ silently 0" contract lives in `VAL()` (`VAL(empty)` is still an
 error), in the factorial entry's `?n?`-until-filled prefix, and error
 cells always stay errors.
 
-### ROW() and COL() — the current cursor position
+### ROW() and COL() — the current position
 
-`ROW()` returns the current cell cursor's row, `COL()` its column,
-both 1-indexed.  They evaluate against the cursor **at evaluation
-time** — a stored `+ROW()` re-evaluates against wherever the cursor
-sits during `;R` (like the manual's cursor concept).  Arguments are an
-error.
+`ROW()` returns a row number, `COL()` a column number, both
+1-indexed.  **In a stored formula they answer the cell's own
+position** — `+ROW()` in B7 is 7, survives `;R`, and a copy of it
+down a column yields 2, 3, 4, ...  Asked context-free (the
+`?`-calculator, the dialogs) they answer the current cursor
+position.  Arguments are an error.
 
 ### COLIDX(x) — the column index
 
