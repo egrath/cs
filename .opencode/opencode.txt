@@ -48,6 +48,16 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "DOS" -> merged to master): the cookbook + the merge (2026-11-14):
+- USER: merge to master, document everything with good examples of
+  the day's features.  README gained a COOKBOOK section (the string
+  model, ROW()/COL(), the fill copy with the user's grids,
+  empty-as-zero, the bounded aggregates, the brainf cross-link);
+  everything else was already documented batch by batch.
+- MERGED fast-forward to master, pushed, the DOS branch deleted
+  (the same pattern as the brainfuck merge).  Post-merge gates:
+  the build, --test, the idle gate.
+
 ## BATCH (branch "DOS", follow-up 9): C89 printf + the manual PDF (2026-11-14):
 - USER: snprintf/vsnprintf are C99 - fix; add the PDF (a new
   reference manual).  DONE: all 7 sites replaced (cs_savename/

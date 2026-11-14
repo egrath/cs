@@ -738,6 +738,86 @@ The run takes a few seconds; you watch the tape and output fill in
 live, one pass at a time.  (Other keys typed while the machine runs
 are not lost — they stay queued and act when it settles.)
 
+## Cookbook: today's features, worked examples
+
+### Strings in cells
+
+A formula can build and carry text.  Type `+CHR(72)&CHR(73)` in a
+cell and the window shows `HI`; the contents line keeps the formula
+and the type line reads `text: left justified` — a formula whose
+value is a string IS a text value:
+
+```text
+A1:  +CHR(65)&CHR(66)      window: AB
+A2:  +VAL(A1)&"!"          window: AB!
+```
+
+`VAL` is typed (a numeric cell yields its number, a text cell its
+content as a string), so text chains through references.  Directly
+mixing a string and a number in one operation is an error; ranges
+skip their text.
+
+### Numbered rows and columns
+
+```text
+A2:  +ROW()                window: 2       (this cell's own row)
+B1:  +COL()                window: 2       (this cell's own column)
+```
+
+Copy `+ROW()` down a column and the cells answer 3, 4, 5, … — each
+evaluates for its own home.  Asked interactively (`?ROW()`) they
+answer the cursor instead.
+
+### The fill copy
+
+Copying a range to a straight range (same columns or same rows,
+mirrored directions included) asks one last question:
+
+```text
+F)ill or D)estination
+```
+
+With the sheet `A1=1, B1=2, A2=+A1+1, B2=+B1+2`, copying `A2>B2` to
+`A10>B10` and answering `F` chains the formulas through every row:
+
+```text
+ 3|   3.00    6.00
+ 4|   4.00    8.00
+ ...
+10|  10.00   20.00
+```
+
+Each cell's formula is the previous cell's shifted one step, so the
+stored formulas stay self-consistent across `;R`.  Answering `D`
+copies only to the destination (row 10 shows `1.00 / 2.00`, the
+shifted formulas reading the empty cells as zero).
+
+### Empty references are zero
+
+A bare reference to an empty cell is 0 in arithmetic — a relative
+copy across empty regions yields numbers:
+
+```text
+A4:  (empty)
+A5:  +A4+1                 window: 1.00
+```
+
+The strict contract stays in `VAL`: `VAL(A4)` is an error; error
+cells always propagate as errors.
+
+### Aggregates with bounded memory
+
+`SUM`, `CNT`, `AVG`, `MAX`, `MIN` stream over ranges of any size in
+constant memory.  `MED` supports 512 values; a range beyond that
+returns an error rather than a truncated median.
+
+### A working interpreter on the sheet
+
+The brainfuck chapter below builds a complete interpreter from 17
+formula cells; the ready-made sheet ships as
+`examples/brainf.csd` — load it, press `;R A`, and watch
+`Hello World!` build up in cell S7.
+
 ## Internals: the sparse cell store (the DOS branch, 2026-11-14)
 
 The dense 255x127 cell matrix is gone.  Cells live in a **chunked

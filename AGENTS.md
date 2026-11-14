@@ -911,6 +911,13 @@ Batch workflow (do all steps before reporting done):
   crash led to the tiling helper fill_one (also the double-fill
   in the loop-condition probe cleaned).
 
+- **THE MERGE (2026-11-14)**: the "DOS" branch merged to master
+  (fast-forward) and deleted; the README gained a COOKBOOK section
+  with worked examples for the day's features (the string model,
+  ROW()/COL(), the fill copy with the user's grids, empty-as-zero,
+  the bounded aggregates, the brainf cross-link).  The docs PDF and
+  the manual PDF remain in docs/.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.
