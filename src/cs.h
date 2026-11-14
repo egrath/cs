@@ -55,6 +55,9 @@ Cell  *cs_alloc_cell(int col, int rw);   /* allocate if necessary;
 void   cs_free_cell_at(int col, int rw); /* release + owned resources */
 void   cs_relink_cell(int fc, int fr, int tc, int tr);
 void   dep_check_range(int iscol, int a1, int a2, char *list, int lm);
+void   cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
+                     int dw, int dh, int rep, int nfill, int rel);
+                                        /* the copy core (also pinned) */
                                         /* the ;D dependency scan (also
                                          * pinned: the scan must
                                          * terminate) */
@@ -120,6 +123,7 @@ char  *cs_shift_refs_n(const char *s, int iscol, int at, int delta);
 /* side-effect functions + iteration (user-extended 2026-11, flagged) */
 #define KW_ABORT 13   /* internal "user interrupt" code */
 int    cs_recalc_entry(int col, int rw);   /* returns eval error code */
+extern int cs_empty_strict;  /* 1 = empty refs are errors (the factorial prefix) */
 void   cs_recalc_all(void);
 void   cs_run_recalc_passes(int always_one); /* side-effect driver */
 void   cs_mark_sheet_change(void);  /* eval.c: a stored value changed */

@@ -121,8 +121,7 @@ static void copy_cmd(void)
 {
     char from[40], to[40];
     int c1, r1, c2, r2, d1, e1, d2, e2, sw, sh, dw, dh, rel, rep, nfill;
-    Cell **tmp;
-    int n, i;
+    int i;
 
     if (cs_prompt_coord("from coord (>coord)", "", from, (int) sizeof(from), 0) < 0) return;
     if (cs_prompt_coord("to coord (>coord)", "", to, (int) sizeof(to), 0) < 0) return;
@@ -185,6 +184,18 @@ static void copy_cmd(void)
             break;
         }
     }
+    cs_copy_block(c1, r1, c2, r2, d1, e1, dw, dh, rep, nfill, rel);
+    redraw();
+}
+
+/* the copy core (shared with the --test pins): the source block
+ * (c1,r1)-(c2,r2), the destination's top-left (d1,e1) with the tile
+ * dimensions dw/dh, rep/nfill and the relative mode already resolved */
+void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
+                   int dw, int dh, int rep, int nfill, int rel)
+{
+    int sw = c2 - c1 + 1, i, n;
+    Cell **tmp;
     tmp = clone_cells(c1, r1, c2, r2, &n);
     if (!tmp || !n) { free_clones(tmp, n, sw); cs_msg("MEMORY IS TOO LOW"); return; }
     for (i = 0; i < (rep ? nfill : n); i++) {
@@ -198,7 +209,6 @@ static void copy_cmd(void)
     }
     free_clones(tmp, n, sw);
     cs_recount_entries();
-    redraw();
 }
 
 /* ====================== Insert row/column ========================== */

@@ -217,6 +217,15 @@ fractional coordinates (`REF(1,1.5)` → Error 0), zero or negative
 rows 1..255 — `REF(128,1)`, `REF(1,256)` → Error 1), wrong types
 (`REF("x",1)` → Error 6), wrong argument counts (Error 3).
 
+### Empty referenced cells are zero
+
+A bare reference to an empty (or allocated-empty) cell yields **0** in
+arithmetic — the manual's rule, and what makes relative copies across
+empty regions produce numbers instead of errors.  The strict "never
+silently 0" contract lives in `VAL()` (`VAL(empty)` is still an
+error), in the factorial entry's `?n?`-until-filled prefix, and error
+cells always stay errors.
+
 ### ROW() and COL() — the current cursor position
 
 `ROW()` returns the current cell cursor's row, `COL()` its column,

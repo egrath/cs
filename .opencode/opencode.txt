@@ -27,6 +27,26 @@
   "Hello World!" in S7.  The CSD format is untouched (the file is
   byte-identical in spirit; no regeneration needed).
 
+## BATCH (branch "DOS", follow-up 6): empty-is-zero + ROW/COL follow-through (2026-11-14):
+- USER QUESTION: the single-cell fill (A2=+A1+1 -> A3>A10) chains
+  because each target's reference points at the PREVIOUS target
+  (filled in copy order); the range copy A2>B2 -> A5>B5 references
+  OUTSIDE the block (A4/B4, empty) -> ?n? under the option-3 rule.
+  The user's rhetorical question settled the semantics: EMPTY
+  REFERENCED CELLS ARE ZERO (the manual's rule) — Option A from the
+  discussion.  val_deref: absent/CE_EMPTY/CE_ALLOC -> 0 in
+  arithmetic; VAL stays strict; the factorial prefix keeps
+  "?n? until filled" via cs_empty_strict (exported) toggled around
+  cs_eval_fact_source — THE GOTCHA: clear the flag AFTER the
+  post-eval deref (the A9! pin caught the first attempt).  Error
+  cells stay Error 1.
+- PINS: the bare-empty cases now succeed (+A99, REF(1,1),
+  REF(A1,5) -> 0); the user's two copy scenarios pinned via the
+  EXPORTED cs_copy_block (copy_cmd's core, extracted): the chain
+  3..10 and the range copy = 1.00/2.00; the interactive range copy
+  pty-verified (row 5 = 1.00/2.00; row 2's stale values are the
+  manual-recalculation state).  --test 422 ok; the idle gate EXACT.
+
 ## BATCH (branch "DOS", follow-up 5): the streaming aggregates (2026-11-14):
 - USER SPEC: stream SUM/AVG/MAX/MIN (no value array), MED with a
   bounded strategy + an honest error beyond the bound (never a

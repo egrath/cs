@@ -822,6 +822,23 @@ Batch workflow (do all steps before reporting done):
   local ≈ 500 B in num.c's digit scratch) — the DOS4GW build should
   reserve a ≥ 24 KB stack (a linker-file setting, documented).
 
+- **EMPTY REFERENCED CELLS ARE ZERO (user decision 2026-11-14,
+  branch "DOS")**: the ref-val language's option-3 rule (a bare
+  reference to an empty cell -> Error 1) is RELAXED for arithmetic:
+  a bare reference (and REF()'s deref) to an ABSENT, CE_EMPTY or
+  CE_ALLOC cell yields 0 — the manual's rule, restored because the
+  user's relative-copy traces broke on it (A2>B2 -> A5>B5 showed
+  ?n?; the original yields 1.00/2.00).  THE STRICT CONTRACT STAYS:
+  VAL(empty) -> Error 1 (the typed accessor), the factorial entry's
+  prefix keeps "?n? until filled" (cs_empty_strict toggled around
+  cs_eval_fact_source INCLUDING its post-eval deref — the first
+  attempt cleared the flag before the deref and the A9! pin caught
+  it), error cells stay Error 1.  Pins updated (the bare-empty cases
+  now succeed with 0; the VAL pins unchanged); the user's two copy
+  scenarios pinned (the single-cell fill chain 3..10; the range copy
+  A2>B2 -> A5>B5 = 1.00/2.00, pty-verified).  The copy core is
+  exported as cs_copy_block (copy_cmd's mechanics, also pinned).
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

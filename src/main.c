@@ -686,7 +686,7 @@ static void run_tests(void)
     cke("err illegal chars end", "1+2)", 7);
     cke("err regr not row/col", "REGR(A1>B2,C3)", 2);   /* 1-D only */
     cke("err term expr illegal", "+A", 6);
-    cke("err illegal coordinate", "+A99", 1);
+    cke("empty A99 is zero", "+A99", 0);   /* the manual's rule */
     cke("err value range overflow", "+9E+999", -1);  /* displays Error 0 */
     cke("err div by zero", "1/0", -1);               /* displays Error 0 */
     {
@@ -1189,7 +1189,7 @@ static void run_tests(void)
         Cell *c;
         /* A: reference construction; a top-level formula derefs, so
          * REF(1,1) on an empty A1 is Error 1, on a filled one the value */
-        cke("REF empty deref", "REF(1,1)", 1);
+        cke("REF empty deref = 0", "REF(1,1)", 0);
         setv(0, 0, "42");                       /* A1 = 42 */
         setv(1, 0, "17");                       /* B1 = 17 */
         setv(0, 4, "5");                        /* A5 = 5 */
@@ -1200,7 +1200,7 @@ static void run_tests(void)
         ckc("VAL(A1)*10", "VAL(A1)*10", "+4.2000000000000E+3");
         ckc("SQRT(VAL(A1))", "SQRT(VAL(A1))", "+6.4807406984078E+1");
         ckc("coerced A1+B1", "A1+B1", "+5.9000000000000E+2");
-        cke("REF(A1,5) coerced", "REF(A1,5)", 1);   /* AP5 empty */
+        cke("REF(A1,5) coerced = 0", "REF(A1,5)", 0);   /* AP5 empty */
         ckc("REF(1,5) deref", "REF(1,5)", "+5.0000000000000E+1");
         /* B: invalid references */
         cke("REF(0,1)", "REF(0,1)", 1);
@@ -1520,6 +1520,60 @@ static void run_tests(void)
         ckc("MAX streams 513", "MAX(A1>C255)", "+1.0000000000000E+1");
         ckc("MIN streams 513", "MIN(A1>C255)", "+1.0000000000000E+1");
         ckc("CNT streams 513", "CNT(A1>C255)", "+5.1300000000000E+3");
+        cs_clear_all();
+        /* the empty-as-zero rule (user report 2026-11-14): a relative
+         * copy across empty cells yields numbers; VAL stays strict */
+        cs_clear_all();
+        setv(0, 0, "1"); setv(1, 0, "2");     /* A1, B1 */
+        cs_commit_entry(0, 1, "+A1+1");       /* A2 = 2 */
+        cs_commit_entry(1, 1, "+B1+2");       /* B2 = 4 */
+        cke("VAL empty strict", "VAL(A4)", 1);
+        {
+            Csn r;
+            char g[48];
+            int e = cs_eval_formula("+A4+1", &r, NULL);
+            csn_canon(&r, g, (int) sizeof(g));
+            if (e != 0 || strcmp(g, "+1.0000000000000E+1"))
+                { printf("FAIL bare empty zero (%s)\n", g); fails++; }
+            else printf("ok   a bare empty reference is zero\n");
+        }
+        /* the single-cell fill (user's working case): A2=+A1+1
+         * copied to A3>A10 chains: 3,4,...,10 */
+        cs_clear_all();
+        setv(0, 0, "1");
+        cs_commit_entry(0, 1, "+A1+1");
+        cs_copy_block(0, 1, 0, 1, 0, 2, 1, 8, 1, 9, 1);
+        {
+            int w, ok = 1;
+            char g[48];
+            for (w = 0; w < 9; w++) {
+                csn_canon(&tread(0, 2 + w)->val, g, (int) sizeof(g));
+                if (tread(0, 2 + w)->type != CE_NUM ||
+                    strcmp(g, "+%d.0000000000000E+1", 0) == 0)
+                    { }
+            }
+            /* the values 3..10 */
+            for (w = 3; w <= 10; w++) {
+                Csn r;
+                char gg[48];
+                csn_from_int(&r, w);
+                csn_canon(&r, gg, (int) sizeof(gg));
+                csn_canon(&tread(0, w - 1)->val, g, (int) sizeof(g));
+                if (tread(0, w - 1)->type != CE_NUM || strcmp(g, gg))
+                    ok = 0;
+            }
+            if (!ok) { printf("FAIL single-cell fill chain\n"); fails++; }
+            else printf("ok   single-cell fill chains 3..10\n");
+        }
+        cs_clear_all();
+        /* the range copy A2>B2 -> A5>B5: A5=1.00, B5=2.00 */
+        cs_copy_block(0, 1, 1, 1, 0, 4, 2, 1, 0, 2, 1);
+        if (tread(0, 4)->type != CE_NUM ||
+            tread(0, 4)->val.nd[0] != 1 ||
+            tread(1, 4)->type != CE_NUM ||
+            tread(1, 4)->val.nd[0] != 2)
+            { printf("FAIL range copy over empties\n"); fails++; }
+        else printf("ok   range copy over empties: A5=1, B5=2\n");
         cs_clear_all();
         /* CHR / ORD: the 7-bit printable range 32..127, strict
          * (user-refined 2026-11-13) */

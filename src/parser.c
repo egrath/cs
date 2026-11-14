@@ -68,6 +68,11 @@ static void val_err(Val *v, int code)
  * -> its content as a string (today's behavior), empty/allocated/
  * error cell -> Error 1 (cellnum's convention - never silently 0).
  * Returns -1 when *v holds a value afterwards, else the error code. */
+int cs_empty_strict = 0;    /* 1 = an empty reference is Error 1 (the
+                             * factorial entry's "?n? until filled"
+                             * semantics); 0 = the manual's empty-is-
+                             * zero arithmetic rule */
+
 static int val_deref(Val *v)
 {
     Cell *cl;
@@ -95,7 +100,18 @@ static int val_deref(Val *v)
         csn_copy(&v->num, &cl->val);
         return -1;
     }
-    return 1;                           /* empty/allocated/error cell */
+    /* an EMPTY (or allocated-empty) referenced cell is ZERO in
+     * arithmetic - the manual's rule, restored 2026-11-14 (the user's
+     * copy traces: a relative copy across empty cells must yield
+     * numbers, not ?n?).  The strict "never silently 0" contract
+     * lives in VAL(), the explicit typed accessor, and in the
+     * factorial entry's prefix (cs_empty_strict: "?n? until filled").
+     * An ERROR cell stays Error 1. */
+    if ((!cl || cl->type == CE_EMPTY || cl->type == CE_ALLOC) &&
+        !cs_empty_strict)
+        return -1;                      /* the zeroed value stands:
+                                         * absent = empty = 0 */
+    return 1;                           /* an error / strict-empty cell */
 }
 
 static Csn gInd[REGR_MAX], gDep[REGR_MAX];
@@ -1936,10 +1952,16 @@ int cs_parse_only(const char *s)
 int cs_eval_fact_source(const char *s, Csn *out)
 {
     Val v;
-    int e = cs_eval_typed(s, &v);
-    if (e) { csn_zero(out); return e; }
+    int e;
+    /* the factorial entry shows ?n? until its source is a real
+     * number: empty references stay errors here (the user's decision
+     * (b), 2026-11-13) */
+    cs_empty_strict = 1;
+    e = cs_eval_typed(s, &v);
+    if (e) { cs_empty_strict = 0; csn_zero(out); return e; }
     {
         int d = val_deref(&v);
+        cs_empty_strict = 0;
         if (d >= 0) { val_free(&v); csn_zero(out); return d; }
     }
     if (v.type != VT_NUM) { val_free(&v); csn_zero(out); return 6; }
