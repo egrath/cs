@@ -2319,7 +2319,8 @@ static void exec_set_stmt(const char *args, int *err)
     Val tgt, v;
     char just, oldjust;
     Cell *cell;
-    int e, oldtype;
+    int e;
+    CellType oldtype;
     Csn oldval;
     char *oldcont;
 
