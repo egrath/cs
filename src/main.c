@@ -1849,6 +1849,16 @@ static void run_tests(void)
             "+3.7854117840000E+1");
         ckc("CONV hectare m2", "CONV(1,\"hectare\",\"m2\")",
             "+1.0000000000000E+5");
+        /* the missing dm2 (the user's addition): 1 dm2 = 0.01 m2 */
+        ckc("CONV dm2 m2", "CONV(1,\"dm2\",\"m2\")",
+            "+1.0000000000000E-1");
+        ckc("CONV m2 dm2", "CONV(1,\"m2\",\"dm2\")",
+            "+1.0000000000000E+3");
+        ckc("CONV dm2 cm2", "CONV(1,\"dm2\",\"cm2\")",
+            "+1.0000000000000E+3");
+        ckc("CONV round dm2",
+            "CONV(CONV(5,\"dm2\",\"m2\"),\"m2\",\"dm2\")",
+            "+5.0000000000000E+1");
         ckc("CONV tonne lb", "CONV(1,\"tonne\",\"lb\")",
             "+2.2046226218487E+4");
         ckc("CONV km/h", "CONV(1,\"km/h\",\"m/s\")",

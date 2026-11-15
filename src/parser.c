@@ -715,6 +715,7 @@ static const struct conv_unit conv_units[] = {
     /* area */
     {"mm2",  UDD_AREA, "1", "1000000"},
     {"cm2",  UDD_AREA, "1", "10000"},
+    {"dm2",  UDD_AREA, "1", "100"},
     {"m2",   UDD_AREA, "1", "1"},
     {"hectare", UDD_AREA, "10000", "1"},
     /* volume (US gallon = 231 in^3); the SI cubic prefixes are the
