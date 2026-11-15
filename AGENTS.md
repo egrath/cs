@@ -1042,6 +1042,37 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **ENGINEERING BATCH B (user list 2026-11-15, branch "eng-batch-b")**:
+  the statistics + percentiles.  STREAMING: CsAgg gained sumsq/mean/
+  m2; SUMSQ/RMS accumulate the running sum of squares (RMS = sqrt of
+  it); VAR/VARP/STDEV/STDEVP run WELFORD'S SINGLE PASS in agg_item
+  (mean += (x-mean)/n; M2 += (x-mean_old)*(x-mean_new) - no buffer,
+  no second walk, numerically stable; an intermediate overflow is the
+  family's Error 0).  EDGE TABLE (the user's): VAR/STDEV n<2 ->
+  Error, VARP/STDEVP n=1 -> 0 (M2 = 0 naturally), n=0 -> Error for
+  the whole family incl. RMS; SUMSQ of nothing -> 0 (the SUM rule).
+  PCT/QUART: PERCENTILE.INC through the MED buffer (med_collect_arg
+  refactored OUT of parse_med_collect so PCT collects ONE argument;
+  then the whole-list design: parse_med_collect collects EVERYTHING
+  and the LAST argument is the percentile - that resolves
+  PCT(1,2,3,4,0.5) = data 1,2,3 at p 0.5); QUART q integer 0..4
+  (csn_integer_part + cmp equality rejects fractional/oversized),
+  p = q/4; rank = p*(n-1), lo = floor (csn_floor), interpolate
+  between the sorted neighbors; empty data / p outside [0,1] /
+  fractional q -> Error 0 (unlike MED's empty -> 0 - flagged: a rank
+  of nothing is undefined); MED_MAX 512 shared.  GOTCHAS: (a) my
+  first one-arg PCT design broke PCT(1,2,3,4,0.5) (Error 3 - the
+  scalars are separate arguments); (b) the VAR-overflow pin was
+  wrong - WELFORD NEVER SQUARES THE VALUES, so VAR(1E500,1E500) is
+  legitimately 0; the overflow needs deviation products beyond the
+  range (VAR(1E501,3E501) -> Error 0).  PINS: 56 (range seeds
+  A1..A5 = 1..5, the Wikipedia {2,4,4,4,5,5,7,9} example, the edge
+  table, PERCENTILE.INC endpoints/midpoints, error cells, overflow).
+  VERIFIED: --test 647 ok; the idle gate EXACT; the pty shows
+  STDEV(wiki) = 2.138089935299395077476427, VARP = 4, PCT = 1.75,
+  RMS(1,2,3) = 2.160246899469286743655322 (a QUART fragment "3.2"
+  was a repaint artifact - the probe shows 3.25 exactly).
+
 - **ENGINEERING BATCH A (user list 2026-11-15, branch "eng-batch-a")**:
   the scalar math + EE functions.  ENGINE: csn_floor/csn_ceil (from
   trunc_int + the sign of the fraction; a fraction beyond the

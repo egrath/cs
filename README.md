@@ -269,6 +269,33 @@ LERP(0,10,0.5)     5         a+(b-a)*t (t outside [0,1] extrapolates)
 UNLERP(0,10,5)   0.5         (x-a)/(b-a) (b=a: error)
 ```
 
+### Engineering batch B: statistics and percentiles
+
+Exact BCD statistics on ranges and value lists (2026-11-15, batch B).
+`VAR`/`VARP` run Welford's single pass (streaming, no buffer, no
+second walk); `PCT`/`QUART` share the median's bounded buffer:
+
+```text
+SUMSQ(1,2,3)      14         the running sum of squares
+RMS(1,2,3)        2.1602...  sqrt(SUMSQ/n)
+VAR(1,2,3)         1         sample variance (divide by n-1)
+VARP(1,2,3)      0.6666...   population variance (divide by n)
+STDEV(2,4,4,4,5,5,7,9)  2.138...   sqrt(VAR)
+STDEVP(2,4,4,4,5,5,7,9)  2    sqrt(VARP)
+PCT(1,2,3,4,0.25)  1.75      PERCENTILE.INC: interpolate at
+                             rank p*(n-1) between the sorted values
+QUART(1,2,3,4,3)   3.25      q integer 0..4 = PCT(q/4)
+```
+
+Edge table: `VAR`/`STDEV` with fewer than 2 values are errors;
+`VARP`/`STDEVP` at n=1 are 0; n=0 is an error everywhere in the
+family, and so is `RMS` of nothing (`SUMSQ` of nothing is 0).  `PCT`
+takes a list of values whose LAST argument is the percentile
+(`PCT(1,2,3,4,0.5)` = data 1,2,3 at p 0.5); p outside [0,1], a
+fractional `QUART` q, or an empty data set is an error.  An error
+cell in a range aborts the family as always; more than 512 values
+(the median's bound) is an error.
+
 ### EVEN() and ODD(): the integer parity
 
 `EVEN(x)` returns 1 if the integer x is even and 0 otherwise;

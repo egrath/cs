@@ -236,7 +236,9 @@ typedef enum {
     FN_EVEN, FN_ODD,
     FN_HYPOT, FN_ATAN2, FN_CEIL, FN_FLOOR,
     FN_DB, FN_DBM, FN_DBW, FN_LIN, FN_STEP,
-    FN_CLAMP, FN_DIST, FN_LERP, FN_UNLERP
+    FN_CLAMP, FN_DIST, FN_LERP, FN_UNLERP,
+    FN_SUMSQ, FN_RMS, FN_VAR, FN_VARP, FN_STDEV, FN_STDEVP,
+    FN_PCT, FN_QUART
 } FnId;
 
 static int fnid(const char *name)
@@ -311,6 +313,14 @@ static int fnid(const char *name)
     if (!strcmp(name, "DIST"))  return FN_DIST;
     if (!strcmp(name, "LERP"))  return FN_LERP;
     if (!strcmp(name, "UNLERP")) return FN_UNLERP;
+    if (!strcmp(name, "SUMSQ")) return FN_SUMSQ;
+    if (!strcmp(name, "RMS"))   return FN_RMS;
+    if (!strcmp(name, "VAR"))   return FN_VAR;
+    if (!strcmp(name, "VARP"))  return FN_VARP;
+    if (!strcmp(name, "STDEV")) return FN_STDEV;
+    if (!strcmp(name, "STDEVP")) return FN_STDEVP;
+    if (!strcmp(name, "PCT"))   return FN_PCT;
+    if (!strcmp(name, "QUART")) return FN_QUART;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -433,6 +443,9 @@ static int eng_atan2(Csn *r, const Csn *y, const Csn *x)
 typedef struct {
     Csn sum;        /* SUM/AVG */
     Csn ext;        /* MAX/MIN: the extreme seen so far */
+    Csn sumsq;      /* SUMSQ/RMS: the running sum of squares */
+    Csn mean;       /* VAR family: the running mean (Welford) */
+    Csn m2;         /* VAR family: the sum of squared deviations */
     int cnt;
     int started;    /* an extreme was stored */
 } CsAgg;
@@ -441,6 +454,7 @@ typedef struct {
 static int agg_item(CsAgg *ag, int f, const Csn *num)
 {
     int err;
+    Csn t, nn, delta, adj, d2;
     switch (f) {
     case FN_SUM:
     case FN_AVG:
@@ -469,6 +483,36 @@ static int agg_item(CsAgg *ag, int f, const Csn *num)
             csn_cmp(num, &cs_fuzzy_one) > 0) return 0;
         if (!ag->started || csn_cmp(num, &ag->ext) > 0)
             csn_copy(&ag->ext, num);
+        break;
+    case FN_SUMSQ:
+    case FN_RMS:
+        /* the running sum of squares (engineering batch B) */
+        err = csn_mul(&t, num, num);
+        if (err) return 0;
+        err = csn_add(&ag->sumsq, &ag->sumsq, &t);
+        if (err) return 0;
+        break;
+    case FN_VAR:
+    case FN_VARP:
+    case FN_STDEV:
+    case FN_STDEVP:
+        /* Welford's single pass: mean += (x-mean)/n;
+         * M2 += (x-mean_old)*(x-mean_new) - numerically stable and
+         * streaming (no buffer, no second walk).  An intermediate
+         * overflow/underflow is the family's Error 0. */
+        csn_from_int(&nn, (long) ag->cnt + 1);
+        err = csn_sub(&delta, num, &ag->mean);
+        if (err) return 0;
+        err = csn_div(&adj, &delta, &nn);
+        if (err) return 0;
+        err = csn_add(&ag->mean, &ag->mean, &adj);
+        if (err) return 0;
+        err = csn_sub(&adj, num, &ag->mean);
+        if (err) return 0;
+        err = csn_mul(&d2, &delta, &adj);
+        if (err) return 0;
+        err = csn_add(&ag->m2, &ag->m2, &d2);
+        if (err) return 0;
         break;
     default:
         break;                      /* CNT counts only */
@@ -530,61 +574,73 @@ static int parse_stream(P *ps, int f, CsAgg *ag)
  * beyond the bound is an ERROR (Error 0) - never a silently truncated
  * median (user spec 2026-11-14). */
 #define MED_MAX 512
+/* collect ONE argument (a range's numerics, or a scalar) into the
+ * bounded buffer: -1 = ok, else the error code.  The buffer grows to
+ * MED_MAX; beyond the bound is Error 0 (a silently truncated result
+ * would be a lie).  Shared by MED, PCT and QUART. */
+static int med_collect_arg(P *ps, Csn **bufp, int *capp, int *cnt)
+{
+    int n = *cnt;
+    Val v;
+    int e;
+    memset(&v, 0, sizeof(v));
+    csn_zero(&v.num);
+    v = parse_condexpr(ps);
+    if (!v.good) { e = v.err; val_free(&v); return e ? e : 0; }
+    if (v.type == VT_RANGE) {
+        int c, r;
+        for (r = v.rng.start.row; r <= v.rng.end.row; r++)
+            for (c = v.rng.start.col; c <= v.rng.end.col; c++) {
+                Cell *cl = cs_getcell(c, r);
+                if (!cl) continue;
+                if (cl->type == CE_NUM && !cl->iserr && !cl->strres) {
+                    Csn *ne;
+                    if (n == *capp) {
+                        *capp *= 2;
+                        if (*capp > MED_MAX) *capp = MED_MAX;
+                        if (n >= *capp) { val_free(&v); return 0; }
+                        ne = (Csn *) realloc(*bufp,
+                                (size_t) *capp * sizeof(Csn));
+                        if (!ne) { val_free(&v); return 0; }
+                        *bufp = ne;
+                    }
+                    csn_copy(&(*bufp)[n++], &cl->val);
+                } else if (cl->iserr && !cl->strres) {
+                    val_free(&v); return 0;
+                }
+            }
+    } else {
+        e = val_deref(&v);
+        if (e >= 0) { val_free(&v); return e; }
+        if (v.type == VT_STR) { val_free(&v); return 6; }
+        {
+            Csn *ne;
+            if (n == *capp) {
+                *capp *= 2;
+                if (*capp > MED_MAX) *capp = MED_MAX;
+                if (n >= *capp) { val_free(&v); return 0; }
+                ne = (Csn *) realloc(*bufp, (size_t) *capp * sizeof(Csn));
+                if (!ne) { val_free(&v); return 0; }
+                *bufp = ne;
+            }
+            csn_copy(&(*bufp)[n++], &v.num);
+        }
+    }
+    val_free(&v);
+    *cnt = n;
+    return -1;
+}
+
+/* the argument LIST (MED): every argument collected in order */
 static int parse_med_collect(P *ps, Csn **bufp, int *capp, int *cnt)
 {
-    int n = 0;
     for (;;) {
-        Val v;
-        int e;
-        memset(&v, 0, sizeof(v));
-        csn_zero(&v.num);
-        v = parse_condexpr(ps);
-        if (!v.good) { e = v.err; val_free(&v); return e ? e : 0; }
-        if (v.type == VT_RANGE) {
-            int c, r;
-            for (r = v.rng.start.row; r <= v.rng.end.row; r++)
-                for (c = v.rng.start.col; c <= v.rng.end.col; c++) {
-                    Cell *cl = cs_getcell(c, r);
-                    if (!cl) continue;
-                    if (cl->type == CE_NUM && !cl->iserr && !cl->strres) {
-                        Csn *ne;
-                        if (n == *capp) {
-                            *capp *= 2;
-                            if (*capp > MED_MAX) *capp = MED_MAX;
-                            if (n >= *capp) { val_free(&v); return 0; }
-                            ne = (Csn *) realloc(*bufp,
-                                    (size_t) *capp * sizeof(Csn));
-                            if (!ne) { val_free(&v); return 0; }
-                            *bufp = ne;
-                        }
-                        csn_copy(&(*bufp)[n++], &cl->val);
-                    } else if (cl->iserr && !cl->strres) {
-                        val_free(&v); return 0;
-                    }
-                }
-        } else {
-            e = val_deref(&v);
-            if (e >= 0) { val_free(&v); return e; }
-            if (v.type == VT_STR) { val_free(&v); return 6; }
-            {
-                Csn *ne;
-                if (n == *capp) {
-                    *capp *= 2;
-                    if (*capp > MED_MAX) *capp = MED_MAX;
-                    if (n >= *capp) { val_free(&v); return 0; }
-                    ne = (Csn *) realloc(*bufp, (size_t) *capp * sizeof(Csn));
-                    if (!ne) { val_free(&v); return 0; }
-                    *bufp = ne;
-                }
-                csn_copy(&(*bufp)[n++], &v.num);
-            }
-        }
-        val_free(&v);
+        int e = med_collect_arg(ps, bufp, capp, cnt);
+        if (e >= 0) return e;
         skip_ws(&ps->p);
         if (*ps->p == ',') { ps->p++; continue; }
         break;
     }
-    *cnt = n;
     return -1;
 }
 
@@ -1475,11 +1531,93 @@ static Val parse_primary(P *ps)
                 v.good = 1;
                 return v;
             }
+            /* PCT/QUART: the PERCENTILE.INC family (engineering
+             * batch B, 2026-11-15).  One range/scalar argument
+             * collected into the bounded buffer, then the p / q
+             * argument.  Empty or p out of [0,1] is an error (unlike
+             * MED's empty -> 0: a rank of nothing is undefined). */
+            if (f == FN_PCT || f == FN_QUART) {
+                Csn *mbuf = NULL;
+                int mcap = 16, mcnt = 0, e2, err = 0;
+                Csn p, zero, one, lo, fr, t, ncs;
+                long loi, i, j;
+                mbuf = (Csn *) malloc((size_t) mcap * sizeof(Csn));
+                if (!mbuf) { val_err(&v, 0); return v; }
+                /* the WHOLE argument list is collected (ranges and
+                 * scalars mix); the LAST argument is the percentile -
+                 * that resolves PCT(1,2,3,4,0.5): data 1,2,3, p 0.5 */
+                e2 = parse_med_collect(ps, &mbuf, &mcap, &mcnt);
+                if (e2 >= 0) { free(mbuf); val_err(&v, e2); return v; }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') {
+                    free(mbuf); val_err(&v, 3); return v;
+                }
+                ps->p++;
+                val_free(&v);
+                csn_zero(&v.num);
+                if (mcnt == 0) {
+                    free(mbuf); val_err(&v, 3); return v;
+                }
+                p = mbuf[--mcnt];
+                /* QUART's q: an exact integer 0..4 -> p = q/4 */
+                if (f == FN_QUART) {
+                    Csn qi;
+                    if (!csn_integer_part(&p, &qi) ||
+                        csn_cmp(&qi, &p) != 0) {
+                        free(mbuf);
+                        val_err(&v, 0); return v;
+                    }
+                    csn_from_int(&t, 4L);
+                    err = csn_div(&p, &qi, &t);
+                }
+                csn_zero(&zero);
+                csn_from_int(&one, 1L);
+                if (!err && (csn_cmp(&p, &zero) < 0 ||
+                             csn_cmp(&p, &one) > 0))
+                    err = 1;
+                /* sort ascending (the MED insertion sort) */
+                for (i = 1; !err && i < mcnt; i++) {
+                    t = mbuf[i];
+                    for (j = i - 1;
+                         j >= 0 && csn_cmp(&mbuf[j], &t) > 0; j--)
+                        mbuf[j + 1] = mbuf[j];
+                    mbuf[j + 1] = t;
+                }
+                if (!err && mcnt == 0)
+                    err = 1;            /* no numbers to rank */
+                if (!err) {
+                    /* rank = p*(n-1); lo = floor(rank);
+                     * result = v[lo] + fr*(v[lo+1]-v[lo]) */
+                    csn_from_int(&ncs, (long) mcnt - 1);
+                    err = csn_mul(&t, &p, &ncs);
+                    if (!err) err = csn_floor(&lo, &t);
+                    if (!err) err = csn_sub(&fr, &t, &lo);
+                    if (!err) {
+                        loi = csn_to_long_val(&lo);
+                        if (loi >= mcnt - 1 || csn_is_zero(&fr))
+                            csn_copy(&v.num, &mbuf[loi]);
+                        else {
+                            err = csn_sub(&t, &mbuf[loi + 1],
+                                          &mbuf[loi]);
+                            if (!err) err = csn_mul(&t, &t, &fr);
+                            if (!err)
+                                err = csn_add(&v.num, &mbuf[loi], &t);
+                        }
+                    }
+                }
+                free(mbuf);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
             /* SUM/CNT/AVG/MAX/MIN stream; MED uses a bounded buffer
              * (no value array for the streaming four - 2026-11-14) */
             if (f == FN_SUM || f == FN_CNT || f == FN_AVG ||
                 f == FN_MAX || f == FN_MIN || f == FN_MED ||
-                f == FN_FAND || f == FN_FOR) {
+                f == FN_FAND || f == FN_FOR ||
+                f == FN_SUMSQ || f == FN_RMS ||
+                f == FN_VAR || f == FN_VARP ||
+                f == FN_STDEV || f == FN_STDEVP) {
                 CsAgg ag;
                 Csn *mbuf = NULL;
                 int mcap = 16, mcnt = 0, e2;
@@ -1537,12 +1675,46 @@ static Val parse_primary(P *ps)
                     free(mbuf);
                     return v;
                 }
+                /* the variance family and RMS have NO empty form
+                 * (the user's edge table: n = 0 -> Error 0; VARP/
+                 * STDEVP at n = 1 are 0 below) - unlike SUM/AVG's 0 */
+                if ((f == FN_RMS || f == FN_VAR || f == FN_VARP ||
+                     f == FN_STDEV || f == FN_STDEVP) && ag.cnt == 0) {
+                    val_err(&v, 0);
+                    return v;
+                }
                 if (ag.cnt == 0) {
                     csn_zero(&v.num);
                     return v;
                 }
                 if (f == FN_FAND || f == FN_FOR) {
                     csn_copy(&v.num, &ag.ext);
+                } else if (f == FN_SUMSQ) {
+                    csn_copy(&v.num, &ag.sumsq);
+                } else if (f == FN_RMS) {
+                    Csn ncs;
+                    int derr;
+                    csn_from_int(&ncs, ag.cnt);
+                    derr = csn_div(&v.num, &ag.sumsq, &ncs);
+                    if (!derr) derr = csn_sqrt(&v.num, &v.num);
+                    if (derr) { val_err(&v, 0); return v; }
+                } else if (f == FN_VAR || f == FN_STDEV) {
+                    Csn ncs;
+                    int derr;
+                    if (ag.cnt < 2) { val_err(&v, 0); return v; }
+                    csn_from_int(&ncs, ag.cnt - 1);
+                    derr = csn_div(&v.num, &ag.m2, &ncs);
+                    if (!derr && f == FN_STDEV)
+                        derr = csn_sqrt(&v.num, &v.num);
+                    if (derr) { val_err(&v, 0); return v; }
+                } else if (f == FN_VARP || f == FN_STDEVP) {
+                    Csn ncs;
+                    int derr;
+                    csn_from_int(&ncs, ag.cnt);
+                    derr = csn_div(&v.num, &ag.m2, &ncs);
+                    if (!derr && f == FN_STDEVP)
+                        derr = csn_sqrt(&v.num, &v.num);
+                    if (derr) { val_err(&v, 0); return v; }
                 } else if (f == FN_SUM) {
                     csn_copy(&v.num, &ag.sum);
                 } else if (f == FN_CNT) {

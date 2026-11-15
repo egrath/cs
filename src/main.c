@@ -1703,6 +1703,83 @@ static void run_tests(void)
         ckc("MAX streams 513", "MAX(A1>C255)", "+1.0000000000000E+1");
         ckc("MIN streams 513", "MIN(A1>C255)", "+1.0000000000000E+1");
         ckc("CNT streams 513", "CNT(A1>C255)", "+5.1300000000000E+3");
+        /* the statistics over a SEEDED range (engineering batch B):
+         * A1..A5 = 1..5 */
+        cs_clear_all();
+        setv(0, 0, "1");
+        setv(0, 1, "2");
+        setv(0, 2, "3");
+        setv(0, 3, "4");
+        setv(0, 4, "5");
+        ckc("SUMSQ range", "SUMSQ(A1>A5)", "+5.5000000000000E+2");
+        ckc("RMS range", "RMS(A1>A5)", "+3.3166247903553E+1");
+        ckc("VAR range", "VAR(A1>A5)", "+2.5000000000000E+1");
+        ckc("VARP range", "VARP(A1>A5)", "+2.0000000000000E+1");
+        ckc("STDEV range", "STDEV(A1>A5)", "+1.5811388300841E+1");
+        ckc("STDEVP range", "STDEVP(A1>A5)", "+1.4142135623730E+1");
+        /* PERCENTILE.INC on the range */
+        ckc("PCT 0", "PCT(A1>A5,0)", "+1.0000000000000E+1");
+        ckc("PCT 0.1", "PCT(A1>A5,0.1)", "+1.4000000000000E+1");
+        ckc("PCT 0.25", "PCT(A1>A5,0.25)", "+2.0000000000000E+1");
+        ckc("PCT 0.5", "PCT(A1>A5,0.5)", "+3.0000000000000E+1");
+        ckc("PCT 0.75", "PCT(A1>A5,0.75)", "+4.0000000000000E+1");
+        ckc("PCT 1", "PCT(A1>A5,1)", "+5.0000000000000E+1");
+        cke("PCT 1.2", "PCT(A1>A5,1.2)", -1);
+        cke("PCT -0.1", "PCT(A1>A5,-0.1)", -1);
+        cke("PCT text arg", "PCT(A1>A5,\"x\")", 6);
+        cke("PCT no p", "PCT(A1>A5)", -1);      /* its last value 5 IS p */
+        cke("QUART no q", "QUART(A1>A5)", -1);
+        /* QUART: q integer 0..4 = PCT(q/4) */
+        ckc("QUART 0", "QUART(A1>A5,0)", "+1.0000000000000E+1");
+        ckc("QUART 1", "QUART(A1>A5,1)", "+2.0000000000000E+1");
+        ckc("QUART 2", "QUART(A1>A5,2)", "+3.0000000000000E+1");
+        ckc("QUART 3", "QUART(A1>A5,3)", "+4.0000000000000E+1");
+        ckc("QUART 4", "QUART(A1>A5,4)", "+5.0000000000000E+1");
+        cke("QUART fractional", "QUART(A1>A5,2.5)", -1);
+        cke("QUART 5", "QUART(A1>A5,5)", -1);
+        cke("QUART -1", "QUART(A1>A5,-1)", -1);
+        /* the constant range: variance 0 */
+        ckc("VARP constant", "VARP(A1>A1)", "0");
+        /* direct-argument pins (no cells): the classic example set */
+        ckc("SUMSQ 1,2,3", "SUMSQ(1,2,3)", "+1.4000000000000E+2");
+        ckc("RMS 1,2,3", "RMS(1,2,3)", "+2.1602468994692E+1");
+        ckc("VAR 1,2,3", "VAR(1,2,3)", "+1.0000000000000E+1");
+        ckc("VAR 1,2,3,4", "VAR(1,2,3,4)", "+1.6666666666666E+1");
+        ckc("VARP 1,2,3", "VARP(1,2,3)", "+6.6666666666666E+0");
+        ckc("STDEV 1,2,3", "STDEV(1,2,3)", "+1.0000000000000E+1");
+        ckc("STDEV wiki", "STDEV(2,4,4,4,5,5,7,9)",
+            "+2.1380899352993E+1");
+        ckc("STDEVP wiki", "STDEVP(2,4,4,4,5,5,7,9)",
+            "+2.0000000000000E+1");
+        /* the user's edge table */
+        cke("VAR n1", "VAR(5)", -1);
+        cke("STDEV n1", "STDEV(5)", -1);
+        ckc("VARP n1", "VARP(5)", "0");
+        ckc("STDEVP n1", "STDEVP(5)", "0");
+        cke("VAR n0", "VAR(B7>B9)", -1);
+        cke("VARP n0", "VARP(B7>B9)", -1);
+        cke("STDEV n0", "STDEV(B7>B9)", -1);
+        cke("STDEVP n0", "STDEVP(B7>B9)", -1);
+        cke("RMS n0", "RMS(B7>B9)", -1);
+        ckc("SUMSQ n0", "SUMSQ(B7>B9)", "0");
+        /* PERCENTILE.INC on direct values */
+        ckc("PCT 1234 0.5", "PCT(1,2,3,4,0.5)", "+2.5000000000000E+1");
+        ckc("PCT 1234 0.25", "PCT(1,2,3,4,0.25)",
+            "+1.7500000000000E+1");
+        ckc("PCT 1234 0.75", "PCT(1,2,3,4,0.75)",
+            "+3.2500000000000E+1");
+        ckc("PCT single", "PCT(5,0.3)", "+5.0000000000000E+1");
+        cke("PCT empty", "PCT(B7>B9,0.5)", -1);
+        /* an error cell in the range aborts (the family behavior) */
+        cs_commit_entry(0, 9, "+1/0");          /* A10 = ?n? */
+        cke("VAR error cell", "VAR(A1>A10)", -1);
+        cke("PCT error cell", "PCT(A1>A10,0.5)", -1);
+        /* overflow: the sum of squares leaves the exponent range */
+        cke("RMS huge", "RMS(1E500,1E500)", -1);
+        cke("SUMSQ huge", "SUMSQ(1E500,1E500)", -1);
+        cke("VAR huge dev", "VAR(1E501,3E501)", -1);
+        cke("STDEV huge dev", "STDEV(1E501,3E501)", -1);
+        ckc("VAR huge equal", "VAR(1E500,1E500)", "0");
         cs_clear_all();
         /* the /r /l /c alignment on a FORMULA's string result
          * (user request 2026-11-15) */

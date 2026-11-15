@@ -48,6 +48,25 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-b"): engineering batch B, statistics (2026-11-15):
+- USER: merge A to master (done: 03b5a6a ff, branch deleted) and
+  implement batch B on eng-batch-b.  SCOPE: SUMSQ/RMS/VAR/VARP/
+  STDEV/STDEVP streaming + PCT/QUART percentiles.
+- DONE: CsAgg + sumsq/mean/m2; agg_item modes (SUMSQ accumulate,
+  Welford for the VAR family); the edge table exactly as the user
+  specified; PCT/QUART via the MED buffer with PERCENTILE.INC
+  interpolation, the LAST argument of the list is the percentile;
+  QUART q integer 0..4 = PCT(q/4); empty/p-bounds/fractional-q ->
+  Error 0; MED_MAX 512 shared.  med_collect_arg refactored out of
+  parse_med_collect (PCT's collection + the list design needed both
+  shapes).
+- GOTCHAS: PCT(1,2,3,4,0.5) broke the first one-arg design (Error 3)
+  -> whole-list + pop-last; the VAR-huge pin was wrong (Welford never
+  squares - VAR(1E500,1E500) = 0; use 1E501/3E501 for the overflow);
+  a pty "3.2" QUART answer was a repaint fragment (probe: 3.25).
+- VERIFIED: --test 647 ok; the idle gate EXACT; the pty answers
+  STDEV(wiki)/VARP/PCT/RMS all correct at 24 decimals.
+
 ## BATCH (branch "eng-batch-a"): engineering batch A (2026-11-15):
 - USER handed over the engineering-functions list (6 groups); batch
   A = the scalar math + EE functions.  The plan discussion settled:
