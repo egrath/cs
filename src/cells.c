@@ -67,21 +67,11 @@ static Cell *cs_ref_ptr(unsigned short ref)
     return &cs_chunks[r / CS_CHUNK][r % CS_CHUNK];
 }
 
-/* the ref of a pool slot, found by scanning the chunk table (used
- * only at take time) */
-static unsigned short cs_ptr_ref(const Cell *c)
-{
-    int k;
-    for (k = 0; k < cs_chunks_used; k++)
-        if (c >= cs_chunks[k] && c < cs_chunks[k] + CS_CHUNK)
-            return (unsigned short) (1 + (c - cs_chunks[k]) +
-                     k * CS_CHUNK);
-    return 0;
-}
-
 /* take a slot from the free list (or a fresh chunk); the caller only
  * receives it after the index insert succeeds, otherwise the slot
- * returns to the list */
+ * returns to the list.  Every slot carries its own ref field (set at
+ * thread time) - the chunk ownership is BY FIELD, never by pointer
+ * arithmetic across separately allocated chunks (ISO C undefined). */
 static Cell *cs_pool_take(int col, int rw, unsigned short *refout)
 {
     Cell *c;
@@ -89,27 +79,36 @@ static Cell *cs_pool_take(int col, int rw, unsigned short *refout)
     if (entriesUsed >= CS_BUDGET) return NULL;
     if (!cs_freelist) {
         Cell *ch;
-        if (cs_chunks_used >= CS_NCHUNK) return NULL;
+        int k = cs_chunks_used;
+        if (k >= CS_NCHUNK) return NULL;
         ch = (Cell *) malloc(sizeof(Cell) * (size_t) CS_CHUNK);
         if (!ch) return NULL;
-        cs_chunks[cs_chunks_used++] = ch;
+        cs_chunks[k] = ch;
+        cs_chunks_used++;
 
         for (i = CS_CHUNK - 1; i >= 0; i--) {
+            ch[i].ref = (unsigned short) (1 + k * CS_CHUNK + i);
             ch[i].cont = (char *) cs_freelist;
             cs_freelist = &ch[i];
         }
     }
     c = cs_freelist;
     cs_freelist = (Cell *) c->cont;
-    /* the dense matrix's never-written state */
-    memset(c, 0, sizeof(Cell));
-    c->type = CE_EMPTY;
-    c->just = 'L';
-    c->prec = -1;
-    c->col = (unsigned char) col;
-    c->row = (unsigned char) rw;
-    if (refout)
-        *refout = cs_ptr_ref(c);
+    {
+        /* the slot's own ref is fixed for its lifetime - saved
+         * before the reset and restored after */
+        unsigned short own = c->ref;
+        /* the dense matrix's never-written state */
+        memset(c, 0, sizeof(Cell));
+        c->type = CE_EMPTY;
+        c->just = 'L';
+        c->prec = -1;
+        c->col = (unsigned char) col;
+        c->row = (unsigned char) rw;
+        c->ref = own;
+        if (refout)
+            *refout = own;
+    }
     return c;
 }
 
@@ -466,32 +465,52 @@ void cs_range_norm(int *c1, int *r1, int *c2, int *r2)
     if (*r1 > *r2) { t = *r1; *r1 = *r2; *r2 = t; }
 }
 
-void cs_set_text(Cell *c, const char *cont, char just)
+/* the SET discipline (external review item 6, 2026-11-15): allocate
+ * EVERYTHING first, check, then free the old and commit - a failed
+ * allocation leaves the original cell untouched and the caller
+ * reports MEMORY IS TOO LOW.  Returns 1 on success, 0 on failure. */
+int cs_set_text(Cell *c, const char *cont, char just)
 {
+    char *nc = cs_strdup(cont);
+    char *nr = NULL;
+    if (!nc) return 0;
+    if (just == 'W') {
+        nr = cs_strdup(cont);
+        if (!nr) { free(nc); return 0; }
+    }
     cs_free_cell(c);
     c->type = CE_TEXT;
     c->just = just;
-    if (just == 'W') c->rep = cs_strdup(cont);
-    c->cont = cs_strdup(cont);
+    c->cont = nc;
+    c->rep = nr;
     csn_zero(&c->val);
     c->iserr = 0;
     c->strres = NULL;
     entriesUsed++;
+    return 1;
 }
 
-void cs_set_num(Cell *c, const char *cont, const Csn *val, int iserr, const char *strres)
+int cs_set_num(Cell *c, const char *cont, const Csn *val, int iserr, const char *strres)
 {
+    char *nc = cs_strdup(cont);
+    char *ns = NULL;
+    if (!nc) return 0;
+    if (strres) {
+        ns = cs_strdup(strres);
+        if (!ns) { free(nc); return 0; }
+    }
     cs_free_cell(c);
     c->type = CE_NUM;
     /* a STRING result aligns left by default (the derived type's
      * display honors the user's /r /l /c afterwards); a numeric
      * result is always right */
     c->just = strres ? 'L' : 'R';
-    c->cont = cs_strdup(cont);
+    c->cont = nc;
     csn_copy(&c->val, val);
     c->iserr = iserr;
-    if (strres) c->strres = cs_strdup(strres);
+    c->strres = ns;
     entriesUsed++;
+    return 1;
 }
 
 void cs_free_cell(Cell *c)

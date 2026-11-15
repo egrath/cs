@@ -41,16 +41,15 @@ static Cell **clone_cells(int c1, int r1, int c2, int r2, int *nret)
 {
     int sh = c2 - c1 + 1, sv = r2 - r1 + 1, i, j;
     Cell **rows;
+    /* the strdup progress: fail_i/fail_j = the first NOT-done position
+     * (review item 6: a failure unwinds exactly what was allocated) */
+    int fail_i = -1, fail_j = -1;
     *nret = 0;
     rows = (Cell **) malloc((size_t) sv * sizeof(Cell *));
     if (!rows) return NULL;
     for (i = 0; i < sv; i++) {
         rows[i] = (Cell *) malloc((size_t) sh * sizeof(Cell));
-        if (!rows[i]) {
-            for (j = 0; j < i; j++) free(rows[j]);
-            free(rows);
-            return NULL;
-        }
+        if (!rows[i]) { fail_i = i; fail_j = 0; goto fail; }
         for (j = 0; j < sh; j++) {
             Cell *cl = cs_getcell(c1 + j, r1 + i);
             Cell *t = &rows[i][j];
@@ -59,13 +58,42 @@ static Cell **clone_cells(int c1, int r1, int c2, int r2, int *nret)
             t->col = (unsigned char) (c1 + j);   /* the slot's coordinate
                                                   * is the SNAPSHOT's */
             t->row = (unsigned char) (r1 + i);
-            if (t->cont)   t->cont   = cs_strdup(t->cont);
-            if (t->rep)    t->rep    = cs_strdup(t->rep);
-            if (t->strres) t->strres = cs_strdup(t->strres);
+            t->cont = NULL; t->rep = NULL; t->strres = NULL;
+            if (cl && cl->cont) {
+                t->cont = cs_strdup(cl->cont);
+                if (!t->cont) { fail_i = i; fail_j = j; goto fail; }
+            }
+            if (cl && cl->rep) {
+                t->rep = cs_strdup(cl->rep);
+                if (!t->rep) { fail_i = i; fail_j = j; goto fail; }
+            }
+            if (cl && cl->strres) {
+                t->strres = cs_strdup(cl->strres);
+                if (!t->strres) { fail_i = i; fail_j = j; goto fail; }
+            }
         }
     }
     *nret = sh * sv;
     return rows;
+fail:
+    /* rows before fail_i are complete; row fail_i is done through
+     * fail_j - 1 (fail_j = 0 with an aborted row malloc means the row
+     * array itself failed; rows[i] may be NULL) */
+    for (i = 0; i < fail_i; i++) {
+        if (!rows[i]) continue;
+        for (j = 0; j < sh; j++)
+            { free(rows[i][j].cont); free(rows[i][j].rep);
+              free(rows[i][j].strres); }
+        free(rows[i]);
+    }
+    if (fail_i >= 0 && fail_i < sv && rows[fail_i]) {
+        for (j = 0; j < fail_j; j++)
+            { free(rows[fail_i][j].cont); free(rows[fail_i][j].rep);
+              free(rows[fail_i][j].strres); }
+        free(rows[fail_i]);
+    }
+    free(rows);
+    return NULL;
 }
 
 static void free_clones(Cell **t, int n, int sh)
@@ -104,11 +132,21 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
         dst->prec = src->prec;
         dst->strres = str;
     } else if (src->type == CE_TEXT) {
+        /* the allocate-first discipline (review item 6): a failed
+         * strdup leaves the destination UNCHANGED */
+        char *nc = cs_strdup(src->cont ? src->cont : "");
+        char *nr = (src->just == 'W' && src->rep) ? cs_strdup(src->rep)
+                                                  : NULL;
+        if (!nc || ((src->just == 'W' && src->rep) && !nr)) {
+            free(nc);
+            free(nr);
+            return;
+        }
         cs_free_cell(dst);
         dst->type = CE_TEXT;
         dst->just = src->just;
-        dst->cont = cs_strdup(src->cont ? src->cont : "");
-        dst->rep = (src->just == 'W' && src->rep) ? cs_strdup(src->rep) : NULL;
+        dst->cont = nc;
+        dst->rep = nr;
         csn_zero(&dst->val); dst->iserr = 0;
     } else {
         cs_free_cell(dst);
@@ -922,6 +960,14 @@ static void swap_two_cells(int c, int ra, int rb)
         t.cont = a->cont ? cs_strdup(a->cont) : NULL;
         t.rep = a->rep ? cs_strdup(a->rep) : NULL;
         t.strres = a->strres ? cs_strdup(a->strres) : NULL;
+        /* the allocate-first discipline (review item 6): a failed
+         * strdup aborts the swap BEFORE anything moves - the sheet
+         * is untouched */
+        if ((a->cont && !t.cont) || (a->rep && !t.rep) ||
+            (a->strres && !t.strres)) {
+            free(t.cont); free(t.rep); free(t.strres);
+            return;
+        }
     } else
         memset(&t, 0, sizeof(t));
     cs_relink_cell(c, rb, c, ra);   /* rb's slot moves into ra */

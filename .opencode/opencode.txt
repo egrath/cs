@@ -48,6 +48,36 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "loadfix"): the external-review fixes, items 5-7 (2026-11-15):
+- USER: an external AI review of the code (items 5-7 pasted; 1-4 never
+  shown - ask if they exist).  (5) cs_ptr_ref UB; (6) unchecked
+  allocations after cs_free_cell; (7) loader validation (rd16 -1,
+  partial reads, budget, partial load).
+- (5) DONE FIRST: Cell.ref (u16, own pool ref) set at chunk-thread
+  time; cs_pool_take saves/restores it around the memset; cs_ptr_ref
+  deleted.  NOTE the trap I nearly shipped: the memset in pool_take
+  CLOBBERS the threaded ref - the own-ref must be saved before the
+  memset and restored after.
+- (6) DONE: cs_set_text/cs_set_num -> int (allocate first, check,
+  free old after, unchanged on failure); commit_text/commit_num
+  wrappers in eval.c report MEMORY IS TOO LOW; copy_one text branch,
+  the !...! branch (raw strdups -> commit_num zero), swap_two_cells
+  (abort before relink), clone_cells (progress-tracked unwind,
+  fail_i/fail_j, no original-pointer aliasing).
+- (7) DONE: cs_load two-pass (rd_check_record pre-scan: all reads
+  non-EOF, lengths >= 0, ty in {2,3}; count <= CS_BUDGET -> else READ
+  ERROR; pass 2 rewind + clear + checked mallocs + complete freads).
+  TRAP: clear must stay BEFORE the colw reads in pass 2 (clear_all
+  resets widths; the "save formula + cols" pin caught it).
+- BONUS: cs_file_password probed CSD1 vs saves writing CSD4 (the
+  verify-password-to-remove never fired) - fixed; the load dialog
+  paints "not found" only when the file is genuinely absent (READ
+  ERROR no longer overpainted).  Both pty-verified (t_pty1.csd saved
+  with password "secret": verify prompt + "not ok" + ESC cancel).
+- PINS: over-budget / unknown-type / truncated refused, A1+B1+entry
+  count intact after refusals.  VERIFIED: --test 529 ok; the idle
+  gate EXACT.
+
 ## BATCH (branch "parity"): EVEN()/ODD() (2026-11-15):
 - USER: EVEN()/ODD() — 1 if the integer argument is even/odd.
   IMPLEMENTED: one dispatch block via parse_numarg ->

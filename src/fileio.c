@@ -184,6 +184,43 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
     return 1;
 }
 
+/* the pre-scan's record walk (external review item 7, 2026-11-15):
+ * validates ONE cell record without touching any sheet state -
+ * every read must succeed, every length must be non-negative, and
+ * the type must be one the loader can consume in sync.  Returns
+ * 1 ok, 0 malformed/truncated. */
+static int rd_check_record(FILE *f)
+{
+    int cc, rr, ty, len;
+    Csn v;
+    cc = fgetc(f);
+    rr = rd16(f);
+    ty = fgetc(f);
+    if (cc == EOF || rr < 0 || ty == EOF) return 0;
+    if (fgetc(f) == EOF) return 0;              /* just */
+    if (fgetc(f) == EOF) return 0;              /* prec/notation/factf */
+    if (fgetc(f) == EOF) return 0;              /* formf */
+    /* an unknown type would desync the stream (the loader would not
+     * know which payload fields follow) */
+    if (ty != 2 && ty != 3) return 0;
+    len = rd16(f);                              /* cont */
+    if (len < 0) return 0;
+    for (; len > 0; len--)
+        if (fgetc(f) == EOF) return 0;
+    if (ty == 3) {
+        if (!rd_num(f, &v)) return 0;
+        len = rd16(f);                          /* strres */
+        if (len < 0) return 0;
+        for (; len > 0; len--)
+            if (fgetc(f) == EOF) return 0;
+    }
+    len = rd16(f);                              /* rep (both types) */
+    if (len < 0) return 0;
+    for (; len > 0; len--)
+        if (fgetc(f) == EOF) return 0;
+    return 1;
+}
+
 int cs_load(const char *name, int c0, int r0, int merge)
 {
     char path[128];
@@ -205,6 +242,43 @@ int cs_load(const char *name, int c0, int r0, int merge)
         if (oc == EOF || or1 < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
         bascc = oc; basrr = or1;
     }
+    /* ---- pass 1: validate the WHOLE file before the sheet is
+     * touched (external review item 7, 2026-11-15) - a malformed,
+     * truncated or over-budget file is refused with the user's
+     * current sheet intact.  Two passes over a file cost nothing on
+     * an XT-class disk. ---- */
+    for (c = 0; c < CS_MAXCOL; c++) {
+        int a = fgetc(f), b = fgetc(f);
+        if (a == EOF || b == EOF) { fclose(f); cs_msg("READ ERROR"); return 0; }
+    }
+    pwlen = fgetc(f);
+    if (pwlen == EOF) { fclose(f); cs_msg("READ ERROR"); return 0; }
+    for (i = 0; i < pwlen; i++)
+        if (fgetc(f) == EOF) { fclose(f); cs_msg("READ ERROR"); return 0; }
+    count = rd16(f);
+    /* the count is 16-bit but the sheet holds at most CS_BUDGET
+     * entries - an over-budget file is refused here (flagged: the
+     * manual's READ ERROR wording covers every malformed-file case) */
+    if (count < 0 || count > CS_BUDGET) {
+        fclose(f);
+        cs_msg("READ ERROR");
+        return 0;
+    }
+    for (i = 0; i < count; i++) {
+        if (!rd_check_record(f)) {
+            fclose(f);
+            cs_msg("READ ERROR");
+            return 0;
+        }
+    }
+    /* ---- pass 2: the validated load (clear happens only now) ---- */
+    rewind(f);
+    if (fread(magic, 1, 4, f) != 4) { fclose(f); cs_msg("READ ERROR"); return 0; }
+    {
+        int oc = fgetc(f), or1 = rd16(f);
+        if (oc == EOF || or1 < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
+        bascc = oc; basrr = or1;
+    }
     if (!merge) {
         cs_clear_all();
         fname[0] = '\0';
@@ -217,6 +291,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
         colw[c] = a; colp[c] = b;
     }
     pwlen = fgetc(f);
+    if (pwlen == EOF) { fclose(f); cs_msg("READ ERROR"); return 0; }
     for (i = 0; i < pwlen; i++) fgetc(f);   /* password ignored on load */
     count = rd16(f);
     if (count < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
@@ -233,7 +308,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
         fct = (nta >> 7) & 1;           /* bit 7: factorial entry */
         nta = (nta >> 5) & 3;           /* bits 5-6: notation */
         frm = fgetc(f);
-        if (cc == EOF || rr < 0 || cc >= CS_MAXCOL || rr >= CS_MAXROW) break;
+        if (cc == EOF || rr < 0) break; /* pass 1 made this impossible */
         /* Load position (manual 14-9: "If the upper left corner is to
          * be positioned at another location, enter the coordinates of
          * that location"): the stored range's upper-left corner goes at
@@ -258,7 +333,11 @@ int cs_load(const char *name, int c0, int r0, int merge)
         if (ty == 2) {
             len = rd16(f);
             cl->cont = (char *) malloc((size_t) len + 1);
-            if (fread(cl->cont, 1, (size_t) len, f) != (size_t) len) { len = 0; }
+            if (!cl->cont) { fclose(f); cs_msg("MEMORY IS TOO LOW"); return 0; }
+            if (fread(cl->cont, 1, (size_t) len, f) != (size_t) len) {
+                free(cl->cont); cl->cont = NULL;
+                fclose(f); cs_msg("READ ERROR"); return 0;
+            }
             cl->cont[len] = '\0';
             cl->type = CE_TEXT;
             cl->just = just;
@@ -274,14 +353,22 @@ int cs_load(const char *name, int c0, int r0, int merge)
             len = rd16(f);
             if (len > 0) {
                 cl->rep = (char *) malloc((size_t) len + 1);
-                if (fread(cl->rep, 1, (size_t) len, f) != (size_t) len) len = 0;
+                if (!cl->rep) { fclose(f); cs_msg("MEMORY IS TOO LOW"); return 0; }
+                if (fread(cl->rep, 1, (size_t) len, f) != (size_t) len) {
+                    free(cl->rep); cl->rep = NULL;
+                    fclose(f); cs_msg("READ ERROR"); return 0;
+                }
                 cl->rep[len] = '\0';
             }
         } else if (ty == 3) {
             Csn v;
             len = rd16(f);
             cl->cont = (char *) malloc((size_t) len + 1);
-            if (fread(cl->cont, 1, (size_t) len, f) != (size_t) len) len = 0;
+            if (!cl->cont) { fclose(f); cs_msg("MEMORY IS TOO LOW"); return 0; }
+            if (fread(cl->cont, 1, (size_t) len, f) != (size_t) len) {
+                free(cl->cont); cl->cont = NULL;
+                fclose(f); cs_msg("READ ERROR"); return 0;
+            }
             cl->cont[len] = '\0';
             if (!rd_num(f, &v)) { cl->type = CE_EMPTY; break; }
             if (cs_is_inputf(cl)) csn_zero(&v);   /* re-evaluated after load */
@@ -298,13 +385,21 @@ int cs_load(const char *name, int c0, int r0, int merge)
             len = rd16(f);
             if (len > 0) {
                 cl->strres = (char *) malloc((size_t) len + 1);
-                if (fread(cl->strres, 1, (size_t) len, f) != (size_t) len) len = 0;
+                if (!cl->strres) { fclose(f); cs_msg("MEMORY IS TOO LOW"); return 0; }
+                if (fread(cl->strres, 1, (size_t) len, f) != (size_t) len) {
+                    free(cl->strres); cl->strres = NULL;
+                    fclose(f); cs_msg("READ ERROR"); return 0;
+                }
                 cl->strres[len] = '\0';
             }
             len = rd16(f);
             if (len > 0) {
                 cl->rep = (char *) malloc((size_t) len + 1);
-                if (fread(cl->rep, 1, (size_t) len, f) != (size_t) len) len = 0;
+                if (!cl->rep) { fclose(f); cs_msg("MEMORY IS TOO LOW"); return 0; }
+                if (fread(cl->rep, 1, (size_t) len, f) != (size_t) len) {
+                    free(cl->rep); cl->rep = NULL;
+                    fclose(f); cs_msg("READ ERROR"); return 0;
+                }
                 cl->rep[len] = '\0';
             }
             if (!drop) entriesUsed++;
@@ -334,7 +429,7 @@ int cs_file_password(const char *name, char *pw, int max)
     f = fopen(path, "rb");
     if (!f) { pw[0] = '\0'; return 0; }
     pw[0] = '\0';
-    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD1", 4)) { fclose(f); return 0; }
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD4", 4)) { fclose(f); return 0; }
     for (c = 0; c < CS_MAXCOL * 2; c++) fgetc(f);
     pwlen = fgetc(f);
     if (pwlen > 0 && pwlen < max) {
@@ -471,6 +566,17 @@ int cs_load_dialog(int merge)
     cs_msg("...");
     ok = cs_load(name, c0, r0, merge);
     cs_draw();
-    if (!ok) cs_msg("write error %s not found", name);
+    if (!ok) {
+        /* cs_load painted its own reason (not found / READ ERROR):
+         * the generic not-found message is painted only when the
+         * file is genuinely absent - a REFUSED file must not claim
+         * to be missing (2026-11-15) */
+        char p2[128];
+        FILE *probe;
+        cs_savename(name, p2, (int) sizeof(p2));
+        probe = fopen(p2, "rb");
+        if (!probe) cs_msg("write error %s not found", name);
+        else fclose(probe);
+    }
     return ok;
 }

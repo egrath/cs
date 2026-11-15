@@ -1107,30 +1107,48 @@ to-right by default (`;O` toggles).
 
 ## File format (.CSD)
 
-Custom documented format ("CSD1"), written by `src/fileio.c`: optional
-password (hidden `*` echo on load), column widths/precisions, cell records
-with contents, values and repeat patterns. Layout:
+Custom documented format ("CSD4"), written by `src/fileio.c`: column
+widths/precisions, optional password (hidden `*` echo), cell records with
+contents, BCD values and repeat patterns.  Layout:
 
 ```
-magic   4 bytes  "CSD1"
-colw    127 sets of: width byte, precision byte (0 = default 10 / 2)
+magic   4 bytes  "CSD4"
+origin  1 byte col + 2 bytes row (LE): the saved range's upper-left
+                 corner - the load position anchors THIS, so an All-mode
+                 sheet (origin 0,0) loads identically at A1
+colw    127 sets of: width byte, precision byte
 pwlen   1 byte   password length, 0 = none (stored in plain text)
 pw      pwlen bytes  password (asked for on load)
 count   2 bytes  number of cell records
-records until count/EOF:
+records (count of):
   col   1 byte, row  2 bytes (little endian)
   type  1 byte   2=text, 3=numeric
   just  1 byte   'L','R','C','W'
-  prec+1 1 byte   per-entry precision, 0 = column default
+  prec/flags 1 byte  bits 0-4: per-entry precision+1 (0 = column
+                 default), bits 5-6: notation (auto/sci/dec), bit 7:
+                 factorial entry
   formf 1 byte   form flag
   ncont 2 bytes + bytes  contents as typed
   numeric only:
-      [8-byte double, stored value]
-      [nstr 2] [bytes] string result (formula returning text)
+      BCD value: sign byte, exp10 2 bytes (LE, signed),
+                 ndig byte, 22 digit bytes (0..9, most significant
+                 first - the on-disk record is pinned to the
+                 original's 22 digits)
+      nstr  2 bytes + bytes  string result (formula returning text)
   nrep  2 bytes + bytes  repeat pattern (just 'W')
 ```
 
-Password: stored as typed and prompted for on load.
+Older magics ("CSD1", "CSD2", "CSD3") are refused with `READ ERROR`.
+
+**Loader hardening (2026-11-15)**: a file is validated completely
+BEFORE the current sheet is touched - a malformed, truncated or
+over-budget file (more cell records than the 4000-entry sheet budget)
+is refused with `READ ERROR` and the user's sheet survives intact.
+Every string allocation and every read is checked; a truncated file
+can no longer load "successfully" with silently emptied cells.
+
+Password: stored as typed and prompted for on load; re-saving over a
+password-protected file asks to verify the password first.
 
 ## Deviations from the original
 

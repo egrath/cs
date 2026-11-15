@@ -24,6 +24,11 @@ typedef struct {
     CellType type;
     unsigned char col, row;  /* the cell's own coordinate (the sparse
                               * store: frees and the sort need it) */
+    unsigned short ref;      /* the slot's own 1-based pool ref: the
+                              * chunk ownership is BY FIELD, not by
+                              * pointer arithmetic (ISO C makes
+                              * relational pointer math across
+                              * separately allocated chunks undefined) */
     char just;      /* 'L','R','C' justification; 'W' = repeating */
     char *rep;      /* repeat pattern when just=='W' */
     char *cont;     /* contents as typed (plain text, or formula) */
@@ -115,8 +120,8 @@ int    cs_coord_text(const char *s, int *c1, int *r1, int *c2, int *r2);
 char  *cs_sort_refs(const char *s, int c1, int r1, int c2, int r2,
                     const int *perm);
 void   cs_range_norm(int *c1, int *r1, int *c2, int *r2);
-void   cs_set_text(Cell *c, const char *cont, char just);
-void   cs_set_num(Cell *c, const char *cont, const Csn *val, int iserr, const char *strres);
+int    cs_set_text(Cell *c, const char *cont, char just);
+int    cs_set_num(Cell *c, const char *cont, const Csn *val, int iserr, const char *strres);
 void   cs_free_cell(Cell *c);
 void   cs_clear_all(void);
 int    cs_scan_refs(const char *s, void (*cb)(int col, int row, void *), void *ctx);

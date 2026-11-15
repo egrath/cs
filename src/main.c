@@ -2387,6 +2387,72 @@ static void run_tests(void)
             } else { printf("FAIL load\n"); fails++; }
         } else { printf("FAIL save\n"); fails++; }
     }
+    /* the LOADER HARDENING (external review item 7, 2026-11-15): a
+     * malformed, truncated or over-budget file is refused BEFORE the
+     * user's current sheet is touched - the sheet survives intact */
+    {
+        FILE *g;
+        long flen;
+        unsigned char buf[512];
+        Cell *c;
+        int used;
+        cs_clear_all();
+        cs_commit_entry(0, 0, "7.25");              /* A1 */
+        cs_commit_entry(1, 0, "hello");             /* B1 text */
+        used = entriesUsed;
+        if (!cs_save("t_ldfix", 0, 0, 2, 2, "")) {
+            printf("FAIL ldfix save\n"); fails++;
+        } else {
+            g = fopen("t_ldfix.csd", "rb");
+            fseek(g, 0, SEEK_END);
+            flen = ftell(g);
+            fseek(g, 0, SEEK_SET);
+            if (flen > 400) flen = 400;             /* the fixture fits */
+            if (fread(buf, 1, (size_t) flen, g) != (size_t) flen)
+                flen = 0;
+            fclose(g);
+            /* header layout: magic 4 + origin 3 + 254 colw/prec +
+             * pwdlen 1 + count 2 = 264 bytes before the first record */
+            /* 1. the count patched over budget (0xFFFF > CS_BUDGET) */
+            buf[262] = 0xFF; buf[263] = 0xFF;
+            g = fopen("t_over.csd", "wb");
+            fwrite(buf, 1, (size_t) flen, g); fclose(g);
+            if (cs_load("t_over", 0, 0, 0) == 0)
+                printf("ok   over-budget file refused\n");
+            else { printf("FAIL over-budget load\n"); fails++; }
+            /* 2. the first record's type patched to an unknown value */
+            buf[262] = 0; buf[263] = 2;             /* count = 2 again */
+            buf[264 + 2] = 7;                       /* ty = 7 */
+            g = fopen("t_ty.csd", "wb");
+            fwrite(buf, 1, (size_t) flen, g); fclose(g);
+            if (cs_load("t_ty", 0, 0, 0) == 0)
+                printf("ok   unknown record type refused\n");
+            else { printf("FAIL unknown type load\n"); fails++; }
+            /* 3. a truncated file (cut inside the records) */
+            buf[264 + 2] = 2;                       /* ty valid again */
+            g = fopen("t_trunc.csd", "wb");
+            fwrite(buf, 1, (size_t)(flen * 3 / 4), g); fclose(g);
+            if (cs_load("t_trunc", 0, 0, 0) == 0)
+                printf("ok   truncated file refused\n");
+            else { printf("FAIL truncated load\n"); fails++; }
+            /* 4. THE SHEET IS INTACT after every refusal: the cells
+             * the load would have destroyed are still there */
+            c = tread(0, 0);
+            if (c->type == CE_NUM && c->cont && !strcmp(c->cont, "7.25"))
+                printf("ok   sheet intact after refusals (A1)\n");
+            else { printf("FAIL sheet intact A1\n"); fails++; }
+            c = tread(1, 0);
+            if (c->type == CE_TEXT && c->cont && !strcmp(c->cont, "hello"))
+                printf("ok   sheet intact after refusals (B1)\n");
+            else { printf("FAIL sheet intact B1\n"); fails++; }
+            if (entriesUsed == used)
+                printf("ok   entry count unchanged after refusals\n");
+            else { printf("FAIL entry count %d != %d\n", entriesUsed, used);
+                   fails++; }
+            remove("t_over.csd"); remove("t_ty.csd");
+            remove("t_trunc.csd"); remove("t_ldfix.csd");
+        }
+    }
     /* CSD5 round trip for the DERIVED TYPE (2026-11-13): a string-
      * result formula cell saves its string and shows it right after a
      * load - NO ;R needed (the user's file-format request); a numeric

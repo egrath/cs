@@ -883,6 +883,56 @@ Batch workflow (do all steps before reporting done):
   copies bounded.  THE AUDIT LESSON: grep for C99 functions before
   the DOS build - the macOS headers declare them even under
   -std=c89 -pedantic, so the build never warns.
+- **THE EXTERNAL-REVIEW FIXES (branch "loadfix", 2026-11-15, items
+  5-7 of an external AI review)**:
+  - (5) `cs_ptr_ref` DELETED: the chunk-ownership pointer scan
+    (`c >= cs_chunks[k] && c < ...` + pointer subtraction across
+    separately allocated chunks) is ISO-C undefined behavior.  Cell
+    gained `unsigned short ref` (its own 1-based pool ref, set when a
+    fresh chunk's freelist is threaded); cs_pool_take saves the slot's
+    own ref before the memset and restores it after (the memset zeroes
+    it - the save/restore bracket).  cs_getcell's chunk-table indexing
+    (not UB) stays.
+  - (6) ALLOCATE-BEFORE-COMMIT everywhere a cell's content is
+    replaced: cs_set_text/cs_set_num now return int (all strings
+    strdup'd and checked FIRST, the old content freed only after, the
+    cell unchanged on failure); the commit path wraps them
+    (commit_text/commit_num in eval.c) so a failure reports MEMORY IS
+    TOO LOW and refuses the entry.  copy_one's text branch, the
+    !...!  value-holder branch (raw strdups removed - it now uses
+    commit_num with a zero value), swap_two_cells (the strdups abort
+    the swap BEFORE cs_relink_cell), and clone_cells (progress-tracked
+    unwind: fail_i/fail_j free exactly the allocated strings, no
+    aliasing of originals - the snapshot now NULLs first and strdups
+    from the source) all follow the discipline.
+  - (7) cs_load HARDENED with a two-pass structure: pass 1 walks the
+    ENTIRE file (header, count validated against CS_BUDGET - an
+    over-budget file is refused with READ ERROR (flagged wording
+    choice) - and every record through rd_check_record: all reads
+    non-EOF, all lengths non-negative, type must be 2 or 3 (an
+    unknown type would desync the stream - the old loader silently
+    ended the load "successfully" on cc/rr out-of-sheet, now they go
+    through the drop path in sync)); pass 2 rewinds, clears, loads
+    with every malloc CHECKED (MEMORY IS TOO LOW on failure) and every
+    fread REQUIRED complete (READ ERROR - the old len=0 downgrade
+    silently loaded truncated files as empty cells).  A failed
+    validation never touches the sheet.  GOTCHA FOUND BY THE TESTS:
+    the clear must stay BEFORE the colw reads in pass 2 (my first
+    restructure put it after and cs_clear_all reset the widths to the
+    defaults - the "save formula + cols" pin caught it immediately).
+  - BONUS (found during the loader work): cs_file_password probed for
+    magic "CSD1" while saves write "CSD4" - the save dialog's
+    "Verify the password to remove" check NEVER fired.  Fixed; pty
+    verified (the prompt appears, wrong pw -> "not ok", ESC still
+    cancels).  Also the load dialog no longer overpaints a READ ERROR
+    with "write error ... not found" (the generic message paints only
+    when the file is genuinely absent).
+  - PINS (6): an over-budget count refused, an unknown record type
+    refused, a truncated file refused - each with A1/B1/entry count
+    verified UNTOUCHED after the refusals.
+  - VERIFIED: --test 529 ok; the idle gate EXACT; the pty save/load +
+    password flows.
+
 - **THE REFERENCE MANUAL PDF (user request 2026-11-14)**:
   docs/CalcStar_UM_11_8_1982.pdf is COMMITTED (a deliberate repo
   reference; the earlier untrack is reverted by this explicit

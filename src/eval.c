@@ -286,6 +286,23 @@ static int numeric_start(int ch)
  * Appendix "value range error" code costs the -1 sentinel used inside). */
 static int cs_commit_core(int col, int rw, const char *entry);
 
+/* the commit path's set wrappers (external review item 6, 2026-11-15):
+ * a failed allocation is REPORTED (MEMORY IS TOO LOW) and the entry is
+ * refused - the original cell is untouched (cs_set_* allocate first) */
+static int commit_text(Cell *c, const char *cont, char just)
+{
+    if (cs_set_text(c, cont, just)) return 1;
+    cs_msg("MEMORY IS TOO LOW");
+    return 0;
+}
+static int commit_num(Cell *c, const char *cont, const Csn *val,
+                      int iserr, const char *strres)
+{
+    if (cs_set_num(c, cont, val, iserr, strres)) return 1;
+    cs_msg("MEMORY IS TOO LOW");
+    return 0;
+}
+
 int cs_commit_entry(int col, int rw, const char *entry)
 {
     /* the entry's own cell is the evaluation context (ROW()/COL()) */
@@ -330,7 +347,8 @@ static int cs_commit_core(int col, int rw, const char *entry)
             e = cs_eval_fact_source(pfx, &src);
             fe = 0;
             if (!e) fe = csn_fact(&fv, &src);
-            cs_set_num(c, buf, &fv, (e || fe) ? 1 : 0, NULL);
+            if (!commit_num(c, buf, &fv, (e || fe) ? 1 : 0, NULL))
+                return 0;
             c->factf = 1;
             cs_recount_entries();
             return 0;
@@ -371,13 +389,9 @@ static int cs_commit_core(int col, int rw, const char *entry)
 
     /* ---- input-formula: !110%! ---- */
     if (buf[0] == '!' && buf[n - 1] == '!' && n > 2) {
-        cs_free_cell(c);
-        c->type = CE_NUM;
-        c->just = 'R';
-        c->cont = cs_strdup(buf);
-        csn_zero(&c->val);
-        c->iserr = 0;
-        entriesUsed++;
+        Csn zero;
+        csn_zero(&zero);
+        commit_num(c, buf, &zero, 0, NULL);
         return 0;
     }
 
@@ -396,15 +410,15 @@ static int cs_commit_core(int col, int rw, const char *entry)
                     c->just = just;
                 return 0;
             }
-            cs_set_text(c, buf + 2, just);
+            commit_text(c, buf + 2, just);
             return 0;
         }
         if (buf[1] == '=') {
-            cs_set_text(c, buf + 2, 'W');
+            commit_text(c, buf + 2, 'W');
             return 0;
         }
         /* '/page' etc: plain text stored as typed */
-        cs_set_text(c, buf, 'L');
+        commit_text(c, buf, 'L');
         return 0;
     }
 
@@ -414,7 +428,7 @@ static int cs_commit_core(int col, int rw, const char *entry)
      * characters typed with no ceremony - flagged refinement
      * 2026-11-13) */
     if (n == 1 && !(buf[0] >= '0' && buf[0] <= '9')) {
-        cs_set_text(c, buf, 'L');
+        commit_text(c, buf, 'L');
         return 0;
     }
     if (g_entry_num && numeric_start((unsigned char) buf[0])) {
@@ -425,15 +439,15 @@ static int cs_commit_core(int col, int rw, const char *entry)
         if (err == KW_ABORT) return 0;      /* interrupt already reported */
         if (err) {
             csn_zero(&val);
-            cs_set_num(c, buf, &val, 1, NULL);
+            commit_num(c, buf, &val, 1, NULL);
             /* message with hit-space behaviour handled by main loop */
         } else {
-            cs_set_num(c, buf, &val, 0, str);
+            commit_num(c, buf, &val, 0, str);
             if (str) free(str);
         }
         cs_run_recalc_passes(0);
         return err;
     }
-    cs_set_text(c, buf, 'L');
+    commit_text(c, buf, 'L');
     return 0;
 }
