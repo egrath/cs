@@ -240,7 +240,8 @@ typedef enum {
     FN_SUMSQ, FN_RMS, FN_VAR, FN_VARP, FN_STDEV, FN_STDEVP,
     FN_PCT, FN_QUART,
     FN_CORR, FN_RSQ, FN_INTEG,
-    FN_CONV
+    FN_CONV,
+    FN_SPLINE, FN_DIFF
 } FnId;
 
 static int fnid(const char *name)
@@ -327,6 +328,8 @@ static int fnid(const char *name)
     if (!strcmp(name, "RSQ"))   return FN_RSQ;
     if (!strcmp(name, "INTEG")) return FN_INTEG;
     if (!strcmp(name, "CONV"))  return FN_CONV;
+    if (!strcmp(name, "SPLINE")) return FN_SPLINE;
+    if (!strcmp(name, "DIFF"))  return FN_DIFF;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -449,17 +452,17 @@ static int eng_atan2(Csn *r, const Csn *y, const Csn *x)
  * the statistics SKIP a pair when either side has no number, the
  * table functions treat a hole as an error - so the walker takes a
  * `holes` flag: 1 = skip text/empty pairs, 0 = Error 0.
- * Returns the pair count, or -1 on a walk error (errp = the code),
- * or -2 on shape mismatch. */
-static int pair_ranges(P *ps, int holes, int *errp,
-                       int *c1p, int *r1p, int *swp, int *shp,
-                       void *ctx,
-                       int (*visit)(void *ctx, const Csn *x,
-                                    const Csn *y))
+ * Batch E splits the parse from the walk: DIFF/SPLINE take a
+ * trailing scalar t that must be parsed BEFORE the walk. */
+
+/* parse the two aligned ranges (and, with with_t, a trailing scalar
+ * argument): 0 = ok, -1 = error (errp), -2 = shape mismatch */
+static int pair_parse(P *ps, int with_t, Csn *tout, int *errp,
+                      int *c1p, int *r1p, int *d1p, int *e1p,
+                      int *swp, int *shp)
 {
     Val a, b;
     int c1, r1, c2, r2, d1, e1, d2, e2, sw, sh, dw, dh;
-    int i, j;
     *errp = 0;
     a = parse_condexpr(ps);
     if (!a.good) { *errp = a.err ? a.err : 0; return -1; }
@@ -476,13 +479,35 @@ static int pair_ranges(P *ps, int holes, int *errp,
     d1 = b.rng.start.col; e1 = b.rng.start.row;
     d2 = b.rng.end.col;   e2 = b.rng.end.row;
     val_free(&b);
+    if (with_t) {
+        Val t;
+        skip_ws(&ps->p);
+        if (*ps->p != ',') { *errp = 3; return -1; }
+        ps->p++;
+        t = parse_numarg(ps);
+        if (!t.good) { *errp = t.err ? t.err : 0; return -1; }
+        csn_copy(tout, &t.num);
+        val_free(&t);
+    }
     skip_ws(&ps->p);
     if (*ps->p != ')') { *errp = 3; return -1; }
     ps->p++;
     sw = c2 - c1 + 1; sh = r2 - r1 + 1;
     dw = d2 - d1 + 1; dh = e2 - e1 + 1;
     if (sw != dw || sh != dh) { *errp = 0; return -2; }
-    *c1p = c1; *r1p = r1; *swp = sw; *shp = sh;
+    *c1p = c1; *r1p = r1; *d1p = d1; *e1p = e1;
+    *swp = sw; *shp = sh;
+    return 0;
+}
+
+/* the shared row-major walk: 0 = ok (the visit count is the
+ * caller's), else the error code 0 (the value-range class) */
+static int pair_walk(int c1, int r1, int d1, int e1, int sw, int sh,
+                     int holes, int *errp, void *ctx,
+                     int (*visit)(void *ctx, const Csn *x,
+                                  const Csn *y))
+{
+    int i, j;
     for (i = 0; i < sh; i++)
         for (j = 0; j < sw; j++) {
             Cell *x = cs_getcell(c1 + j, r1 + i);
@@ -495,12 +520,12 @@ static int pair_ranges(P *ps, int holes, int *errp,
             if (!xok || !yok) {
                 if (holes) continue;
                 *errp = 0;
-                return -1;
+                return 1;
             }
             e = visit(ctx, &x->val, &y->val);
-            if (e) { *errp = 0; return -1; }    /* any visit failure
-                                                   is the value-range
-                                                   class */
+            if (e) { *errp = 0; return 1; }    /* any visit failure
+                                                  is the value-range
+                                                  class */
         }
     return 0;
 }
@@ -533,6 +558,78 @@ static int corr_visit(void *ctx, const Csn *x, const Csn *y)
     err = csn_add(&ca->sxy, &ca->sxy, &t);
     if (err) return 1;
     ca->n++;
+    return 0;
+}
+
+/* the DIFF accumulator (engineering batch E, 2026-11-15): the slope
+ * of the piecewise-LINEAR interpolant at t.  t at an interior knot
+ * uses the segment to the RIGHT; at the last knot the last segment;
+ * t outside the span is an error (checked after the walk). */
+struct diff_acc {
+    Csn t;
+    Csn slope;
+    Csn px, py;         /* the previous (last) pair */
+    Csn qx, qy;         /* the pair before it */
+    long n;
+    int found;
+};
+
+static int diff_visit(void *ctx, const Csn *x, const Csn *y)
+{
+    struct diff_acc *da = (struct diff_acc *) ctx;
+    Csn dx, dy;
+    int err;
+    if (da->n == 0) {
+        csn_copy(&da->px, x);
+        csn_copy(&da->py, y);
+        da->n = 1;
+        return 0;
+    }
+    err = csn_sub(&dx, x, &da->px);
+    if (err) return 1;
+    if (csn_is_zero(&dx) || dx.sign) return 1;   /* not increasing */
+    if (!da->found && csn_cmp(&da->t, &da->px) >= 0 &&
+        csn_cmp(&da->t, x) < 0) {
+        err = csn_sub(&dy, y, &da->py);
+        if (err) return 1;
+        err = csn_div(&da->slope, &dy, &dx);
+        if (err) return 1;
+        da->found = 1;
+    }
+    csn_copy(&da->qx, &da->px);
+    csn_copy(&da->qy, &da->py);
+    csn_copy(&da->px, x);
+    csn_copy(&da->py, y);
+    da->n++;
+    return 0;
+}
+
+/* the SPLINE table (engineering batch E, 2026-11-15): the knots
+ * collected through the pair walk (holes are errors), then the
+ * natural cubic spline: second derivatives M via the THOMAS
+ * algorithm on the tridiagonal system (the system is strictly
+ * diagonally dominant - 2(h1+h2) vs h1+h2 - so no zero pivots), and
+ * the standard piecewise evaluation
+ *   S = A*y1 + B*y2 + ((A^3-A)*M1 + (B^3-B)*M2)*h^2/6,
+ * A = (x2-t)/h, B = (t-x1)/h.  M0 = M(n-1) = 0 (natural); n = 2
+ * degenerates to the straight line.  The bound is the MED buffer's
+ * same 512 bound as the median's buffer (MED_MAX, defined later);
+ * the worst-case transient is 5 Csn arrays (~130 KB, flagged - each
+ * allocation stays under 64 KB). */
+#define SPLINE_MAX 512
+
+struct spline_tab {
+    Csn *xs, *ys;
+    long n;
+};
+
+static int spline_visit(void *ctx, const Csn *x, const Csn *y)
+{
+    struct spline_tab *st = (struct spline_tab *) ctx;
+    if (st->n >= SPLINE_MAX) return 1;
+    csn_copy(&st->xs[st->n], x);
+    csn_copy(&st->ys[st->n], y);
+    st->n++;
     return 0;
 }
 
@@ -1904,6 +2001,197 @@ static Val parse_primary(P *ps)
                 v.good = 1;
                 return v;
             }
+            /* DIFF(xr, yr, t): the slope of the piecewise-linear
+             * interpolant at t (engineering batch E, 2026-11-15).
+             * x strictly increasing in walk order; t at an interior
+             * knot takes the segment to the RIGHT, at the last knot
+             * the last segment; outside the span -> Error 0. */
+            if (f == FN_DIFF) {
+                struct diff_acc da;
+                int c1, r1, d1, e1, sw, sh, werr, wr;
+                Csn t;
+                memset(&da, 0, sizeof(da));
+                csn_zero(&da.t); csn_zero(&da.slope);
+                csn_zero(&da.px); csn_zero(&da.py);
+                csn_zero(&da.qx); csn_zero(&da.qy);
+                wr = pair_parse(ps, 1, &t, &werr,
+                                &c1, &r1, &d1, &e1, &sw, &sh);
+                if (wr != 0) {
+                    if (werr >= 0) { val_err(&v, werr); return v; }
+                    val_err(&v, 0); return v;
+                }
+                csn_copy(&da.t, &t);
+                if (pair_walk(c1, r1, d1, e1, sw, sh, 0, &werr,
+                              &da, diff_visit)) {
+                    val_err(&v, 0); return v;
+                }
+                val_free(&v);
+                csn_zero(&v.num);
+                if (da.n < 2) { val_err(&v, 0); return v; }
+                if (!da.found) {
+                    /* t at the LAST knot: the last segment */
+                    Csn dx, dy;
+                    if (csn_cmp(&t, &da.px) != 0) {
+                        val_err(&v, 0); return v;
+                    }
+                    if (csn_sub(&dx, &da.px, &da.qx) ||
+                        csn_sub(&dy, &da.py, &da.qy) ||
+                        csn_div(&da.slope, &dy, &dx)) {
+                        val_err(&v, 0); return v;
+                    }
+                }
+                csn_copy(&v.num, &da.slope);
+                v.good = 1;
+                return v;
+            }
+            /* SPLINE(xr, yr, t): the natural cubic spline through the
+             * table (engineering batch E, 2026-11-15).  x strictly
+             * increasing; t inside the knot span; the knots through
+             * the pair walk (holes are errors); M by the Thomas
+             * algorithm; n = 2 is the straight line. */
+            if (f == FN_SPLINE) {
+                struct spline_tab st;
+                int c1, r1, d1, e1, sw, sh, werr, wr;
+                Csn t;
+                Csn *h = NULL, *cpr = NULL, *dpr = NULL;
+                long n, m, i, j, seg;
+                int err = 0;
+                memset(&st, 0, sizeof(st));
+                wr = pair_parse(ps, 1, &t, &werr,
+                                &c1, &r1, &d1, &e1, &sw, &sh);
+                if (wr != 0) {
+                    if (werr >= 0) { val_err(&v, werr); return v; }
+                    val_err(&v, 0); return v;
+                }
+                st.xs = (Csn *) malloc((size_t) SPLINE_MAX *
+                                       sizeof(Csn));
+                st.ys = (Csn *) malloc((size_t) SPLINE_MAX *
+                                       sizeof(Csn));
+                if (!st.xs || !st.ys) {
+                    free(st.xs); free(st.ys);
+                    val_err(&v, 0); return v;
+                }
+                if (pair_walk(c1, r1, d1, e1, sw, sh, 0, &werr,
+                              &st, spline_visit)) {
+                    free(st.xs); free(st.ys);
+                    val_err(&v, 0); return v;
+                }
+                val_free(&v);
+                csn_zero(&v.num);
+                n = st.n;
+                if (n < 2) err = 1;                     /* no table */
+                for (i = 0; !err && i < n - 1; i++)
+                    if (csn_cmp(&st.xs[i + 1], &st.xs[i]) <= 0)
+                        err = 1;                        /* not growing */
+                if (!err && (csn_cmp(&t, &st.xs[0]) < 0 ||
+                             csn_cmp(&t, &st.xs[n - 1]) > 0))
+                    err = 1;                            /* outside */
+                if (!err) {
+                    h = (Csn *) malloc((size_t)(n - 1) *
+                                       sizeof(Csn));
+                    if (h) {
+                        for (j = 0; j < n - 1; j++)
+                            if (csn_sub(&h[j], &st.xs[j + 1],
+                                        &st.xs[j])) { err = 1; break; }
+                    } else
+                        err = 1;
+                }
+                /* the Thomas solve for the interior M (m = n-2
+                 * unknowns; the sub/super are the h values
+                 * themselves) */
+                m = n - 2;
+                if (!err && m > 0) {
+                    cpr = (Csn *) malloc((size_t) m * sizeof(Csn));
+                    dpr = (Csn *) malloc((size_t) m * sizeof(Csn));
+                    if (!cpr || !dpr) err = 1;
+                }
+                for (i = 0; !err && i < m; i++) {
+                    Csn bi, di, s1, s2, den, six;
+                    csn_from_int(&six, 6L);
+                    csn_from_int(&bi, 2L);
+                    /* b_i = 2*(h_i + h_i+1) */
+                    if (csn_add(&den, &h[i], &h[i + 1])) { err = 1; break; }
+                    if (csn_mul(&bi, &bi, &den)) { err = 1; break; }
+                    /* d_i = 6*(s_k - s_k-1), s_j = (y[j+1]-y[j])/h[j] */
+                    if (csn_sub(&s1, &st.ys[i + 2], &st.ys[i + 1]) ||
+                        csn_div(&s1, &s1, &h[i + 1]) ||
+                        csn_sub(&s2, &st.ys[i + 1], &st.ys[i]) ||
+                        csn_div(&s2, &s2, &h[i]) ||
+                        csn_sub(&di, &s1, &s2) ||
+                        csn_mul(&di, &di, &six)) { err = 1; break; }
+                    if (i == 0) {
+                        if (csn_div(&cpr[0], &h[1], &bi) ||
+                            csn_div(&dpr[0], &di, &bi)) { err = 1; break; }
+                    } else {
+                        if (csn_mul(&den, &h[i], &cpr[i - 1]) ||
+                            csn_sub(&den, &bi, &den)) { err = 1; break; }
+                        if (csn_is_zero(&den)) { err = 1; break; }
+                        if (csn_div(&cpr[i], &h[i + 1], &den) ||
+                            csn_mul(&s1, &h[i], &dpr[i - 1]) ||
+                            csn_sub(&s1, &di, &s1) ||
+                            csn_div(&dpr[i], &s1, &den)) { err = 1; break; }
+                    }
+                }
+                /* the back substitution in place (dpr becomes M) */
+                for (i = m - 2; !err && i >= 0; i--) {
+                    Csn tt;
+                    if (csn_mul(&tt, &cpr[i], &dpr[i + 1]) ||
+                        csn_sub(&dpr[i], &dpr[i], &tt)) { err = 1; break; }
+                }
+                /* the evaluation: find the segment */
+                if (!err) {
+                    seg = n - 2;                    /* t at the last knot */
+                    for (i = 0; i < n - 1; i++)
+                        if (csn_cmp(&t, &st.xs[i + 1]) <= 0) {
+                            seg = i; break;
+                        }
+                    {
+                        Csn A, B, Mi, Mj, a3, b3, tt, six, one;
+                        csn_from_int(&six, 6L);
+                        csn_from_int(&one, 1L);
+                        if (csn_sub(&A, &st.xs[seg + 1], &t) ||
+                            csn_div(&A, &A, &h[seg]) ||
+                            csn_sub(&B, &t, &st.xs[seg]) ||
+                            csn_div(&B, &B, &h[seg])) err = 1;
+                        /* M_seg: 0 at the first knot, else dpr[seg-1];
+                         * M_seg+1: 0 at the last, else dpr[seg] */
+                        csn_zero(&Mi);
+                        csn_zero(&Mj);
+                        if (!err && seg > 0)
+                            csn_copy(&Mi, &dpr[seg - 1]);
+                        if (!err && seg < n - 2)
+                            csn_copy(&Mj, &dpr[seg]);
+                        if (!err) {
+                            /* A^3 - A and B^3 - B */
+                            if (csn_mul(&a3, &A, &A) ||
+                                csn_mul(&a3, &a3, &A) ||
+                                csn_sub(&a3, &a3, &A) ||
+                                csn_mul(&b3, &B, &B) ||
+                                csn_mul(&b3, &b3, &B) ||
+                                csn_sub(&b3, &b3, &B)) err = 1;
+                        }
+                        if (!err) {
+                            if (csn_mul(&a3, &a3, &Mi) ||
+                                csn_mul(&b3, &b3, &Mj) ||
+                                csn_add(&tt, &a3, &b3) ||
+                                csn_mul(&tt, &tt, &h[seg]) ||
+                                csn_mul(&tt, &tt, &h[seg]) ||
+                                csn_div(&tt, &tt, &six)) err = 1;
+                        }
+                        if (!err) {
+                            if (csn_mul(&A, &A, &st.ys[seg]) ||
+                                csn_mul(&B, &B, &st.ys[seg + 1]) ||
+                                csn_add(&v.num, &A, &B) ||
+                                csn_add(&v.num, &v.num, &tt)) err = 1;
+                        }
+                    }
+                }
+                free(st.xs); free(st.ys); free(h);
+                free(cpr); free(dpr);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
             /* CORR/RSQ: the paired statistics (engineering batch C,
              * 2026-11-15).  Two aligned ranges; a pair with no number
              * on either side is SKIPPED (the user's locked rule);
@@ -1912,17 +2200,21 @@ static Val parse_primary(P *ps)
              * an error.  RSQ = r*r, computed as num^2/denom. */
             if (f == FN_CORR || f == FN_RSQ) {
                 struct corr_acc ca;
-                int c1, r1, sw, sh, werr;
+                int c1, r1, d1, e1, sw, sh, werr, wr;
                 Csn ncs, numr, dx, dy, dd, t;
                 int err;
                 memset(&ca, 0, sizeof(ca));
                 csn_zero(&ca.sx); csn_zero(&ca.sy);
                 csn_zero(&ca.sxx); csn_zero(&ca.syy);
                 csn_zero(&ca.sxy);
-                if (pair_ranges(ps, 1, &werr,
-                                &c1, &r1, &sw, &sh, &ca,
-                                corr_visit) < 0) {
+                wr = pair_parse(ps, 0, &t, &werr,
+                                &c1, &r1, &d1, &e1, &sw, &sh);
+                if (wr != 0) {
                     if (werr >= 0) { val_err(&v, werr); return v; }
+                    val_err(&v, 0); return v;
+                }
+                if (pair_walk(c1, r1, d1, e1, sw, sh, 1, &werr,
+                              &ca, corr_visit)) {
                     val_err(&v, 0); return v;
                 }
                 val_free(&v);
@@ -1959,14 +2251,19 @@ static Val parse_primary(P *ps)
              * rule, unlike the statistics' skip). */
             if (f == FN_INTEG) {
                 struct integ_acc ia;
-                int c1, r1, sw, sh, werr;
+                int c1, r1, d1, e1, sw, sh, werr, wr;
+                Csn t;
                 memset(&ia, 0, sizeof(ia));
                 csn_zero(&ia.total);
                 csn_zero(&ia.px); csn_zero(&ia.py);
-                if (pair_ranges(ps, 0, &werr,
-                                &c1, &r1, &sw, &sh, &ia,
-                                integ_visit) < 0) {
+                wr = pair_parse(ps, 0, &t, &werr,
+                                &c1, &r1, &d1, &e1, &sw, &sh);
+                if (wr != 0) {
                     if (werr >= 0) { val_err(&v, werr); return v; }
+                    val_err(&v, 0); return v;
+                }
+                if (pair_walk(c1, r1, d1, e1, sw, sh, 0, &werr,
+                              &ia, integ_visit)) {
                     val_err(&v, 0); return v;
                 }
                 val_free(&v);

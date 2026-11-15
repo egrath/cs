@@ -319,6 +319,33 @@ INTEG(G1>G4,H1>H4)  9.5      trapezoidal rule over a table; x strictly
 (the trapezoidal rule's honest overestimate; the exact integral is
 9).
 
+### SPLINE and DIFF: the interpolating table functions
+
+Table-based, both through the paired walker (2026-11-15, batch E).
+x strictly increasing in walk order; a hole in the table is an
+error; `t` must lie inside the knot span:
+
+```text
+SPLINE(xr, yr, t)   the NATURAL CUBIC spline through the table:
+                    second derivatives M via the Thomas algorithm
+                    (the tridiagonal system is strictly diagonally
+                    dominant - no zero pivots), evaluated as
+                    S = A*y1 + B*y2 + ((A^3-A)*M1 + (B^3-B)*M2)*h^2/6
+                    with A = (x2-t)/h, B = (t-x1)/h.  M0 = M(last) = 0
+                    (natural); two points degenerate to the straight
+                    line; every knot is reproduced EXACTLY
+DIFF(xr, yr, t)     the slope of the piecewise-LINEAR interpolant:
+                    t at an interior knot takes the segment to the
+                    RIGHT, at the last knot the last segment
+```
+
+Example — the arch (0,0), (1,1), (2,0): `SPLINE(...,0.5)` = 0.6875
+(M1 = −3 by the natural end conditions); for the x² table 0..4 the
+spline hits every knot exactly but sags between them (0.3392857… at
+0.5 — the natural end conditions force M0 = 0, so it is NOT the
+parabola).  The knot bound is the median's 512 (beyond it: error);
+`DIFF` streams and has no bound.
+
 ### CONV: the unit conversion
 
 `CONV(value, from_unit, to_unit)` (2026-11-15, batch D).  Every

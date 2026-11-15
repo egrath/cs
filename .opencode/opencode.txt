@@ -48,6 +48,29 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-e"): SPLINE + DIFF (2026-11-15):
+- USER: merge D (done, de3111f ff, branch deleted) and implement
+  batch E on eng-batch-e.  SCOPE: SPLINE (natural cubic, table) +
+  DIFF (the interpolant slope).
+- DONE: pair_ranges split into pair_parse (optional trailing scalar)
+  + pair_walk (CORR/INTEG updated).  DIFF streams (no buffer, NO
+  bound); t at an interior knot = the RIGHT segment, at the last
+  knot the last segment.  SPLINE: bounded knot buffers (SPLINE_MAX
+  512 - its own define, MED_MAX comes later in the file), M via the
+  Thomas algorithm in BCD (the sub/super ARE the h values; the back
+  substitution overwrites dpr in place; strictly diagonally dominant
+  so no zero pivots), S = A*y1 + B*y2 + ((A^3-A)*M1 + (B^3-B)*M2)
+  h^2/6; n=2 linear; knots exact; t/holes/unordered/n<2/513 ->
+  Error 0.  Worst-case transient ~130 KB in 5 arrays (flagged).
+- THE MATH: the x^2 natural spline is NOT the parabola (M0 = 0
+  forced) - 0.3392857... at 0.5, derived in python and pinned; the
+  arch gives M1 = -3, 0.6875 at the midpoints.
+- GOTCHAS: three pin-authoring slips (a DIFF "bound" pin - DIFF
+  streams unbounded; cleared seeds; a hole pin with no hole).  The
+  first build hit MED_MAX-before-declaration and an unused variable.
+- VERIFIED: --test 746 ok; the idle gate EXACT; the pty shows
+  SPLINE = 0.6875 / DIFF = 1 / the out-of-span error.
+
 ## BATCH (branch "eng-batch-d"): CONV + max warnings (2026-11-15):
 - USER: merge C (done, dcb8396 ff) and implement batch D; ALSO add
   -Wextra -pedantic-errors to CFLAGS (the user had already added the

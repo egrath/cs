@@ -1930,6 +1930,101 @@ static void run_tests(void)
         cke("CONV 2 args", "CONV(1,\"m\")", 3);
         cke("CONV 4 args", "CONV(1,\"m\",\"cm\",2)", 3);
         cs_clear_all();
+        /* ==== SPLINE + DIFF (batch E): seeds ====
+         * A/B = the arch (0,0),(1,1),(2,0); D/E = the x^2 table
+         * 0..4; G/H = the linear table; J/K = the uneven table */
+        setv(0, 0, "0"); setv(0, 1, "1"); setv(0, 2, "2");
+        setv(1, 0, "0"); setv(1, 1, "1"); setv(1, 2, "0");
+        setv(3, 0, "0"); setv(3, 1, "1"); setv(3, 2, "2");
+        setv(3, 3, "3"); setv(3, 4, "4");
+        setv(4, 0, "0"); setv(4, 1, "1"); setv(4, 2, "4");
+        setv(4, 3, "9"); setv(4, 4, "16");
+        setv(6, 0, "0"); setv(6, 1, "2");
+        setv(7, 0, "1"); setv(7, 1, "3");
+        setv(9, 0, "0"); setv(9, 1, "1"); setv(9, 2, "3");
+        setv(10, 0, "0"); setv(10, 1, "1"); setv(10, 2, "9");
+        /* the arch: symmetric, M1 = -3 */
+        ckc("SPLINE arch 0.5", "SPLINE(A1>A3,B1>B3,0.5)",
+            "+6.8750000000000E+0");
+        ckc("SPLINE arch 1", "SPLINE(A1>A3,B1>B3,1)",
+            "+1.0000000000000E+1");
+        ckc("SPLINE arch 1.5", "SPLINE(A1>A3,B1>B3,1.5)",
+            "+6.8750000000000E+0");
+        /* the x^2 table: the knots are reproduced EXACTLY */
+        ckc("SPLINE x2 0.5", "SPLINE(D1>D5,E1>E5,0.5)",
+            "+3.3928571428571E+0");
+        ckc("SPLINE x2 knot", "SPLINE(D1>D5,E1>E5,2)",
+            "+4.0000000000000E+1");
+        ckc("SPLINE x2 3.5", "SPLINE(D1>D5,E1>E5,3.5)",
+            "+1.2339285714285E+2");
+        ckc("SPLINE x2 end", "SPLINE(D1>D5,E1>E5,4)",
+            "+1.6000000000000E+2");
+        /* two points: the straight line */
+        ckc("SPLINE linear", "SPLINE(G1>G2,H1>H2,1)",
+            "+2.0000000000000E+1");
+        /* the same range as both x and y */
+        ckc("SPLINE self", "SPLINE(A1>A3,A1>A3,1.5)",
+            "+1.5000000000000E+1");
+        /* the errors */
+        cke("SPLINE outside", "SPLINE(D1>D5,E1>E5,4.5)", -1);
+        cke("SPLINE n1", "SPLINE(A1>A1,B1>B1,1)", -1);
+        cke("SPLINE shape", "SPLINE(A1>A3,B1>B2,1)", -1);
+        cke("SPLINE non-range", "SPLINE(5,B1>B3,1)", 6);
+        cke("SPLINE 1 arg", "SPLINE(A1>A3)", 3);
+        cs_set_text(tcell(1, 2), "hole", 'L');
+        cke("SPLINE hole", "SPLINE(A1>A3,B1>B3,1)", -1);
+        setv(1, 2, "0");
+        setv(12, 0, "2"); setv(12, 1, "1");      /* unordered x */
+        setv(13, 0, "1"); setv(13, 1, "2");
+        cke("SPLINE unordered", "SPLINE(M1>M3,N1>N3,1)", -1);
+        /* the 512-point bound: 513 pairs are an error */
+        cs_clear_all();
+        {
+            int w;
+            char b[8];
+            for (w = 0; w < 513; w++) {
+                sprintf(b, "%d", w + 1);
+                setv(w % 3, w / 3, b);
+                setv(3 + w % 3, w / 3, "1");
+            }
+        }
+        cke("SPLINE bound", "SPLINE(A1>C171,D1>F171,1)", -1);
+        /* DIFF streams - it has NO bound (the same walk succeeds) */
+        ckc("DIFF unbounded", "DIFF(A1>C171,D1>F171,1)", "0");
+        /* ==== DIFF: the piecewise-linear slope ==== */
+        cs_clear_all();
+        setv(0, 0, "0"); setv(0, 1, "1"); setv(0, 2, "2");
+        setv(1, 0, "0"); setv(1, 1, "1"); setv(1, 2, "0");
+        setv(3, 0, "0"); setv(3, 1, "1"); setv(3, 2, "2");
+        setv(3, 3, "3"); setv(3, 4, "4");
+        setv(4, 0, "0"); setv(4, 1, "1"); setv(4, 2, "4");
+        setv(4, 3, "9"); setv(4, 4, "16");
+        setv(6, 0, "0"); setv(6, 1, "2");
+        setv(7, 0, "1"); setv(7, 1, "3");
+        setv(9, 0, "0"); setv(9, 1, "1"); setv(9, 2, "3");
+        setv(10, 0, "0"); setv(10, 1, "1"); setv(10, 2, "9");
+        ckc("DIFF mid", "DIFF(D1>D5,E1>E5,1.5)", "+3.0000000000000E+1");
+        ckc("DIFF at start", "DIFF(D1>D5,E1>E5,0)",
+            "+1.0000000000000E+1");
+        ckc("DIFF last knot", "DIFF(D1>D5,E1>E5,4)",
+            "+7.0000000000000E+1");
+        ckc("DIFF late", "DIFF(D1>D5,E1>E5,3.5)",
+            "+7.0000000000000E+1");
+        ckc("DIFF uneven", "DIFF(J1>J3,K1>K3,2)",
+            "+4.0000000000000E+1");
+        ckc("DIFF linear", "DIFF(G1>G2,H1>H2,1)",
+            "+1.0000000000000E+1");
+        /* t at an interior knot: the segment to the RIGHT */
+        ckc("DIFF knot right", "DIFF(A1>A3,B1>B3,1)",
+            "-1.0000000000000E+1");
+        cke("DIFF outside hi", "DIFF(D1>D5,E1>E5,4.5)", -1);
+        cke("DIFF outside lo", "DIFF(D1>D5,E1>E5,-0.5)", -1);
+        cke("DIFF n1", "DIFF(A1>A1,B1>B1,1)", -1);
+        cs_set_text(tcell(7, 1), "hole", 'L');
+        cke("DIFF hole", "DIFF(G1>G2,H1>H2,1)", -1);
+        setv(7, 1, "3");
+        cke("DIFF non-range", "DIFF(5,B1>B3,1)", 6);
+        cke("DIFF 2 args", "DIFF(A1>A3,B1>B3)", 3);
         /* the /r /l /c alignment on a FORMULA's string result
          * (user request 2026-11-15) */
         cs_clear_all();

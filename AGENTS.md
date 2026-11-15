@@ -1042,6 +1042,38 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **ENGINEERING BATCH E (user list 2026-11-15, branch "eng-batch-e")**:
+  SPLINE + DIFF.  THE REFACTOR: pair_ranges SPLIT into pair_parse
+  (the two aligned ranges + optionally a trailing scalar t - DIFF/
+  SPLINE need t BEFORE the walk) and pair_walk (the shared row-major
+  loop); CORR/INTEG updated to the two-call shape.  DIFF: the
+  piecewise-LINEAR slope at t, STREAMING (no buffer - unbounded, the
+  513-point pin shows it succeeding where SPLINE errors); t at an
+  interior knot takes the segment to the RIGHT, at the last knot the
+  last segment (the q/pair-before-last bookkeeping); t outside the
+  span -> Error 0.  SPLINE: the knots collected into bounded buffers
+  (SPLINE_MAX 512, the MED bound - the define is its OWN 512 because
+  MED_MAX is declared later in the file), the natural cubic: M via
+  the THOMAS ALGORITHM in BCD (the sub/super are the h values
+  themselves - no a/c arrays; the back substitution overwrites dpr
+  in place; the system is strictly diagonally dominant: 2(h1+h2) vs
+  h1+h2 - no zero pivots), evaluated as
+  S = A*y1 + B*y2 + ((A^3-A)*M1 + (B^3-B)*M2)*h^2/6; n = 2 is the
+  straight line; the knots reproduce EXACTLY (A = 1 -> A^3-A = 0 in
+  BCD); t outside the span, unordered x, holes, n < 2, the 513-point
+  bound -> Error 0.  The worst-case transient is 5 Csn arrays
+  (~130 KB, flagged; each under 64 KB).  THE MATH CHECK: the x^2
+  natural spline is NOT the parabola (M0 = 0 forced - 0.3392857...
+  at t = 0.5, derived and pinned); the arch (0,0),(1,1),(2,0) gives
+  M1 = -3 and 0.6875 at the midpoints.  PINS: 45 (the arch
+  symmetric values, the x^2 table incl. exact knots, the linear
+  two-point case, the self-range case, DIFF's knot/last/outside/
+  uneven cases, all the error paths, the 512 bound, DIFF
+  unbounded).  AUTHORING SLIPS: three (the DIFF "bound" pin - DIFF
+  streams; the A/B seeds cleared before the knot pin; a "hole" pin
+  with no hole).  VERIFIED: --test 746 ok; the idle gate EXACT; the
+  pty shows SPLINE = 0.6875, DIFF = 1, and the out-of-span error.
+
 - **ENGINEERING BATCH D (user list 2026-11-15, branch "eng-batch-d")**:
   CONV(value, from, to).  THE TABLE: ~46 units in 15 dimensions,
   every factor an EXACT RATIONAL num/den to the canonical unit -
