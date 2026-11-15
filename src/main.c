@@ -1598,6 +1598,34 @@ static void run_tests(void)
         ckc("ge equal", "(0.7>=0.7):1:0", "+1.0000000000000E+1");
         ckc("ge numbers", "(3>=2)", "+1.0000000000000E+1");
         ckc("ge strings", "(\"b\">=\"b\"):1:0", "+1.0000000000000E+1");
+        /* EVEN()/ODD(): the integer parity (user request 2026-11-15) */
+        ckc("EVEN 2", "EVEN(2)", "+1.0000000000000E+1");
+        ckc("EVEN 3", "EVEN(3)", "0");
+        ckc("EVEN 0", "EVEN(0)", "+1.0000000000000E+1");
+        ckc("EVEN -4", "EVEN(-4)", "+1.0000000000000E+1");
+        ckc("ODD 3", "ODD(3)", "+1.0000000000000E+1");
+        ckc("ODD -3", "ODD(-3)", "+1.0000000000000E+1");
+        ckc("ODD -2", "ODD(-2)", "0");
+        cke("EVEN 2.5", "EVEN(2.5)", -1);
+        cke("ODD 2.5", "ODD(2.5)", -1);
+        cke("EVEN huge", "EVEN(9E+999)", -1);
+        cke("EVEN no arg", "EVEN()", 6);
+        cke("EVEN text", "EVEN(\"x\")", 6);
+        /* the composition: EVEN(x) = NOT(ODD(x)) through the fuzzy NOT */
+        ckc("EVEN = NOT ODD", "EVEN(7)=NOT(ODD(7)):1:0", "+1.0000000000000E+1");
+        ckc("ODD = NOT EVEN", "ODD(6)=NOT(EVEN(6)):1:0", "+1.0000000000000E+1");
+        /* the conditional through the 0.7 threshold (the string
+         * branch: "even" for the even 4) */
+        {
+            Csn r;
+            char *sf = NULL;
+            int e = cs_eval_formula("(EVEN(4)):\"even\":\"odd\"", &r, &sf);
+            if (e != 0 || sf == NULL || strcmp(sf, "even"))
+                { printf("FAIL EVEN conditional (%s)\n", sf ? sf : "(null)");
+                  fails++; }
+            else printf("ok   EVEN conditional yields even\n");
+            if (sf) free(sf);
+        }
 
         ckc("SUM streams 513", "SUM(A1>C255)", "+5.1300000000000E+3");
         ckc("AVG streams 513", "AVG(A1>C255)", "+1.0000000000000E+1");

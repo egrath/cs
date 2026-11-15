@@ -1028,6 +1028,18 @@ Batch workflow (do all steps before reporting done):
   threshold conditional with strings) and the comparison-operator
   list (< <= = <> >= >).
 
+- **EVEN()/ODD() (user request 2026-11-15, branch "parity")**: the
+  integer parity functions — 1 if the integer x is even/odd, 0
+  otherwise.  One dispatch block sharing CHR's mechanics:
+  parse_numarg -> csn_integer_part -> csn_to_long_val -> cc % 2.
+  A FRACTIONAL or oversized argument is Error 0 (the
+  csn_integer_part contract — evenness is a property of integers,
+  no truncation; the user's default).  Negatives correct (cc % 2
+  handles both signs).  The 0/1 results compose with the 0.7
+  threshold conditionals and with NOT (EVEN = NOT ODD, pinned).
+  GOTCHA: ckc can't pin string-result branches — the conditional
+  pin used the inline cs_eval_formula + sf check.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

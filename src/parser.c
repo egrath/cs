@@ -232,7 +232,8 @@ typedef enum {
     FN_REF, FN_VAL, FN_COLIDX, FN_MED,
     FN_SGN, FN_NCR, FN_NPR, FN_INTG, FN_FRAC, FN_INVFACT,
     FN_CHR, FN_ORD,
-    FN_FNOT, FN_FAND, FN_FOR, FN_FXOR
+    FN_FNOT, FN_FAND, FN_FOR, FN_FXOR,
+    FN_EVEN, FN_ODD
 } FnId;
 
 static int fnid(const char *name)
@@ -292,6 +293,8 @@ static int fnid(const char *name)
     if (!strcmp(name, "AND"))   return FN_FAND;
     if (!strcmp(name, "OR"))    return FN_FOR;
     if (!strcmp(name, "XOR"))   return FN_FXOR;
+    if (!strcmp(name, "EVEN"))  return FN_EVEN;
+    if (!strcmp(name, "ODD"))   return FN_ODD;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -816,6 +819,29 @@ static Val parse_primary(P *ps)
             }
             if (f == FN_FNOT || f == FN_FAND || f == FN_FOR || f == FN_FXOR)
                 cs_fuzzy_consts();
+            if (f == FN_EVEN || f == FN_ODD) {
+                /* EVEN(x)/ODD(x): 1 if the integer x is even/odd,
+                 * 0 otherwise (user request 2026-11-15).  A
+                 * fractional or oversized argument is Error 0 (the
+                 * same csn_integer_part contract CHR uses) */
+                Val a = parse_numarg(ps);
+                Csn t;
+                int cc;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                if (!csn_integer_part(&a.num, &t)) {
+                    val_free(&a); val_err(&v, 0); return v;
+                }
+                cc = (int) csn_to_long_val(&t);
+                val_free(&a);
+                csn_from_int(&v.num,
+                             f == FN_EVEN ? (long) (cc % 2 == 0)
+                                          : (long) (cc % 2 != 0));
+                v.good = 1;
+                return v;
+            }
             if (f == FN_FNOT) {
                 /* NOT(x): the Zadeh negation 1-x (fuzzy Boolean
                  * algebra, user request 2026-11-15).  The operand

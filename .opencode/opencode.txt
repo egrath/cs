@@ -48,6 +48,17 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "parity"): EVEN()/ODD() (2026-11-15):
+- USER: EVEN()/ODD() — 1 if the integer argument is even/odd.
+  IMPLEMENTED: one dispatch block via parse_numarg ->
+  csn_integer_part -> csn_to_long_val -> cc % 2 (the CHR
+  mechanics).  Fractional/oversized -> Error 0 (the user's
+  default: no truncation).  Negatives correct.  The 0/1 results
+  work with the 0.7 threshold conditionals and compose with NOT
+  (EVEN = NOT ODD, pinned).  GOTCHA: ckc can't pin string-result
+  branches (the "even"/"odd" conditional pin used the inline
+  sf check).  VERIFIED: --test 523 ok.
+
 ## BATCH (branch "fuzzy" -> merged to master): the fuzzy docs + the merge (2026-11-15):
 - USER: merge with master and document with examples.  README's
   fuzzy section (added in the fuzzy batch) gained the CELL-BASED

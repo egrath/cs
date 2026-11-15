@@ -247,6 +247,16 @@ the alignment to copies.  (For SET-written text cells the `
 ` `\l`
 `\c` escapes inside the string work as before.)
 
+### EVEN() and ODD(): the integer parity
+
+`EVEN(x)` returns 1 if the integer x is even and 0 otherwise;
+`ODD(x)` the opposite.  Negatives work (`ODD(-3)` = 1, `EVEN(-4)` =
+1).  A fractional argument (2.5) or a value too large for the
+integer extraction is an error — evenness is a property of
+integers, not a truncation.  The 0/1 results compose with the
+conditionals (`+(EVEN(A1)):"even":"odd"`) and with `NOT`:
+`EVEN(x)` = `NOT(ODD(x))`.
+
 ### The fuzzy Boolean algebra
 
 Zadeh fuzzy logic: fractional truth values in [0, 1] as ordinary
