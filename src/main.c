@@ -1521,6 +1521,14 @@ static void run_tests(void)
                 cs_set_num(tcell(w / 255, w % 255), "1", &v, 0, NULL);
         }
         cke("MED beyond bound", "MED(A1>C255)", -1);
+        /* LG(): the base-10 alias of LOG (user request 2026-11-15) */
+        ckc("LG 100", "LG(100)", "+2.0000000000000E+1");
+        ckc("LG 10", "LG(10)", "+1.0000000000000E+1");
+        ckc("LG 1", "LG(1)", "0");
+        cke("LG 0", "LG(0)", -1);
+        cke("LG -5", "LG(-5)", -1);
+        ckc("LG equivalence", "LG(56/(12*10**-3))",
+            "+3.6690067809585E+1");
 
         ckc("SUM streams 513", "SUM(A1>C255)", "+5.1300000000000E+3");
         ckc("AVG streams 513", "AVG(A1>C255)", "+1.0000000000000E+1");

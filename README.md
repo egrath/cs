@@ -27,7 +27,8 @@ division) and every system function work on digits:
   exponents by repeated exact multiplication, fractional ones via
   `exp(y*ln(x))`; right-associative and tighter than `* /`
   (the manual's example `10*LOG(56/(12*10**-3))` = 36.69 dB confirms).
-- `SQRT EXP LN LOG` are implemented **in BCD**: Newton's iteration for
+- `SQRT EXP LN LOG` are implemented **in BCD** (`LG` is an alias of
+  `LOG`, base 10): Newton's iteration for
   square roots with a final snap to the largest representable value whose
   square does not exceed the argument; series (e^rem = 1 + r/1! + r²/2!)
   for the exponential with range reduction by whole `ln(10)` steps; the
@@ -242,7 +243,8 @@ RETURN — the formula stays, only the alignment changes (the type line
 reads `text: right justified` etc., and the alignment survives
 `;R` and save/load).  A numeric result is always right-justified;
 recommitting the formula resets the alignment.  `copy_one` carries
-the alignment to copies.  (For SET-written text cells the `` `\l`
+the alignment to copies.  (For SET-written text cells the `
+` `\l`
 `\c` escapes inside the string work as before.)
 
 ### Empty referenced cells are zero

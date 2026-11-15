@@ -226,6 +226,7 @@ static int fnid(const char *name)
     if (!strcmp(name, "MIN"))   return FN_MIN;
     if (!strcmp(name, "SQRT"))  return FN_SQRT;
     if (!strcmp(name, "LOG"))   return FN_LOG;
+    if (!strcmp(name, "LG"))    return FN_LOG;    /* the base-10 alias */
     if (!strcmp(name, "LN"))    return FN_LN;
     if (!strcmp(name, "ABS"))   return FN_ABS;
     if (!strcmp(name, "EXP"))   return FN_EXP;

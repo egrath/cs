@@ -984,6 +984,14 @@ Batch workflow (do all steps before reporting done):
   the type line "text: right justified".  NOTE (user 2026-11-15):
   the CSD format may change freely without asking until release.
 
+- **LG() = LOG() (user request 2026-11-15)**: the base-10 alias in
+  the name-lookup table (no new enum entry) — the SGN/NCR/NPR alias
+  family pattern.  Pinned: LG(100) = 2, LG(10) = 1, LG(1) = 0
+  (ckc's "0" = the exact zero), LG(0)/LG(-5) matching LOG's error
+  class, and the manual's worked example 56/(12*10**-3) = 36.69
+  through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
+  (digits 10, exponent 1), NOT 2.0E+2.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

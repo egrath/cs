@@ -48,6 +48,16 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (master, follow-up): LG() = LOG() (2026-11-15):
+- USER: LG() as an alias of LOG().  One line in the name-lookup
+  table (the SGN/NCR/NPR alias pattern).  Pins: LG(100)=+2.0E+1 (the
+  canon gotcha: digits 10, exp 1 — I first wrote E+2), LG(1)="0"
+  (the exact zero), the errors matching LOG, the manual's
+  56/(12*10**-3) example through LG (+3.6690067809585E+1 — the
+  real value; my first pin had a made-up number).  README's math
+  section notes the alias.
+- VERIFIED: --test 447 ok.
+
 ## BATCH (branch "memfix", follow-up 2): the /r /l /c alignment on formula string results (2026-11-15):
 - USER IDEA: a formula's text result (+(MOD(A1,2)=0):"even":"odd")
   aligns the same way as a text cell — /r /l /c alone in the edit
