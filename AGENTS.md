@@ -1042,6 +1042,33 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **ENGINEERING BATCH D (user list 2026-11-15, branch "eng-batch-d")**:
+  CONV(value, from, to).  THE TABLE: ~46 units in 15 dimensions,
+  every factor an EXACT RATIONAL num/den to the canonical unit -
+  psi = 44482216152605/6451600000 Pa and HP = 745699871582270220/
+  10^15 W are the exact DEFINING rationals, not the rounded 16-digit
+  standards (their true decimals are non-terminating).  Names 7-bit
+  ASCII (mm2/cm2/m3/ohm/kohm/farad/uf/km-h/mph), lookup
+  case-insensitive (conv_eq).  THE ELECTRICAL GROUP is five separate
+  dimensions (potential/current/resistance/capacitance/inductance) -
+  V to A is a nonsense conversion and is refused.  TEMPERATURE is
+  the one non-multiplicative dimension: staged through Celsius
+  (F: (x-32)*5/9; K: x-273.15).  THE NAME CLASH: bare "f" =
+  Fahrenheit, the farad = "farad"/"uf" (flagged; the user's list had
+  both on F).  THE UNIT ARGS deref to strings (literal or TEXT CELL
+  - CONV(100,B10,"m") works; conv_unit_arg); wrong type Error 6;
+  unknown unit/dimension mismatch Error 0; arg count Error 3.
+  Round-trip honesty: terminating factors round-trip EXACTLY (mile
+  pinned); non-terminating ones to the 30-digit honest core (kg
+  pinned as a tolerance conditional - the canon string would be
+  2.9999999999999E+1).  PINS: 36.  ALSO IN THIS BATCH (the user's
+  request): the Makefile CFLAGS gained -Wextra -pedantic-errors (the
+  user added the flags; one warning surfaced - side_effect_stmt's
+  oldtype was an int vs the CellType enum field; now typed CellType).
+  Zero warnings under the strict flags.  VERIFIED: --test 704 ok;
+  the idle gate EXACT; the pty shows CONV(1,psi,Pa) =
+  6894.757293168361336722673445 and the dimension mismatch refusing.
+
 - **ENGINEERING BATCH C (user list 2026-11-15, branch "eng-batch-c")**:
   the paired two-range functions: CORR, RSQ, INTEG.  THE PAIR WALKER
   (pair_ranges): two aligned ranges, shapes must agree (the user's

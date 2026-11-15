@@ -48,6 +48,29 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-d"): CONV + max warnings (2026-11-15):
+- USER: merge C (done, dcb8396 ff) and implement batch D; ALSO add
+  -Wextra -pedantic-errors to CFLAGS (the user had already added the
+  flags to the Makefile - one warning surfaced).
+- WARNINGS FIXED: side_effect_stmt's oldtype (int) vs cell->type
+  (CellType) sign-compare -> oldtype is now CellType.  ZERO warnings
+  under the strict flags; 668 ok after the fix.
+- CONV DONE: the ~46-unit table in 15 dimensions, every factor an
+  EXACT RATIONAL num/den (psi and HP are the exact defining
+  rationals, not the rounded standards); case-insensitive ASCII
+  lookup; the electrical group = five separate dimensions;
+  temperature staged through Celsius; bare "f" = Fahrenheit, the
+  farad = "farad"/"uf" (the one clash, flagged); unit args deref to
+  strings (text cells work); errors: unknown/mismatch -> 0, wrong
+  type -> 6, count -> 3.
+- GOTCHAS: my uf->farad pin was backwards (1 uF = 1e-6 F, the engine
+  was right); the kg round trip does NOT hit canon-14 exactness
+  (non-terminating lb factor - honest to the 30-digit core) -> the
+  pin is a tolerance conditional; mile round-trips EXACTLY
+  (terminating factors).
+- VERIFIED: --test 704 ok; the idle gate EXACT; the pty shows the
+  psi/HP rationals at 24 honest decimals and the mismatch refusing.
+
 ## BATCH (branch "eng-batch-c"): engineering batch C, paired ranges (2026-11-15):
 - USER: merge B to master (done, b9c0c42 ff, branch deleted) and
   implement batch C on eng-batch-c.  SCOPE: CORR/RSQ/INTEG through

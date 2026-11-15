@@ -319,6 +319,39 @@ INTEG(G1>G4,H1>H4)  9.5      trapezoidal rule over a table; x strictly
 (the trapezoidal rule's honest overestimate; the exact integral is
 9).
 
+### CONV: the unit conversion
+
+`CONV(value, from_unit, to_unit)` (2026-11-15, batch D).  Every
+factor is stored as an EXACT RATIONAL to the dimension's canonical
+unit — `psi` and `HP` are the exact defining rationals (lbf over
+in², 550 ft·lbf/s), not the rounded 16-digit standards, so the
+conversion carries the full honest precision:
+
+```text
+CONV(100,"cm","m")      1
+CONV(1,"inch","mm")     25.4
+CONV(100,"F","C")       37.777...    (the offsets stage through C)
+CONV(1,"bar","Pa")      100000
+CONV(1,"HP","W")        745.69987158227022
+CONV(1,"mile","km")     1.609344
+CONV(1,"psi","Pa")      6894.7572931683613367...
+```
+
+Names are 7-bit ASCII and case-insensitive: `mm2`/`cm2`/`m3`,
+`ohm`/`kohm`/`farad`/`uf`, `km/h`/`mph`.  Dimensions: length
+(mm cm m km inch ft mile), area (mm2 cm2 m2 hectare), volume
+(ml l m3 gallon), mass (mg g kg tonne lb), pressure (Pa kPa MPa bar
+mbar psi), temperature (C F K — the one non-multiplicative
+dimension), energy (J kJ Wh kWh cal), power (W kW HP), electrical
+in separate dimensions — potential (V mV), current (A mA),
+resistance (ohm kohm), capacitance (farad uf), inductance (H) —
+speed (m/s km/h mph) and frequency (Hz kHz MHz GHz).
+
+The one name clash: bare `f` is **Fahrenheit**; the farad is spelled
+`farad`/`uf` (flagged).  A unit may come from a text cell
+(`CONV(100,B10,"m")`).  Unknown unit or dimension mismatch is an
+error; a non-string unit argument is Error 6.
+
 ### EVEN() and ODD(): the integer parity
 
 `EVEN(x)` returns 1 if the integer x is even and 0 otherwise;

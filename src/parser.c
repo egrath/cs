@@ -239,7 +239,8 @@ typedef enum {
     FN_CLAMP, FN_DIST, FN_LERP, FN_UNLERP,
     FN_SUMSQ, FN_RMS, FN_VAR, FN_VARP, FN_STDEV, FN_STDEVP,
     FN_PCT, FN_QUART,
-    FN_CORR, FN_RSQ, FN_INTEG
+    FN_CORR, FN_RSQ, FN_INTEG,
+    FN_CONV
 } FnId;
 
 static int fnid(const char *name)
@@ -325,6 +326,7 @@ static int fnid(const char *name)
     if (!strcmp(name, "CORR"))  return FN_CORR;
     if (!strcmp(name, "RSQ"))   return FN_RSQ;
     if (!strcmp(name, "INTEG")) return FN_INTEG;
+    if (!strcmp(name, "CONV"))  return FN_CONV;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -569,6 +571,153 @@ static int integ_visit(void *ctx, const Csn *x, const Csn *y)
     csn_copy(&ia->py, y);
     ia->n++;
     return 0;
+}
+
+/* ---- CONV: the unit conversion table (engineering batch D,
+ * 2026-11-15).  Every factor is an EXACT RATIONAL num/den to the
+ * dimension's canonical unit; psi and HP are the exact defining
+ * rationals (lbf and the foot-pound-second definitions), not the
+ * rounded 16-digit standards.  Names are 7-bit ASCII (the string
+ * model's alphabet): mm2/cm2/m3, ohm/kohm, uF, km/h.  The bare "f"
+ * is FAHRENHEIT - the farad is spelled "farad"/"uf" (the one name
+ * clash in the table, flagged).  Lookup is case-insensitive. ---- */
+
+/* dimension ids; TEMP is the special non-multiplicative one */
+#define UDD_LEN   0     /* canonical m   */
+#define UDD_AREA  1     /* m2            */
+#define UDD_VOL   2     /* l             */
+#define UDD_MASS  3     /* kg            */
+#define UDD_PRES  4     /* Pa            */
+#define UDD_TEMP  5     /* C (offsets)   */
+#define UDD_ENER  6     /* J             */
+#define UDD_POW   7     /* W             */
+#define UDD_VOLT  8     /* V             */
+#define UDD_CURR  9     /* A             */
+#define UDD_OHM  10     /* ohm           */
+#define UDD_FARD 11     /* farad         */
+#define UDD_INDU 12     /* H             */
+#define UDD_SPD  13     /* m/s           */
+#define UDD_FREQ 14     /* Hz            */
+
+struct conv_unit {
+    const char *name;
+    int dim;
+    const char *num;    /* canonical = value * num/den */
+    const char *den;
+};
+
+static const struct conv_unit conv_units[] = {
+    /* length */
+    {"mm",   UDD_LEN,  "1", "1000"},
+    {"cm",   UDD_LEN,  "1", "100"},
+    {"m",    UDD_LEN,  "1", "1"},
+    {"km",   UDD_LEN,  "1000", "1"},
+    {"inch", UDD_LEN,  "254", "10000"},
+    {"ft",   UDD_LEN,  "3048", "10000"},
+    {"mile", UDD_LEN,  "1609344", "1000"},
+    /* area */
+    {"mm2",  UDD_AREA, "1", "1000000"},
+    {"cm2",  UDD_AREA, "1", "10000"},
+    {"m2",   UDD_AREA, "1", "1"},
+    {"hectare", UDD_AREA, "10000", "1"},
+    /* volume (US gallon = 231 in^3) */
+    {"ml",   UDD_VOL,  "1", "1000"},
+    {"l",    UDD_VOL,  "1", "1"},
+    {"m3",   UDD_VOL,  "1000", "1"},
+    {"gallon", UDD_VOL, "3785411784", "1000000000"},
+    /* mass */
+    {"mg",   UDD_MASS, "1", "1000000"},
+    {"g",    UDD_MASS, "1", "1000"},
+    {"kg",   UDD_MASS, "1", "1"},
+    {"tonne", UDD_MASS, "1000", "1"},
+    {"lb",   UDD_MASS, "45359237", "100000000"},
+    /* pressure (psi = lbf/in^2, the exact rational) */
+    {"pa",   UDD_PRES, "1", "1"},
+    {"kpa",  UDD_PRES, "1000", "1"},
+    {"mpa",  UDD_PRES, "1000000", "1"},
+    {"bar",  UDD_PRES, "100000", "1"},
+    {"mbar", UDD_PRES, "100", "1"},
+    {"psi",  UDD_PRES, "44482216152605", "6451600000"},
+    /* temperature (special) */
+    {"c",    UDD_TEMP, "0", "0"},
+    {"f",    UDD_TEMP, "0", "0"},
+    {"k",    UDD_TEMP, "0", "0"},
+    /* energy (cal = 4.184 J, ISO) */
+    {"j",    UDD_ENER, "1", "1"},
+    {"kj",   UDD_ENER, "1000", "1"},
+    {"wh",   UDD_ENER, "3600", "1"},
+    {"kwh",  UDD_ENER, "3600000", "1"},
+    {"cal",  UDD_ENER, "4184", "1000"},
+    /* power (HP = 550 ft*lbf/s, the exact rational) */
+    {"w",    UDD_POW,  "1", "1"},
+    {"kw",   UDD_POW,  "1000", "1"},
+    {"hp",   UDD_POW,  "745699871582270220", "1000000000000000"},
+    /* electrical: each quantity its own dimension */
+    {"v",    UDD_VOLT, "1", "1"},
+    {"mv",   UDD_VOLT, "1", "1000"},
+    {"a",    UDD_CURR, "1", "1"},
+    {"ma",   UDD_CURR, "1", "1000"},
+    {"ohm",  UDD_OHM,  "1", "1"},
+    {"kohm", UDD_OHM,  "1000", "1"},
+    {"farad", UDD_FARD, "1", "1"},
+    {"uf",   UDD_FARD, "1", "1000000"},
+    {"h",    UDD_INDU, "1", "1"},
+    /* speed */
+    {"m/s",  UDD_SPD,  "1", "1"},
+    {"km/h", UDD_SPD,  "5", "18"},
+    {"mph",  UDD_SPD,  "44704", "100000"},
+    /* frequency */
+    {"hz",   UDD_FREQ, "1", "1"},
+    {"khz",  UDD_FREQ, "1000", "1"},
+    {"mhz",  UDD_FREQ, "1000000", "1"},
+    {"ghz",  UDD_FREQ, "1000000000", "1"}
+};
+
+/* case-insensitive 7-bit compare for the unit names */
+static int conv_eq(const char *a, const char *b)
+{
+    while (*a && *b) {
+        if (tolower((unsigned char) *a) != tolower((unsigned char) *b))
+            return 0;
+        a++; b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+/* find a unit: 1 = ok (dim out, num/den parsed), 0 = unknown */
+static int conv_lookup(const char *name, int *dimp, Csn *num, Csn *den)
+{
+    size_t i;
+    for (i = 0; i < sizeof(conv_units) / sizeof(conv_units[0]); i++) {
+        if (conv_eq(conv_units[i].name, name)) {
+            *dimp = conv_units[i].dim;
+            if (csn_parse(conv_units[i].num, num) != CSN_OK)
+                return 0;
+            if (csn_parse(conv_units[i].den, den) != CSN_OK)
+                return 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* a unit ARGUMENT: an expression that derefs to a String
+ * (a literal or a text cell); 1 = ok, 0 = wrong type (Error 6) */
+static int conv_unit_arg(P *ps, char *out, int outn)
+{
+    Val v;
+    int e;
+    memset(&v, 0, sizeof(v));
+    csn_zero(&v.num);
+    v = parse_condexpr(ps);
+    if (!v.good) { val_free(&v); return -1; }
+    e = val_deref(&v);
+    if (e >= 0) { val_free(&v); return -1; }
+    if (v.type != VT_STR || !v.str) { val_free(&v); return 0; }
+    strncpy(out, v.str, (size_t) outn - 1);
+    out[outn - 1] = '\0';
+    val_free(&v);
+    return 1;
 }
 
 /* the streaming aggregation for SUM/CNT/AVG/MAX/MIN (2026-11-14): no
@@ -1659,6 +1808,91 @@ static Val parse_primary(P *ps)
                 default:
                     err = csn_exp(&v.num, &a.num);   /* overflow -> range error */
                     break;
+                }
+                val_free(&a);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            /* CONV(value, from, to): the unit conversion
+             * (engineering batch D, 2026-11-15).  Exact rationals:
+             * canonical = value*num1/den1, result = canonical*den2/
+             * num2.  Temperature stages through Celsius (the
+             * non-multiplicative dimension).  Unknown unit or
+             * dimension mismatch -> Error 0; a non-string unit
+             * argument -> Error 6. */
+            if (f == FN_CONV) {
+                Val a;
+                char un1[24], un2[24];
+                int d1, d2, r;
+                Csn num1, den1, num2, den2, canon, t;
+                int err;
+                a = parse_numarg(ps);
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ',') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                r = conv_unit_arg(ps, un1, (int) sizeof(un1));
+                if (r < 0) { val_free(&a); val_err(&v, 0); return v; }
+                if (r == 0) { val_free(&a); val_err(&v, 6); return v; }
+                skip_ws(&ps->p);
+                if (*ps->p != ',') {
+                    val_err(&v, 3); val_free(&a); return v;
+                }
+                ps->p++;
+                r = conv_unit_arg(ps, un2, (int) sizeof(un2));
+                if (r < 0) { val_free(&a); val_err(&v, 0); return v; }
+                if (r == 0) { val_free(&a); val_err(&v, 6); return v; }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                val_free(&v);
+                csn_zero(&v.num);
+                err = 0;
+                if (!conv_lookup(un1, &d1, &num1, &den1) ||
+                    !conv_lookup(un2, &d2, &num2, &den2))
+                    err = 1;                        /* unknown unit */
+                else if (d1 != d2)
+                    err = 1;                        /* dimensions differ */
+                else if (d1 == UDD_TEMP) {
+                    /* stage through Celsius: F -> (x-32)*5/9;
+                     * K -> x-273.15; back by the inverse */
+                    Csn five, nine, tt;
+                    csn_from_int(&five, 5L);
+                    csn_from_int(&nine, 9L);
+                    if (conv_eq(un1, "f")) {
+                        csn_from_int(&t, 32L);
+                        err = csn_sub(&tt, &a.num, &t);
+                        if (!err) err = csn_mul(&canon, &tt, &five);
+                        if (!err) err = csn_div(&canon, &canon, &nine);
+                    } else if (conv_eq(un1, "k")) {
+                        csn_parse("273.15", &tt);
+                        err = csn_sub(&canon, &a.num, &tt);
+                    } else {
+                        csn_copy(&canon, &a.num);
+                    }
+                    if (!err) {
+                        if (conv_eq(un2, "f")) {
+                            err = csn_mul(&t, &canon, &nine);
+                            if (!err) err = csn_div(&t, &t, &five);
+                            if (!err) {
+                                Csn tt2;
+                                csn_from_int(&tt2, 32L);
+                                err = csn_add(&v.num, &t, &tt2);
+                            }
+                        } else if (conv_eq(un2, "k")) {
+                            csn_parse("273.15", &t);
+                            err = csn_add(&v.num, &canon, &t);
+                        } else {
+                            csn_copy(&v.num, &canon);
+                        }
+                    }
+                } else {
+                    /* the multiplicative dimensions */
+                    err = csn_mul(&canon, &a.num, &num1);
+                    if (!err) err = csn_div(&canon, &canon, &den1);
+                    if (!err) err = csn_mul(&t, &canon, &den2);
+                    if (!err) err = csn_div(&v.num, &t, &num2);
                 }
                 val_free(&a);
                 if (err) { val_err(&v, 0); return v; }

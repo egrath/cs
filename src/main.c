@@ -1828,6 +1828,81 @@ static void run_tests(void)
         cke("INTEG shape", "INTEG(A1>A4,B1>B2)", -1);
         cke("INTEG non-range", "INTEG(5,B1>B4)", 6);
         cs_clear_all();
+        /* ==== CONV: the unit conversion (batch D) ==== */
+        ckc("CONV cm m", "CONV(100,\"cm\",\"m\")", "+1.0000000000000E+1");
+        ckc("CONV inch mm", "CONV(1,\"inch\",\"mm\")",
+            "+2.5400000000000E+2");
+        ckc("CONV mile km", "CONV(1,\"mile\",\"km\")",
+            "+1.6093440000000E+1");
+        ckc("CONV lb kg", "CONV(1,\"lb\",\"kg\")",
+            "+4.5359237000000E+0");
+        ckc("CONV bar Pa", "CONV(1,\"bar\",\"Pa\")",
+            "+1.0000000000000E+6");
+        ckc("CONV psi Pa", "CONV(1,\"psi\",\"Pa\")",
+            "+6.8947572931683E+4");
+        ckc("CONV HP W", "CONV(1,\"HP\",\"W\")",
+            "+7.4569987158227E+3");
+        ckc("CONV kWh J", "CONV(1,\"kWh\",\"J\")",
+            "+3.6000000000000E+7");
+        ckc("CONV cal J", "CONV(1,\"cal\",\"J\")", "+4.1840000000000E+1");
+        ckc("CONV gallon l", "CONV(1,\"gallon\",\"l\")",
+            "+3.7854117840000E+1");
+        ckc("CONV hectare m2", "CONV(1,\"hectare\",\"m2\")",
+            "+1.0000000000000E+5");
+        ckc("CONV tonne lb", "CONV(1,\"tonne\",\"lb\")",
+            "+2.2046226218487E+4");
+        ckc("CONV km/h", "CONV(1,\"km/h\",\"m/s\")",
+            "+2.7777777777777E+0");
+        ckc("CONV mph", "CONV(1,\"mph\",\"m/s\")",
+            "+4.4704000000000E+0");
+        ckc("CONV GHz Hz", "CONV(1,\"GHz\",\"Hz\")",
+            "+1.0000000000000E+10");
+        ckc("CONV kohm ohm", "CONV(1,\"kohm\",\"ohm\")",
+            "+1.0000000000000E+4");
+        ckc("CONV uf farad", "CONV(1,\"uf\",\"farad\")",
+            "+1.0000000000000E-5");
+        ckc("CONV farad uf", "CONV(1,\"farad\",\"uf\")",
+            "+1.0000000000000E+7");
+        /* temperature: the offsets, both directions */
+        ckc("CONV C F 0", "CONV(0,\"C\",\"F\")", "+3.2000000000000E+2");
+        ckc("CONV C F 100", "CONV(100,\"C\",\"F\")",
+            "+2.1200000000000E+3");
+        ckc("CONV F C 100", "CONV(100,\"F\",\"C\")",
+            "+3.7777777777777E+2");
+        ckc("CONV C K", "CONV(0,\"C\",\"K\")", "+2.7315000000000E+3");
+        ckc("CONV K C", "CONV(273.15,\"K\",\"C\")", "0");
+        /* the one name clash: bare "f" is FAHRENHEIT, the farad is
+         * "farad"/"uf" (flagged) */
+        ckc("CONV f is temp", "CONV(1,\"f\",\"c\")",
+            "-1.7222222222222E+2");
+        /* case-insensitive lookup */
+        ckc("CONV case", "CONV(100,\"CM\",\"m\")",
+            "+1.0000000000000E+1");
+        ckc("CONV case 2", "CONV(1,\"Mile\",\"km\")",
+            "+1.6093440000000E+1");
+        /* round trips: the mile factors terminate -> exact; the lb
+         * factor does not -> the honest 30-digit core (a tolerance
+         * conditional instead of a canon string) */
+        ckc("CONV round mile",
+            "CONV(CONV(7,\"mile\",\"km\"),\"km\",\"mile\")",
+            "+7.0000000000000E+1");
+        ckc("CONV round kg",
+            "(ABS(CONV(CONV(3,\"kg\",\"lb\"),\"lb\",\"kg\")-3)<1E-25):1:0",
+            "+1.0000000000000E+1");
+        /* the unit may come from a TEXT CELL (the bare reference
+         * derefs to the string) */
+        cs_set_text(tcell(1, 9), "cm", 'L');
+        ckc("CONV cell unit", "CONV(100,B10,\"m\")",
+            "+1.0000000000000E+1");
+        /* the error paths */
+        cke("CONV dim mismatch", "CONV(1,\"m\",\"kg\")", -1);
+        cke("CONV unknown", "CONV(1,\"furlong\",\"m\")", -1);
+        cke("CONV empty unit", "CONV(1,\"\",\"m\")", -1);
+        cke("CONV num unit", "CONV(1,5,\"kg\")", 6);
+        cke("CONV text value", "CONV(\"x\",\"m\",\"cm\")", 6);
+        cke("CONV 2 args", "CONV(1,\"m\")", 3);
+        cke("CONV 4 args", "CONV(1,\"m\",\"cm\",2)", 3);
+        cs_clear_all();
         /* the /r /l /c alignment on a FORMULA's string result
          * (user request 2026-11-15) */
         cs_clear_all();
