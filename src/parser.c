@@ -76,6 +76,23 @@ static void val_err(Val *v, int code)
 int cs_eval_ctx_on = 0;
 int cs_eval_ctx_col = 0, cs_eval_ctx_row = 0;
 
+/* the Zadeh fuzzy algebra (2026-11-15): the BCD constants for the
+ * domain [0,1] and the single Boolean-interpretation threshold
+ * (FUZZY_TRUE_THRESHOLD = 0.7 - the ONLY place the threshold value
+ * is written) */
+#define FUZZY_TRUE_THRESHOLD "0.7"
+static Csn cs_fuzzy_zero, cs_fuzzy_one, cs_fuzzy_true;
+static int cs_fuzzy_init = 0;
+static void cs_fuzzy_consts(void)
+{
+    if (!cs_fuzzy_init) {
+        csn_parse("0", &cs_fuzzy_zero);
+        csn_parse("1", &cs_fuzzy_one);
+        csn_parse(FUZZY_TRUE_THRESHOLD, &cs_fuzzy_true);
+        cs_fuzzy_init = 1;
+    }
+}
+
 int cs_empty_strict = 0;    /* 1 = an empty reference is Error 1 (the
                              * factorial entry's "?n? until filled"
                              * semantics); 0 = the manual's empty-is-
@@ -214,7 +231,8 @@ typedef enum {
     FN_FACT, FN_COMBIN, FN_PERMUT, FN_GCD, FN_LCM, FN_ROUND, FN_TRUNC,
     FN_REF, FN_VAL, FN_COLIDX, FN_MED,
     FN_SGN, FN_NCR, FN_NPR, FN_INTG, FN_FRAC, FN_INVFACT,
-    FN_CHR, FN_ORD
+    FN_CHR, FN_ORD,
+    FN_FNOT, FN_FAND, FN_FOR, FN_FXOR
 } FnId;
 
 static int fnid(const char *name)
@@ -270,6 +288,10 @@ static int fnid(const char *name)
     if (!strcmp(name, "FRAC"))  return FN_FRAC;
     if (!strcmp(name, "INVFACT")) return FN_INVFACT;
     if (!strcmp(name, "CHR"))   return FN_CHR;
+    if (!strcmp(name, "NOT"))   return FN_FNOT;
+    if (!strcmp(name, "AND"))   return FN_FAND;
+    if (!strcmp(name, "OR"))    return FN_FOR;
+    if (!strcmp(name, "XOR"))   return FN_FXOR;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -379,6 +401,21 @@ static int agg_item(CsAgg *ag, int f, const Csn *num)
         if (!ag->started || csn_cmp(num, &ag->ext) < 0)
             csn_copy(&ag->ext, num);
         break;
+    case FN_FAND:
+        /* the fuzzy conjunction: MIN with the [0,1] domain check
+         * (the threshold is NEVER applied here, 2026-11-15) */
+        if (csn_cmp(num, &cs_fuzzy_zero) < 0 ||
+            csn_cmp(num, &cs_fuzzy_one) > 0) return 0;
+        if (!ag->started || csn_cmp(num, &ag->ext) < 0)
+            csn_copy(&ag->ext, num);
+        break;
+    case FN_FOR:
+        /* the fuzzy disjunction: MAX with the [0,1] domain check */
+        if (csn_cmp(num, &cs_fuzzy_zero) < 0 ||
+            csn_cmp(num, &cs_fuzzy_one) > 0) return 0;
+        if (!ag->started || csn_cmp(num, &ag->ext) > 0)
+            csn_copy(&ag->ext, num);
+        break;
     default:
         break;                      /* CNT counts only */
     }
@@ -393,6 +430,7 @@ static int agg_item(CsAgg *ag, int f, const Csn *num)
  * range is Error 0).  -1 = ok. */
 static int parse_stream(P *ps, int f, CsAgg *ag)
 {
+    if (f == FN_FAND || f == FN_FOR) cs_fuzzy_consts();
     for (;;) {
         Val v;
         int e;
@@ -776,6 +814,70 @@ static Val parse_primary(P *ps)
                 v.good = 1;
                 return v;
             }
+            if (f == FN_FNOT || f == FN_FAND || f == FN_FOR || f == FN_FXOR)
+                cs_fuzzy_consts();
+            if (f == FN_FNOT) {
+                /* NOT(x): the Zadeh negation 1-x (fuzzy Boolean
+                 * algebra, user request 2026-11-15).  The operand
+                 * must be in [0,1]; outside is Error 0. */
+                Val a = parse_numarg(ps);
+                Csn one;
+                int err;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                if (csn_cmp(&a.num, &cs_fuzzy_zero) < 0 ||
+                    csn_cmp(&a.num, &cs_fuzzy_one) > 0) {
+                    val_free(&a); val_err(&v, 0); return v;
+                }
+                csn_from_int(&one, 1);
+                err = csn_sub(&v.num, &one, &a.num);
+                val_free(&a);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            if (f == FN_FXOR) {
+                /* XOR(x,y): the Zadeh exclusive-or
+                 * MAX(MIN(x,1-y),MIN(1-x,y)) - exactly two arguments
+                 * (2026-11-15) */
+                Val a = parse_numarg(ps);
+                Val b;
+                Csn one, na, nb, m1, m2;
+                int err;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ',') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                b = parse_numarg(ps);
+                if (!b.good) { val_free(&a); return b; }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); val_free(&b); return v; }
+                ps->p++;
+                if (csn_cmp(&a.num, &cs_fuzzy_zero) < 0 ||
+                    csn_cmp(&a.num, &cs_fuzzy_one) > 0 ||
+                    csn_cmp(&b.num, &cs_fuzzy_zero) < 0 ||
+                    csn_cmp(&b.num, &cs_fuzzy_one) > 0) {
+                    val_free(&a); val_free(&b); val_err(&v, 0); return v;
+                }
+                csn_from_int(&one, 1);
+                err = csn_sub(&na, &one, &a.num);
+                if (!err) err = csn_sub(&nb, &one, &b.num);
+                /* m1 = MIN(x, 1-y), m2 = MIN(1-x, y) (the exact BCD min) */
+                if (!err) {
+                    if (csn_cmp(&a.num, &nb) < 0) csn_copy(&m1, &a.num);
+                    else csn_copy(&m1, &nb);
+                    if (csn_cmp(&na, &b.num) < 0) csn_copy(&m2, &na);
+                    else csn_copy(&m2, &b.num);
+                    if (csn_cmp(&m1, &m2) > 0) csn_copy(&v.num, &m1);
+                    else csn_copy(&v.num, &m2);
+                }
+                val_free(&a); val_free(&b);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
             if (f == FN_CHR) {
                 /* CHR(n): the character with the 7-bit printable code
                  * n (32..127); everything else is Error 0 (user-ext
@@ -1114,7 +1216,8 @@ static Val parse_primary(P *ps)
             /* SUM/CNT/AVG/MAX/MIN stream; MED uses a bounded buffer
              * (no value array for the streaming four - 2026-11-14) */
             if (f == FN_SUM || f == FN_CNT || f == FN_AVG ||
-                f == FN_MAX || f == FN_MIN || f == FN_MED) {
+                f == FN_MAX || f == FN_MIN || f == FN_MED ||
+                f == FN_FAND || f == FN_FOR) {
                 CsAgg ag;
                 Csn *mbuf = NULL;
                 int mcap = 16, mcnt = 0, e2;
@@ -1176,7 +1279,9 @@ static Val parse_primary(P *ps)
                     csn_zero(&v.num);
                     return v;
                 }
-                if (f == FN_SUM) {
+                if (f == FN_FAND || f == FN_FOR) {
+                    csn_copy(&v.num, &ag.ext);
+                } else if (f == FN_SUM) {
                     csn_copy(&v.num, &ag.sum);
                 } else if (f == FN_CNT) {
                     csn_from_int(&v.num, ag.cnt);
@@ -1452,10 +1557,15 @@ static Val parse_cmp(P *ps)
             if (p[1] == '=') op = 2;       /* <= */
             else if (p[1] == '>') op = 4;  /* <> */
             else op = 1;                   /* <  */
-        } else if (*p == '>') op = 5;
+        } else if (*p == '>') {
+            if (p[1] == '=') op = 6;       /* >= (the mirror of <=, the
+                                            * user's threshold tests
+                                            * reached for it, 2026-11-15) */
+            else op = 5;                   /* >  */
+        }
         else if (*p == '=') op = 3;
         else return a;
-        ps->p = p + ((op == 2 || op == 4) ? 2 : (op == 5 ? 1 : 1));
+        ps->p = p + ((op == 2 || op == 4 || op == 6) ? 2 : 1);
         memset(&b, 0, sizeof(b));
         csn_zero(&b.num);
         b = parse_add(ps);
@@ -1495,6 +1605,8 @@ static Val parse_cmp(P *ps)
             case 2: r = (cv <= 0); break;
             case 3: r = (cv == 0); break;
             case 4: r = (cv != 0); break;
+            case 5: r = (cv > 0); break;
+            case 6: r = (cv >= 0); break;
             default: r = (cv > 0); break;
             }
             csn_from_int(&a.num, r ? 1 : 0);
@@ -1511,6 +1623,8 @@ static Val parse_cmp(P *ps)
         case 2: r = (r <= 0); break;
         case 3: r = (r == 0); break;
         case 4: r = (r != 0); break;
+        case 5: r = (r > 0); break;
+        case 6: r = (r >= 0); break;
         default: r = (r > 0); break;
         }
         csn_from_int(&a.num, r ? 1 : 0);
@@ -1862,8 +1976,17 @@ static Val parse_condexpr(P *ps)
                 fbuf[0] = '\0';
                 ps->p = q;
             }
-            ctrue = cond.type == VT_STR ? (cond.str && cond.str[0])
-                                        : !csn_is_zero(&cond.num);
+            /* the truth test: a STRING condition is truthy when
+             * nonempty; a NUMERIC/BOOL condition passes the single
+             * fuzzy Boolean-interpretation threshold
+             * (FUZZY_TRUE_THRESHOLD = 0.7 - the ONLY truth-test site;
+             * comparisons produce exact 0/1 and are unaffected) */
+            if (cond.type == VT_STR)
+                ctrue = (cond.str && cond.str[0]);
+            else {
+                cs_fuzzy_consts();
+                ctrue = csn_cmp(&cond.num, &cs_fuzzy_true) >= 0;
+            }
             memset(&t, 0, sizeof(t)); csn_zero(&t.num);
             memset(&f, 0, sizeof(f)); csn_zero(&f.num);
             t.good = 1; f.good = 1;     /* empty branches assign 0 */

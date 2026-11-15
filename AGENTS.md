@@ -992,6 +992,36 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE ZADEH FUZZY BOOLEAN ALGEBRA (user spec 2026-11-15, branch
+  "fuzzy")**: NOT/AND/OR/XOR in the parser dispatch, plain numeric
+  results (VT_NUM, never a new type), all exact BCD (min/max and
+  1-x never round — the section-5 properties hold exactly, De
+  Morgan pinned as a self-comparison conditional instead of
+  tolerances).  NOT(x): 1 arg via parse_numarg, 1-x; AND(...)/
+  OR(...): MULTI-OPERAND through the streaming machinery
+  (agg_item's FN_FAND/FN_FOR modes: the [0,1] domain check ->
+  Error 0, then min/max tracking — RANGES work, the strict mixing
+  rule applies); XOR(x,y): EXACTLY 2 args (Error 3 otherwise),
+  MAX(MIN(x,1-y),MIN(1-x,y)).  The domain [0,1] enforced per
+  operand, outside -> Error 0 (no clamping).  THE THRESHOLD:
+  FUZZY_TRUE_THRESHOLD = "0.7" (the define in parser.c; the BCD
+  constants cs_fuzzy_zero/one/true built once by cs_fuzzy_consts)
+  applied at EXACTLY ONE site: the conditional truth test
+  (numeric/BOOL conditions pass the threshold; STR conditions stay
+  truthy-nonempty; comparisons produce exact 0/1 and are
+  unaffected).  FLAGGED BEHAVIOR CHANGE: a bare numeric condition
+  in (0, 0.7) or negative is now FALSE (was nonzero-true) — the
+  user confirmed 0.7 is the only threshold.  The threshold is
+  NEVER applied inside the operators (AND(0.6,0.9) = 0.6, pinned).
+  BONUS: the >= comparison operator added (the mirror of <= — the
+  user's threshold tests reached for it and it never existed; the
+  numeric and string comparison switches both handle op 6).
+  PINS: the spec's full test list (all four operators, the
+  threshold trio, the invalid inputs, multi-operand, De Morgan
+  both ways, double negation, every property) — 508 checks total.
+  pty: the calculator answers AND=0.6/NOT=0.75/XOR=0.7/OR=0.9 and
+  the conditional cells.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

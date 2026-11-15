@@ -48,6 +48,34 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "fuzzy"): the Zadeh fuzzy Boolean algebra (2026-11-15):
+- USER SPEC: NOT/AND/OR/XOR (Zadeh), the fuzzy values as ordinary
+  numbers in [0,1], the FUZZY_TRUE_THRESHOLD = 0.7 (the single
+  named constant, never applied inside the operators), the domain
+  validation without clamping, all the section-5 properties, the
+  full unit-test list.
+- IMPLEMENTED: FN_FNOT/FN_FAND/FN_FOR/FN_FXOR in the dispatch;
+  NOT = 1-x (1 arg, parse_numarg); AND/OR = multi-operand through
+  parse_stream (the FN_FAND/FN_FOR agg modes: the domain check +
+  min/max; ranges work); XOR = exactly 2 args, MAX(MIN(x,1-y),
+  MIN(1-x,y)) with the inline BCD min/max.  THE THRESHOLD: the
+  define + the once-built BCD constants; applied at the ONE
+  conditional truth-test site (the flagged change: bare numeric
+  conditions 0<x<0.7 and negatives now FALSE — the user
+  confirmed).  BONUS: the >= comparison operator (the mirror of
+  <=, missing since the start; the numeric and string switches
+  handle op 6).
+- GOTCHAS: the canon exponent bit again (all the sub-1 fuzzy pins
+  E+0, not E+1); my first pty script used >= before it existed
+  (4x Error 6) and had the ?-before-expression order wrong; the
+  "User interrupted execution" in the pty log = the ESC racing a
+  batched repaint into a branch poll (a script artifact — the
+  final state is correct).  csn_min/csn_max do NOT exist — the
+  min/max are inline cmp/copy per the codebase style.
+- VERIFIED: --test 508 ok (all the spec's tests + the properties +
+  De Morgan + the threshold trio); the idle gate EXACT; the pty
+  shows the calculator answers 0.6/0.75/0.7/0.9.
+
 ## BATCH (master, follow-up): LG() = LOG() (2026-11-15):
 - USER: LG() as an alias of LOG().  One line in the name-lookup
   table (the SGN/NCR/NPR alias pattern).  Pins: LG(100)=+2.0E+1 (the

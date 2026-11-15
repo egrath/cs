@@ -247,6 +247,34 @@ the alignment to copies.  (For SET-written text cells the `
 ` `\l`
 `\c` escapes inside the string work as before.)
 
+### The fuzzy Boolean algebra
+
+Zadeh fuzzy logic: fractional truth values in [0, 1] as ordinary
+numbers — 0 is false, 1 is true, everything between is a degree of
+truth.  Four functions, all exact BCD:
+
+```text
+NOT(0.25)              0.75       (1 - x)
+AND(0.2,0.8)           0.2        (MIN; multi-operand; ranges too)
+OR(0.2,0.8)            0.8        (MAX; multi-operand; ranges too)
+XOR(0.3,0.7)           0.7        (the Zadeh exclusive-or, 2 operands)
+```
+
+Operands outside [0, 1] are errors (no clamping).  The threshold for
+interpreting a fuzzy value as an ordinary Boolean is
+`FUZZY_TRUE_THRESHOLD = 0.7` — `0.7` and above are TRUE, below is
+FALSE — and it applies at exactly one place: the conditional truth
+test.  The operators never apply it (`AND(0.6,0.9)` is 0.6, not 0):
+
+```text
++(0.7>=0.7):1:0        1          (0.7 passes the threshold)
++(AND(0.6,0.9)<0.7):1:0  1        (0.6 stays fuzzy inside AND)
++(NOT(NOT(0.25)))      0.25       (double negation is exact)
+```
+
+De Morgan's laws hold exactly (`NOT(AND(x,y))` = `OR(NOT(x),NOT(y))`
+etc.) — BCD min/max/1−x never round.
+
 ### Empty referenced cells are zero
 
 A bare reference to an empty (or allocated-empty) cell yields **0** in
