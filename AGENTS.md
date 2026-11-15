@@ -1042,6 +1042,41 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **ENGINEERING BATCH F + the dm2 follow-up (user, 2026-11-15,
+  branch "eng-batch-f")**: ROOT(f, lo, hi) - the EXPRESSION-BASED
+  root finder, the one architectural item of the list.  THE
+  MECHANISM: the first argument is CAPTURED as raw text
+  (root_arg_end scans for the top-level comma through quotes and
+  parens - the branch-capture precedent) and re-evaluated per trial
+  by root_eval (cs_eval_formula with a parser-level binding:
+  g_bound_x/g_bound_on, save/restore bracket - a nested ROOT is
+  safe); in the atom parser's word branch a bare X (any case) with
+  the binding on yields the bound value.  SAFE by construction:
+  is_coord_ahead ran first (X2 is a reference) and functions need (
+  - X cannot collide.  BISECTION: the bracket normalized (lo > hi
+  swaps), endpoint roots returned directly (f(lo) = 0 -> lo), the
+  no-sign-change case -> Error 0, the loop: m = (a+b)/2, the
+  tolerance break at |b-a| <= max(|a|,|b|)*1e-24 (RELATIVE - ~80
+  steps from any bracket width, 300-pass cap), the answer is the
+  interval's midpoint.  INTEGER ROOTS are reached only to the
+  tolerance (2.9999999999999... possible) - the pins use comparison
+  conditionals; sqrt(2)/pi have stable 14-digit canons (the true
+  15th digit is 9).  CAVEATS (flagged, documented in README): side
+  effects in the argument execute PER TRIAL (a fresh parse each);
+  a string result is an error.  THE BINDING DOES NOT LEAK (bare X
+  outside ROOT stays Error 6 - pinned).  MY PROBE BUG: I wrote '^'
+  for the power operator (the grammar's is '**', the manual's) -
+  four "failures" that were my own formulas; also SIN(X)-1 has no
+  sign change on [0,2] (it touches zero without crossing - the
+  correct refusal).  THE dm2 FOLLOW-UP (the user's addition):
+  CONV's area dimension gains dm2 (1/100 m2) - the ladder now
+  mm2/cm2/dm2/m2/hectare, exact round trips.  A pin slip of mine:
+  the dm2 round trip used "km2" which is not a unit.  PINS: 4
+  (dm2) + 18 (ROOT).  VERIFIED: --test 768 ok; the idle gate
+  EXACT; the pty shows ROOT sqrt2 = 1.414213562373095048801689,
+  ROOT pi = 3.141592653589793238462642, the refusal, and the bare
+  x Error 6.
+
 - **ENGINEERING BATCH E (user list 2026-11-15, branch "eng-batch-e")**:
   SPLINE + DIFF.  THE REFACTOR: pair_ranges SPLIT into pair_parse
   (the two aligned ranges + optionally a trailing scalar t - DIFF/

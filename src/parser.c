@@ -241,7 +241,8 @@ typedef enum {
     FN_PCT, FN_QUART,
     FN_CORR, FN_RSQ, FN_INTEG,
     FN_CONV,
-    FN_SPLINE, FN_DIFF
+    FN_SPLINE, FN_DIFF,
+    FN_ROOT
 } FnId;
 
 static int fnid(const char *name)
@@ -330,6 +331,7 @@ static int fnid(const char *name)
     if (!strcmp(name, "CONV"))  return FN_CONV;
     if (!strcmp(name, "SPLINE")) return FN_SPLINE;
     if (!strcmp(name, "DIFF"))  return FN_DIFF;
+    if (!strcmp(name, "ROOT"))  return FN_ROOT;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -667,6 +669,70 @@ static int integ_visit(void *ctx, const Csn *x, const Csn *y)
     csn_copy(&ia->px, x);
     csn_copy(&ia->py, y);
     ia->n++;
+    return 0;
+}
+
+/* ---- ROOT: the expression-based root finder (engineering batch F,
+ * 2026-11-15).  ROOT(f, lo, hi) bisects f(X) = 0 on the bracket
+ * [lo, hi]: the FIRST argument is captured as raw text (a comma at
+ * the top level ends it) and re-evaluated per trial with the bare
+ * word X (any case) bound to the trial value - the COLIDX
+ * scoped-argument precedent.  X can never collide with a reference
+ * (references are letter+digits) or a function name (functions need
+ * '(').  The bracket must contain a sign change; the iteration
+ * stops at the RELATIVE tolerance scale*1e-24 or 300 passes and
+ * returns the interval's midpoint.  CAVEATS (flagged): every trial
+ * is a fresh full parse, so side effects in the argument execute
+ * once PER TRIAL (the dialog caveat, multiplied); a string result
+ * is an error. ---- */
+#define ROOT_MAX 240
+#define ROOT_PASSES 300
+
+static Csn g_bound_x;           /* the trial value of X */
+static int g_bound_on = 0;      /* the binding is active */
+
+/* the top-level position of `stop` in the argument text (quotes and
+ * parentheses nest); NULL when the argument never closes */
+static const char *root_arg_end(const char *p, char stop)
+{
+    int depth = 0;
+    while (*p) {
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') p++;
+            if (!*p) return NULL;
+        } else if (*p == '(') {
+            depth++;
+        } else if (*p == ')') {
+            if (depth == 0) return NULL;
+            depth--;
+        } else if (depth == 0 && *p == stop) {
+            return p;
+        }
+        p++;
+    }
+    return NULL;
+}
+
+/* evaluate the captured text with X = xval: 0 = ok, 1 = any failure
+ * (an evaluation error, a string result, an interrupt) */
+static int root_eval(const char *text, const Csn *xval, Csn *out)
+{
+    int saved_on = g_bound_on;
+    Csn saved_x;
+    Csn val;
+    char *sf = NULL;
+    int e;
+    csn_zero(&val);
+    csn_copy(&saved_x, &g_bound_x);
+    csn_copy(&g_bound_x, xval);
+    g_bound_on = 1;
+    e = cs_eval_formula(text, &val, &sf);
+    g_bound_on = saved_on;
+    csn_copy(&g_bound_x, &saved_x);
+    if (sf) { free(sf); return 1; }     /* a string result is no root */
+    if (e) return 1;
+    csn_copy(out, &val);
     return 0;
 }
 
@@ -1105,7 +1171,24 @@ static Val parse_primary(P *ps)
             }
             name[n] = '\0';
             skip_ws(&q);
-            if (*q != '(') { val_err(&v, 6); ps->p = q; return v; }
+            if (*q != '(') {
+                /* the ROOT bound variable: a bare X (any case) inside
+                 * a captured ROOT argument - the COLIDX
+                 * scoped-argument precedent.  Safe: is_coord_ahead
+                 * ran first (X2 is a reference) and a function call
+                 * would have its '('. */
+                if (g_bound_on && n == 1 && name[0] == 'X') {
+                    val_free(&v);
+                    memset(&v, 0, sizeof(v));
+                    csn_copy(&v.num, &g_bound_x);
+                    v.good = 1;
+                    ps->p = q;
+                    return v;
+                }
+                val_err(&v, 6);
+                ps->p = q;
+                return v;
+            }
             f = fnid(name);
             if (f == FN_UNKNOWN) { val_err(&v, 4); ps->p = q + 1; return v; }
             ps->p = q + 1;
@@ -1999,6 +2082,113 @@ static Val parse_primary(P *ps)
                 }
                 val_free(&a);
                 if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            /* ROOT(f, lo, hi): the bisection (engineering batch F,
+             * 2026-11-15).  The argument is CAPTURED as text; X is
+             * bound per trial.  The bracket must contain a sign
+             * change (or an endpoint root); the stop is the relative
+             * tolerance scale*1e-24 or 300 passes; the answer is the
+             * interval's midpoint. */
+            if (f == FN_ROOT) {
+                char fbuf[ROOT_MAX];
+                const char *q;
+                int flen, iter, werr = 0;
+                Val lo, hi;
+                Csn a, b, fa, fb, m, fm, two;
+                csn_zero(&a); csn_zero(&b);
+                csn_zero(&fa); csn_zero(&fb);
+                csn_zero(&m); csn_zero(&fm);
+                skip_ws(&ps->p);
+                q = root_arg_end(ps->p, ',');
+                if (!q) { val_err(&v, 3); return v; }
+                flen = (int) (q - ps->p);
+                if (flen >= ROOT_MAX) { val_err(&v, 0); return v; }
+                memcpy(fbuf, ps->p, (size_t) flen);
+                fbuf[flen] = '\0';
+                ps->p = q + 1;              /* past the ',' */
+                skip_ws(&ps->p);
+                lo = parse_numarg(ps);
+                if (!lo.good) return lo;
+                skip_ws(&ps->p);
+                if (*ps->p != ',') { val_err(&v, 3); val_free(&lo); return v; }
+                ps->p++;
+                hi = parse_numarg(ps);
+                if (!hi.good) { val_free(&lo); return hi; }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') {
+                    val_err(&v, 3); val_free(&lo); val_free(&hi);
+                    return v;
+                }
+                ps->p++;
+                val_free(&v);
+                csn_zero(&v.num);
+                /* the normalized bracket: a < b */
+                if (csn_cmp(&lo.num, &hi.num) > 0) {
+                    csn_copy(&a, &hi.num);
+                    csn_copy(&b, &lo.num);
+                } else {
+                    csn_copy(&a, &lo.num);
+                    csn_copy(&b, &hi.num);
+                }
+                val_free(&lo);
+                val_free(&hi);
+                if (csn_cmp(&a, &b) == 0) {
+                    /* a degenerate "bracket": a root only if f = 0 */
+                    if (root_eval(fbuf, &a, &fa)) { val_err(&v, 0); return v; }
+                    if (csn_is_zero(&fa)) {
+                        csn_copy(&v.num, &a);
+                        v.good = 1;
+                        return v;
+                    }
+                    val_err(&v, 0); return v;
+                }
+                if (root_eval(fbuf, &a, &fa) || root_eval(fbuf, &b, &fb)) {
+                    val_err(&v, 0); return v;
+                }
+                /* the endpoint roots are returned directly */
+                if (csn_is_zero(&fa)) {
+                    csn_copy(&v.num, &a);
+                    v.good = 1;
+                    return v;
+                }
+                if (csn_is_zero(&fb)) {
+                    csn_copy(&v.num, &b);
+                    v.good = 1;
+                    return v;
+                }
+                if (fa.sign == fb.sign) {
+                    val_err(&v, 0); return v;   /* no sign change */
+                }
+                csn_from_int(&two, 2L);
+                for (iter = 0; iter < ROOT_PASSES; iter++) {
+                    Csn diff, sc, tol;
+                    if (csn_add(&m, &a, &b) ||
+                        csn_div(&m, &m, &two)) { werr = 1; break; }
+                    if (root_eval(fbuf, &m, &fm)) { werr = 1; break; }
+                    if (csn_is_zero(&fm)) break;    /* the exact root */
+                    if (fm.sign == fa.sign) {
+                        csn_copy(&a, &m);
+                        csn_copy(&fa, &fm);
+                    } else {
+                        csn_copy(&b, &m);
+                        csn_copy(&fb, &fm);
+                    }
+                    /* the relative tolerance: |b-a| <= max(|a|,|b|)*1e-24 */
+                    if (csn_sub(&diff, &b, &a)) { werr = 1; break; }
+                    csn_abs(&sc, &b);
+                    csn_abs(&fm, &a);
+                    if (csn_cmp(&fm, &sc) > 0) csn_copy(&sc, &fm);
+                    if (csn_scale10(&tol, &sc, -24)) { werr = 1; break; }
+                    if (csn_cmp(&diff, &tol) <= 0) break;
+                }
+                if (werr) { val_err(&v, 0); return v; }
+                /* the interval's midpoint (also the cap exit) */
+                if (csn_add(&m, &a, &b) || csn_div(&m, &m, &two)) {
+                    val_err(&v, 0); return v;
+                }
+                csn_copy(&v.num, &m);
                 v.good = 1;
                 return v;
             }

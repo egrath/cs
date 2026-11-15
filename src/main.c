@@ -2035,6 +2035,43 @@ static void run_tests(void)
         setv(7, 1, "3");
         cke("DIFF non-range", "DIFF(5,B1>B3,1)", 6);
         cke("DIFF 2 args", "DIFF(A1>A3,B1>B3)", 3);
+
+        /* ==== ROOT: the expression-based bisection (batch F) ==== */
+        /* sqrt(2): the 14-digit canon is stable against the
+         * tolerance (the true 15th digit is 9) */
+        ckc("ROOT sqrt2", "ROOT(X**2-2,0,2)", "+1.4142135623730E+1");
+        /* the lowercase binding and the reversed bracket */
+        ckc("ROOT lower x", "ROOT(x**2-2,0,2)", "+1.4142135623730E+1");
+        ckc("ROOT reversed", "ROOT(X**2-2,2,0)", "+1.4142135623730E+1");
+        /* integer roots are reached only to the tolerance - the
+         * exact-value pins are tolerance conditionals */
+        ckc("ROOT int2",
+            "(ABS(ROOT(X**2-4,0,3)-2)<1E-20):1:0", "+1.0000000000000E+1");
+        ckc("ROOT int3",
+            "(ABS(ROOT(X-3,0,10)-3)<1E-20):1:0", "+1.0000000000000E+1");
+        ckc("ROOT quad",
+            "(ABS(ROOT(X*X+X-6,0,5)-2)<1E-20):1:0",
+            "+1.0000000000000E+1");
+        ckc("ROOT pow",
+            "(ABS(ROOT(2**X-8,0,5)-3)<1E-20):1:0", "+1.0000000000000E+1");
+        /* an endpoint root is returned EXACTLY */
+        ckc("ROOT endpoint", "ROOT(X-2,2,5)", "+2.0000000000000E+1");
+        /* the bracket midpoint was the exact root */
+        ckc("ROOT cubic", "ROOT(X**3-X,-2,2)", "0");
+        /* pi through SIN(X) */
+        ckc("ROOT pi", "ROOT(SIN(X),2,4)", "+3.1415926535897E+1");
+        /* the errors */
+        cke("ROOT no sign change", "ROOT(X**2+1,-5,5)", -1);
+        cke("ROOT bracket miss", "ROOT(X-1,5,10)", -1);
+        cke("ROOT constant", "ROOT(1,0,2)", -1);
+        cke("ROOT string fn", "ROOT(\"s\",0,1)", -1);
+        cke("ROOT 2 args", "ROOT(X**2-2,0)", 3);
+        cke("ROOT no args", "ROOT()", 3);
+        /* the binding does NOT leak: a bare X outside ROOT is a
+         * syntax error as always */
+        cke("X unbound", "X", 6);
+        cke("X+1 unbound", "X+1", 6);
+
         /* the /r /l /c alignment on a FORMULA's string result
          * (user request 2026-11-15) */
         cs_clear_all();

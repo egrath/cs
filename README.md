@@ -319,6 +319,34 @@ INTEG(G1>G4,H1>H4)  9.5      trapezoidal rule over a table; x strictly
 (the trapezoidal rule's honest overestimate; the exact integral is
 9).
 
+### ROOT: the expression-based root finder
+
+`ROOT(f, lo, hi)` bisects f(X) = 0 on the bracket (2026-11-15,
+batch F).  The first argument is captured as raw text and
+re-evaluated per trial with the bare word **X** (any case) bound to
+the trial value — the one place the expression language has a
+variable:
+
+```text
+ROOT(X**2-2,0,2)     1.414213562373095048801689
+ROOT(SIN(X),2,4)     3.141592653589793238462642   (pi)
+ROOT(X**3-X,-2,2)    0                            (the exact midpoint)
+ROOT(X-2,2,5)        2                            (an endpoint root)
+```
+
+The bracket must contain a sign change (or an endpoint at zero);
+the iteration stops at the RELATIVE tolerance `scale*1e-24` (or 300
+passes) and returns the interval's midpoint, so integer roots are
+reached only to the tolerance — pin them with a comparison
+conditional, not as exact strings.  A reversed bracket normalizes;
+X cannot collide with a reference (`X2` is a cell) or a function
+(functions need `(`), and the binding does not leak — a bare `X`
+outside ROOT is still a syntax error.
+
+Caveats (flagged): every trial is a fresh full parse, so SIDE
+EFFECTS in the argument execute once per trial; a string result is
+an error.
+
 ### SPLINE and DIFF: the interpolating table functions
 
 Table-based, both through the paired walker (2026-11-15, batch E).

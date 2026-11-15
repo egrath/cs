@@ -48,6 +48,27 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-f"): ROOT + dm2 (2026-11-15):
+- USER: merge E (done, 83003e0 ff) and implement batch F; ALSO the
+  missing dm2 area unit from batch D.
+- dm2 DONE FIRST (its own commit): UDD_AREA row 1/100 m2; pins incl
+  an exact round trip.  MY SLIP: the round-trip pin used "km2"
+  (not a unit) - one FAIL caught it.
+- ROOT DONE: the argument captured as raw text (root_arg_end: the
+  top-level comma through quotes/parens); root_eval re-evaluates
+  per trial with the g_bound_x/g_bound_on parser binding (save/
+  restore); the bare X binds in the atom word branch (safe:
+  coordinates checked first, functions need '(').  Bisection: the
+  bracket normalized, endpoint roots direct, no sign change ->
+  Error 0, the RELATIVE tolerance max(|a|,|b|)*1e-24 (~80 steps),
+  300-pass cap, the midpoint answer.  Integer roots only to the
+  tolerance -> the pins are conditionals; sqrt2/pi have stable
+  canons.  MY PROBE BUG: '^' instead of '**' (four phantom
+  failures) and SIN(X)-1 touching zero without a crossing.
+- VERIFIED: --test 768 ok; the idle gate EXACT; the pty shows the
+  sqrt2/pi roots at 24 honest decimals, the refusal, and the bare
+  x Error 6 (the binding does not leak).
+
 ## BATCH (branch "eng-batch-e"): SPLINE + DIFF (2026-11-15):
 - USER: merge D (done, de3111f ff, branch deleted) and implement
   batch E on eng-batch-e.  SCOPE: SPLINE (natural cubic, table) +
