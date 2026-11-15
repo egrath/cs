@@ -1521,11 +1521,61 @@ static void run_tests(void)
                 cs_set_num(tcell(w / 255, w % 255), "1", &v, 0, NULL);
         }
         cke("MED beyond bound", "MED(A1>C255)", -1);
+
         ckc("SUM streams 513", "SUM(A1>C255)", "+5.1300000000000E+3");
         ckc("AVG streams 513", "AVG(A1>C255)", "+1.0000000000000E+1");
         ckc("MAX streams 513", "MAX(A1>C255)", "+1.0000000000000E+1");
         ckc("MIN streams 513", "MIN(A1>C255)", "+1.0000000000000E+1");
         ckc("CNT streams 513", "CNT(A1>C255)", "+5.1300000000000E+3");
+        cs_clear_all();
+        /* the /r /l /c alignment on a FORMULA's string result
+         * (user request 2026-11-15) */
+        cs_clear_all();
+        setv(0, 0, "4");                      /* A1 = 4: MOD(4,2)=0 -> even */
+        cs_commit_entry(1, 0, "+(MOD(A1,2)=0):\"even\":\"odd\"");
+        if (tread(1, 0)->just != 'L')
+            { printf("FAIL formula default just (%c)\n", tread(1, 0)->just);
+              fails++; }
+        else printf("ok   a formula string result defaults to left\n");
+        cs_commit_entry(1, 0, "/r");          /* the edit field: /r alone */
+        if (tread(1, 0)->just != 'R' ||
+            !tread(1, 0)->strres || strcmp(tread(1, 0)->strres, "even"))
+            { printf("FAIL /r on formula\n"); fails++; }
+        else printf("ok   /r re-justifies the formula's string result\n");
+        cs_commit_entry(1, 0, "/c");
+        if (tread(1, 0)->just != 'C')
+            { printf("FAIL /c on formula\n"); fails++; }
+        else printf("ok   /c re-justifies the formula's string result\n");
+        cs_commit_entry(1, 0, "/l");
+        if (tread(1, 0)->just != 'L')
+            { printf("FAIL /l on formula\n"); fails++; }
+        else printf("ok   /l re-justifies the formula's string result\n");
+        cs_recalc_all();                      /* ;R keeps the alignment */
+        if (tread(1, 0)->just != 'L' ||
+            !tread(1, 0)->strres || strcmp(tread(1, 0)->strres, "even"))
+            { printf("FAIL alignment lost on ;R\n"); fails++; }
+        else printf("ok   ;R keeps the alignment and the string\n");
+        /* the numeric result: always right */
+        cs_commit_entry(1, 0, "+A1*10");
+        if (tread(1, 0)->just != 'R')
+            { printf("FAIL numeric just (%c)\n", tread(1, 0)->just); fails++; }
+        else printf("ok   a numeric result is right-justified\n");
+        cs_clear_all();
+        /* a copied aligned formula keeps its alignment */
+        setv(0, 0, "2");
+        cs_commit_entry(1, 0, "+(MOD(A1,2)=0):\"even\":\"odd\"");
+        cs_commit_entry(1, 0, "/r");
+        cs_copy_block(1, 0, 1, 0, 3, 0, 1, 1, 0, 1, 1);
+        if (tread(3, 0)->just != 'R')
+            { printf("FAIL copied alignment\n"); fails++; }
+        else printf("ok   a copied formula keeps its alignment\n");
+        cs_clear_all();
+        /* /r alone on a plain numeric cell: harmless no-change */
+        setv(0, 0, "42");
+        cs_commit_entry(0, 0, "/r");
+        if (tread(0, 0)->just != 'R' || tread(0, 0)->type != CE_NUM)
+            { printf("FAIL /r on numeric\n"); fails++; }
+        else printf("ok   /r on a numeric cell changes nothing\n");
         cs_clear_all();
         /* the OVERLAPPING copy: A1=1, A2=+A1+1, the copy A1>A2 to
          * A2>A3 - the snapshot protects the SOURCE TEXTS (the clone),
@@ -1538,7 +1588,6 @@ static void run_tests(void)
         cs_copy_block(0, 0, 0, 1, 0, 1, 1, 2, 0, 2, 1);
         {
             Csn want;
-            char g[48];
             int ok5 = 1;
             csn_from_int(&want, 1);
             if (csn_cmp(&tread(0, 1)->val, &want) != 0) ok5 = 0;

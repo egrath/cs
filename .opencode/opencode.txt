@@ -48,6 +48,22 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "memfix", follow-up 2): the /r /l /c alignment on formula string results (2026-11-15):
+- USER IDEA: a formula's text result (+(MOD(A1,2)=0):"even":"odd")
+  aligns the same way as a text cell — /r /l /c alone in the edit
+  field.  IMPLEMENTED: the re-justify path extended to CE_NUM+strres;
+  the strres display honors just (cell_render L/R/C, print_render,
+  the type line justname); cs_set_num defaults just = strres ? 'L' :
+  'R'; the recalc preserves just; copy_one carries src->just.  The
+  CSD just byte round-trips (no format change; the user noted the
+  format may change freely until release — recorded).
+- GOTCHA: my alignment pins landed between the 513-value seeds and
+  their streaming checks (a cs_clear_all wiped the seeds) — moved
+  after the block.
+- VERIFIED: --test 441 ok; the idle gate EXACT; the pty shows the
+  user's example right-justified with the type line
+  "text: right justified".
+
 ## BATCH (branch "memfix", follow-up): the sort range rules (2026-11-15):
 - USER: a one-column range (A1>A5) implies the key (no Key prompt);
   a horizontal range (A1>F1) errors ("we don't support sorting

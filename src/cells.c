@@ -483,7 +483,10 @@ void cs_set_num(Cell *c, const char *cont, const Csn *val, int iserr, const char
 {
     cs_free_cell(c);
     c->type = CE_NUM;
-    c->just = 'R';
+    /* a STRING result aligns left by default (the derived type's
+     * display honors the user's /r /l /c afterwards); a numeric
+     * result is always right */
+    c->just = strres ? 'L' : 'R';
     c->cont = cs_strdup(cont);
     csn_copy(&c->val, val);
     c->iserr = iserr;

@@ -233,6 +233,18 @@ at **every** intermediate distance, nearest to the source first, so
 `+A1+1` filled down from row 2 produces 3, 4, 5, … in each row, and
 the stored formulas stay self-consistent across `;R`.
 
+### Aligning a formula's text result
+
+A formula whose result is a string (e.g. `+(MOD(A1,2)=0):"even":"odd"`)
+displays **left** by default.  The usual justification prefixes work
+on it: with the cursor on the cell, type `/r`, `/l` or `/c` and
+RETURN — the formula stays, only the alignment changes (the type line
+reads `text: right justified` etc., and the alignment survives
+`;R` and save/load).  A numeric result is always right-justified;
+recommitting the formula resets the alignment.  `copy_one` carries
+the alignment to copies.  (For SET-written text cells the `` `\l`
+`\c` escapes inside the string work as before.)
+
 ### Empty referenced cells are zero
 
 A bare reference to an empty (or allocated-empty) cell yields **0** in

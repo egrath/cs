@@ -64,10 +64,14 @@ static void print_render(int col, int row, char *out, int width)
         return;
     }
     if (c->strres) {
-        /* a string result prints like text: LEFT justified */
+        /* a string result prints like text: the cell's own just */
         int len = (int) strlen(c->strres);
-        if (len < width) memcpy(out, c->strres, (size_t) len);
-        else memcpy(out, c->strres, (size_t) width);
+        int pad = width - len;
+        if (pad < 0) pad = 0;
+        if (c->just == 'R') memcpy(out + pad, c->strres, (size_t) len);
+        else if (c->just == 'C') memcpy(out + pad / 2, c->strres,
+                                       (size_t) len);
+        else memcpy(out, c->strres, (size_t) len);
         return;
     }
     if (cs_is_inputf(c)) {

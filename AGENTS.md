@@ -963,6 +963,27 @@ Batch workflow (do all steps before reporting done):
   straight to Order (A/D)?; the horizontal attempt paints the
   inverse "bad sort range").
 
+- **THE /r /l /c ALIGNMENT ON FORMULA STRING RESULTS (user request
+  2026-11-15)**: the re-justify path (/r /l /c alone in the edit
+  field) now also accepts a CE_NUM cell with a strres (a formula
+  whose current result is a string) — the formula stays, only
+  c->just changes.  The strres DISPLAY honors just (cell_render:
+  L/R/C; print_render: L/R/C; the type line: justname(c->just)
+  instead of the hardcoded left).  cs_set_num defaults the just to
+  strres ? 'L' : 'R' (the string default = today's left; numeric
+  always right); the recalc path never touches just (the alignment
+  survives ;R); recommitting resets it (the edit-resets-formatting
+  rule); copy_one carries src->just for CE_NUM (a copied aligned
+  formula keeps it — flagged improvement).  The CSD just byte
+  already round-trips (no format change).  The narrow rule: /r on a
+  formula whose CURRENT result is numeric is accepted but invisible
+  (numbers are always right); /r on a plain numeric cell changes
+  nothing.  Pinned: the default L, /r /c /l, ;R preservation, the
+  numeric flip, the copied alignment, /r-on-numeric no-change.
+  pty: the user's +(...):"even":"odd" right-justified after /r with
+  the type line "text: right justified".  NOTE (user 2026-11-15):
+  the CSD format may change freely without asking until release.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

@@ -387,8 +387,13 @@ static int cs_commit_core(int col, int rw, const char *entry)
         if (ch == 'R' || ch == 'C' || ch == 'L') {
             char just = (char) ch;
             if (buf[2] == '\0') {
-                /* re-justify the existing entry */
-                if (c->type == CE_TEXT) c->just = just;
+                /* re-justify the existing entry: a TEXT cell, or a
+                 * FORMULA whose current result is a string (the
+                 * derived type - the user's /r /l /c on
+                 * +(...):"even":"odd", 2026-11-15) */
+                if (c->type == CE_TEXT ||
+                    (c->type == CE_NUM && c->strres && !c->iserr))
+                    c->just = just;
                 return 0;
             }
             cs_set_text(c, buf + 2, just);

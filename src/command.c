@@ -96,7 +96,8 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
         err = cs_eval_formula(use, &val, &str);
         cs_free_cell(dst);
         dst->type = CE_NUM;
-        dst->just = 'R';
+        dst->just = src->just;    /* the alignment carries (the string
+                                   * result's /r /l /c) */
         dst->cont = use;
         csn_copy(&dst->val, &val);       /* zeroed by eval on error */
         dst->iserr = err ? 1 : 0;

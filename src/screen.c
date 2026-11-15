@@ -202,9 +202,12 @@ static void cell_render(int col, int row, char *out, int width)
     if (c->strres) {
         const char *s = c->strres;
         int len = (int) strlen(s);
-        /* a string result displays like text: LEFT justified (the
-         * derived type, user report 2026-11-13) */
+        /* a string result displays like text: the cell's own just
+         * attribute (the user's /r /l /c on the formula, 2026-11-15;
+         * the default is left) */
         if (len > width) { memcpy(out, s, (size_t) width); out[width] = '\0'; }
+        else if (c->just == 'R') sprintf(out, "%*s", width, s);
+        else if (c->just == 'C') sprintf(out, "%*s", width - (width - len) / 2, s);
         else sprintf(out, "%-*s", width, s);
         return;
     }
@@ -405,7 +408,7 @@ static void draw_typecont(void)
     else if (c->type == CE_TEXT)
         cput(line_type, 22, justname(c->just));
     else if (c->strres)
-        cput(line_type, 22, "text: left justified");   /* derived type */
+        cput(line_type, 22, justname(c->just));   /* derived type */
     else
         cput(line_type, 22, "numeric");
     if (c && c->formf) {
