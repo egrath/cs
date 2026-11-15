@@ -48,6 +48,16 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "fuzzy" -> merged to master): the fuzzy docs + the merge (2026-11-15):
+- USER: merge with master and document with examples.  README's
+  fuzzy section (added in the fuzzy batch) gained the CELL-BASED
+  worked example (A1 = 0.3: NOT/AND/OR/XOR + the threshold
+  conditional with string branches) and the explicit comparison-
+  operator list (< <= = <> >= >).  AGENTS carries the merge record.
+- MERGED fast-forward to master, pushed, the fuzzy branch deleted
+  (the usual pattern).  Post-merge gates: the build, --test, the
+  idle gate.
+
 ## BATCH (branch "fuzzy"): the Zadeh fuzzy Boolean algebra (2026-11-15):
 - USER SPEC: NOT/AND/OR/XOR (Zadeh), the fuzzy values as ordinary
   numbers in [0,1], the FUZZY_TRUE_THRESHOLD = 0.7 (the single

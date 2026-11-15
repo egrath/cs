@@ -1022,6 +1022,12 @@ Batch workflow (do all steps before reporting done):
   pty: the calculator answers AND=0.6/NOT=0.75/XOR=0.7/OR=0.9 and
   the conditional cells.
 
+- **THE MERGE (2026-11-15)**: the "fuzzy" branch merged to master
+  (fast-forward) and deleted; README's fuzzy section gained the
+  cell-based worked example (A1 = 0.3 with NOT/AND/OR/XOR, the
+  threshold conditional with strings) and the comparison-operator
+  list (< <= = <> >= >).
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

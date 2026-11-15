@@ -275,6 +275,20 @@ test.  The operators never apply it (`AND(0.6,0.9)` is 0.6, not 0):
 De Morgan's laws hold exactly (`NOT(AND(x,y))` = `OR(NOT(x),NOT(y))`
 etc.) — BCD min/max/1−x never round.
 
+A worked example on cells — `A1` holds the measurement `0.3`:
+
+```text
+B1:  +NOT(A1)                  0.70   (the complement)
+B2:  +AND(A1,0.8)              0.30   (the weaker degree wins)
+B3:  +OR(A1,0.9)               0.90   (the stronger degree wins)
+B4:  +XOR(A1,0.9)              0.90
+B5:  +(A1>=0.7):"go":"wait"    wait   (0.3 is below the threshold)
+B6:  +(NOT(A1)>=0.7):1:0       1.00   (0.7 passes: De Morgan in action)
+```
+
+The comparison operators are `<`, `<=`, `=`, `<>`, `>=` and `>`
+(numbers and strings alike).
+
 ### Empty referenced cells are zero
 
 A bare reference to an empty (or allocated-empty) cell yields **0** in
