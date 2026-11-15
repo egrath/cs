@@ -1061,7 +1061,16 @@ Batch workflow (do all steps before reporting done):
   Round-trip honesty: terminating factors round-trip EXACTLY (mile
   pinned); non-terminating ones to the 30-digit honest core (kg
   pinned as a tolerance conditional - the canon string would be
-  2.9999999999999E+1).  PINS: 36.  ALSO IN THIS BATCH (the user's
+  2.9999999999999E+1).  PINS: 36.  THE SI CUBIC VOLUME SCALE (the
+  user's addition to batch D, 2026-11-15): mm3/cm3/dm3/km3 join
+  ml/l/m3 in UDD_VOL - 1 mm3 = 1e-6 L, 1 cm3 = 1 ml and 1 dm3 = 1 l
+  BY DEFINITION (both equivalences pinned), 1 m3 = 1000 L,
+  1 km3 = 1e12 L; all factors terminate so every pair round-trips
+  exactly (the full-ladder mm3<->km3 trip pinned exact).  THE CANON
+  GOTCHA bit six times in a row (1000 = +1.0E+4 not E+3; 1e-9 =
+  +1.0E-8; 3 = +3.0E+1) - all six engine values were RIGHT, my
+  hand-derived exponents were wrong; every one now cross-checked
+  against exact decimal arithmetic.  ALSO IN THIS BATCH (the user's
   request): the Makefile CFLAGS gained -Wextra -pedantic-errors (the
   user added the flags; one warning surfaced - side_effect_stmt's
   oldtype was an int vs the CellType enum field; now typed CellType).

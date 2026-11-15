@@ -70,6 +70,11 @@
   (terminating factors).
 - VERIFIED: --test 704 ok; the idle gate EXACT; the pty shows the
   psi/HP rationals at 24 honest decimals and the mismatch refusing.
+- FOLLOW-UP (same branch): the SI cubic volume scale (the user's
+  addition): mm3/cm3/dm3/km3 join UDD_VOL (cm3 = ml, dm3 = l by
+  definition; all terminating -> exact round trips, the full ladder
+  pinned).  The canon gotcha bit SIX times (all engine values were
+  right; my exponents wrong).  --test 715 ok; the idle gate EXACT.
 
 ## BATCH (branch "eng-batch-c"): engineering batch C, paired ranges (2026-11-15):
 - USER: merge B to master (done, b9c0c42 ff, branch deleted) and

@@ -620,10 +620,15 @@ static const struct conv_unit conv_units[] = {
     {"cm2",  UDD_AREA, "1", "10000"},
     {"m2",   UDD_AREA, "1", "1"},
     {"hectare", UDD_AREA, "10000", "1"},
-    /* volume (US gallon = 231 in^3) */
+    /* volume (US gallon = 231 in^3); the SI cubic prefixes are the
+     * DEFINED liter equivalences (1 cm3 = 1 ml, 1 dm3 = 1 l) */
+    {"mm3",  UDD_VOL,  "1", "1000000"},
+    {"cm3",  UDD_VOL,  "1", "1000"},
+    {"dm3",  UDD_VOL,  "1", "1"},
     {"ml",   UDD_VOL,  "1", "1000"},
     {"l",    UDD_VOL,  "1", "1"},
     {"m3",   UDD_VOL,  "1000", "1"},
+    {"km3",  UDD_VOL,  "1000000000000", "1"},
     {"gallon", UDD_VOL, "3785411784", "1000000000"},
     /* mass */
     {"mg",   UDD_MASS, "1", "1000000"},

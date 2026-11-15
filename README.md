@@ -340,7 +340,10 @@ CONV(1,"psi","Pa")      6894.7572931683613367...
 Names are 7-bit ASCII and case-insensitive: `mm2`/`cm2`/`m3`,
 `ohm`/`kohm`/`farad`/`uf`, `km/h`/`mph`.  Dimensions: length
 (mm cm m km inch ft mile), area (mm2 cm2 m2 hectare), volume
-(ml l m3 gallon), mass (mg g kg tonne lb), pressure (Pa kPa MPa bar
+(ml l m3 gallon — plus the SI cubic scale `mm3 cm3 dm3 m3 km3`,
+where `cm3` = ml and `dm3` = l by definition; all factors
+terminate, so conversions among them round-trip exactly), mass
+(mg g kg tonne lb), pressure (Pa kPa MPa bar
 mbar psi), temperature (C F K — the one non-multiplicative
 dimension), energy (J kJ Wh kWh cal), power (W kW HP), electrical
 in separate dimensions — potential (V mV), current (A mA),

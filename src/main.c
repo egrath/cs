@@ -1894,6 +1894,33 @@ static void run_tests(void)
         cs_set_text(tcell(1, 9), "cm", 'L');
         ckc("CONV cell unit", "CONV(100,B10,\"m\")",
             "+1.0000000000000E+1");
+        /* the SI cubic volume scale (the user's addition, 2026-11-15):
+         * all factors terminate, so every pair round-trips exactly */
+        ckc("CONV mm3 cm3", "CONV(1,\"mm3\",\"cm3\")",
+            "+1.0000000000000E-2");
+        ckc("CONV cm3 mm3", "CONV(1,\"cm3\",\"mm3\")",
+            "+1.0000000000000E+4");
+        ckc("CONV cm3 dm3", "CONV(1,\"cm3\",\"dm3\")",
+            "+1.0000000000000E-2");
+        ckc("CONV dm3 m3", "CONV(1,\"dm3\",\"m3\")",
+            "+1.0000000000000E-2");
+        ckc("CONV m3 dm3", "CONV(1,\"m3\",\"dm3\")",
+            "+1.0000000000000E+4");
+        ckc("CONV m3 km3", "CONV(1,\"m3\",\"km3\")",
+            "+1.0000000000000E-8");
+        ckc("CONV km3 m3", "CONV(1,\"km3\",\"m3\")",
+            "+1.0000000000000E+10");
+        ckc("CONV mm3 l", "CONV(1,\"mm3\",\"l\")",
+            "+1.0000000000000E-5");
+        /* the defined equivalences */
+        ckc("CONV cm3 = ml", "CONV(1,\"cm3\",\"ml\")",
+            "+1.0000000000000E+1");
+        ckc("CONV dm3 = l", "CONV(1,\"dm3\",\"l\")",
+            "+1.0000000000000E+1");
+        /* an exact round trip across the whole ladder */
+        ckc("CONV round mm3 km3",
+            "CONV(CONV(3,\"mm3\",\"km3\"),\"km3\",\"mm3\")",
+            "+3.0000000000000E+1");
         /* the error paths */
         cke("CONV dim mismatch", "CONV(1,\"m\",\"kg\")", -1);
         cke("CONV unknown", "CONV(1,\"furlong\",\"m\")", -1);
