@@ -89,5 +89,8 @@ int  csn_gcd(Csn *r, const Csn *a, const Csn *b);
 int  csn_lcm(Csn *r, const Csn *a, const Csn *b);
 int  csn_round(Csn *r, const Csn *x, const Csn *d);  /* round to d decimals */
 int  csn_trunc(Csn *r, const Csn *x, const Csn *d);  /* truncate to d decs  */
+int  csn_floor(Csn *r, const Csn *x);   /* floor: toward -infinity  */
+int  csn_ceil(Csn *r, const Csn *x);    /* ceil: toward +infinity   */
+int  csn_hypot(Csn *r, const Csn *x, const Csn *y); /* overflow-free hypotenuse */
 
 #endif /* CS_NUM_H */

@@ -233,7 +233,10 @@ typedef enum {
     FN_SGN, FN_NCR, FN_NPR, FN_INTG, FN_FRAC, FN_INVFACT,
     FN_CHR, FN_ORD,
     FN_FNOT, FN_FAND, FN_FOR, FN_FXOR,
-    FN_EVEN, FN_ODD
+    FN_EVEN, FN_ODD,
+    FN_HYPOT, FN_ATAN2, FN_CEIL, FN_FLOOR,
+    FN_DB, FN_DBM, FN_DBW, FN_LIN, FN_STEP,
+    FN_CLAMP, FN_DIST, FN_LERP, FN_UNLERP
 } FnId;
 
 static int fnid(const char *name)
@@ -295,6 +298,19 @@ static int fnid(const char *name)
     if (!strcmp(name, "XOR"))   return FN_FXOR;
     if (!strcmp(name, "EVEN"))  return FN_EVEN;
     if (!strcmp(name, "ODD"))   return FN_ODD;
+    if (!strcmp(name, "HYPOT")) return FN_HYPOT;
+    if (!strcmp(name, "ATAN2")) return FN_ATAN2;
+    if (!strcmp(name, "CEIL"))  return FN_CEIL;
+    if (!strcmp(name, "FLOOR")) return FN_FLOOR;
+    if (!strcmp(name, "DB"))    return FN_DB;
+    if (!strcmp(name, "DBM"))   return FN_DBM;
+    if (!strcmp(name, "DBW"))   return FN_DBW;
+    if (!strcmp(name, "LIN"))   return FN_LIN;
+    if (!strcmp(name, "STEP"))  return FN_STEP;
+    if (!strcmp(name, "CLAMP")) return FN_CLAMP;
+    if (!strcmp(name, "DIST"))  return FN_DIST;
+    if (!strcmp(name, "LERP"))  return FN_LERP;
+    if (!strcmp(name, "UNLERP")) return FN_UNLERP;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -374,6 +390,41 @@ static Val parse_numarg(P *ps)
         return v;
     }
     return v;
+}
+
+/* ATAN2(y,x): the quadrant-aware angle (engineering batch A,
+ * 2026-11-15).  x > 0: atan(y/x); x < 0: atan(y/x) +- pi by the sign
+ * of y; x = 0: +-pi/2 by the sign of y; (0,0) is a domain error (the
+ * C convention - the user's decision).  The result is in (-pi, pi]. */
+static int eng_atan2(Csn *r, const Csn *y, const Csn *x)
+{
+    Csn zero, q, pi, two;
+    int xs, ys, err;
+    csn_zero(&zero);
+    xs = csn_cmp(x, &zero);
+    ys = csn_cmp(y, &zero);
+    if (xs == 0 && ys == 0) return 1;           /* domain */
+    if (xs > 0) {
+        err = csn_div(&q, y, x);
+        if (err) return err;
+        return csn_atan(r, &q);
+    }
+    if (xs < 0) {
+        err = csn_div(&q, y, x);
+        if (err) return err;
+        err = csn_atan(r, &q);
+        if (err) return err;
+        csn_pi(&pi);
+        if (ys >= 0) return csn_add(r, r, &pi);
+        return csn_sub(r, r, &pi);
+    }
+    /* x == 0: the vertical axis */
+    csn_pi(&pi);
+    csn_from_int(&two, 2);
+    err = csn_div(r, &pi, &two);
+    if (err) return err;
+    if (ys < 0) csn_neg(r, r);
+    return CSN_OK;
 }
 
 /* the streaming aggregation for SUM/CNT/AVG/MAX/MIN (2026-11-14): no
@@ -594,6 +645,21 @@ static Val parse_primary(P *ps)
             while ((*q >= 'A' && *q <= 'Z') || (*q >= 'a' && *q <= 'z')) {
                 if (n < 14) name[n++] = (char) toupper((unsigned char) *q);
                 q++;
+            }
+            /* a digit TAIL sealed by '(' is part of the name (ATAN2,
+             * 2026-11-15).  Safe: is_coord_ahead ran first, so a word
+             * that letters+digits would make a coordinate never gets
+             * here - a function name may never LOOK like a
+             * coordinate. */
+            if (*q >= '0' && *q <= '9') {
+                const char *r = q;
+                while (*r >= '0' && *r <= '9') r++;
+                if (*r == '(') {
+                    while (q < r) {
+                        if (n < 14) name[n++] = (char) *q;
+                        q++;
+                    }
+                }
             }
             name[n] = '\0';
             skip_ws(&q);
@@ -842,6 +908,169 @@ static Val parse_primary(P *ps)
                 v.good = 1;
                 return v;
             }
+            if (f == FN_CEIL || f == FN_FLOOR || f == FN_DB ||
+                f == FN_DBM || f == FN_DBW || f == FN_LIN ||
+                f == FN_STEP) {
+                /* the one-argument engineering family (batch A,
+                 * 2026-11-15).  DB/DBM/DBW require a POSITIVE argument
+                 * (log of nonpositive is a domain); LIN is 10^(dB/20)
+                 * and accepts any dB; STEP(0) = 1 (Heaviside at the
+                 * origin - flagged convention). */
+                Val a = parse_numarg(ps);
+                Csn t, k, zero;
+                int err = 0;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                val_free(&v);
+                csn_zero(&v.num);
+                csn_zero(&zero);
+                switch (f) {
+                case FN_CEIL:
+                    err = csn_ceil(&v.num, &a.num);
+                    break;
+                case FN_FLOOR:
+                    err = csn_floor(&v.num, &a.num);
+                    break;
+                case FN_STEP:
+                    csn_from_int(&v.num,
+                                 csn_cmp(&a.num, &zero) < 0 ? 0L : 1L);
+                    break;
+                case FN_DB:
+                case FN_DBM:
+                case FN_DBW:
+                    if (csn_cmp(&a.num, &zero) <= 0) { err = 1; break; }
+                    err = csn_log10(&t, &a.num);
+                    if (!err) {
+                        csn_from_int(&k, f == FN_DB ? 20L : 10L);
+                        err = csn_mul(&v.num, &k, &t);
+                        if (!err && f == FN_DBM) {
+                            csn_from_int(&k, 30L);
+                            err = csn_add(&v.num, &v.num, &k);
+                        }
+                    }
+                    break;
+                case FN_LIN:
+                    csn_from_int(&k, 20L);
+                    err = csn_div(&t, &a.num, &k);
+                    if (!err) {
+                        csn_from_int(&k, 10L);
+                        err = csn_pow(&v.num, &k, &t);
+                    }
+                    break;
+                }
+                val_free(&a);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            if (f == FN_CLAMP || f == FN_LERP || f == FN_UNLERP) {
+                /* the three-argument engineering family (batch A):
+                 * CLAMP(x,lo,hi) with lo > hi a domain error;
+                 * LERP(a,b,t) = a + (b-a)*t (t outside [0,1]
+                 * extrapolates - flagged); UNLERP(a,b,x) = (x-a)/(b-a)
+                 * (b = a is a domain error). */
+                Val a, b, c;
+                Csn t, t2;
+                int err;
+                a = parse_numarg(ps);
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ',') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                b = parse_numarg(ps);
+                if (!b.good) { val_free(&a); return b; }
+                skip_ws(&ps->p);
+                if (*ps->p != ',') {
+                    val_err(&v, 3); val_free(&a); val_free(&b); return v;
+                }
+                ps->p++;
+                c = parse_numarg(ps);
+                if (!c.good) { val_free(&a); val_free(&b); return c; }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') {
+                    val_err(&v, 3);
+                    val_free(&a); val_free(&b); val_free(&c);
+                    return v;
+                }
+                ps->p++;
+                val_free(&v);
+                csn_zero(&v.num);
+                err = 0;
+                switch (f) {
+                case FN_CLAMP:
+                    if (csn_cmp(&b.num, &c.num) > 0) { err = 1; break; }
+                    if (csn_cmp(&a.num, &b.num) < 0)
+                        csn_copy(&v.num, &b.num);
+                    else if (csn_cmp(&a.num, &c.num) > 0)
+                        csn_copy(&v.num, &c.num);
+                    else
+                        csn_copy(&v.num, &a.num);
+                    break;
+                case FN_LERP:
+                    err = csn_sub(&t, &b.num, &a.num);
+                    if (!err) err = csn_mul(&t, &t, &c.num);
+                    if (!err) err = csn_add(&v.num, &a.num, &t);
+                    break;
+                case FN_UNLERP:
+                    err = csn_sub(&t, &b.num, &a.num);
+                    if (!err) err = csn_sub(&t2, &c.num, &a.num);
+                    if (!err) err = csn_div(&v.num, &t2, &t);
+                    break;
+                }
+                val_free(&a); val_free(&b); val_free(&c);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            if (f == FN_DIST) {
+                /* DIST(x1,y1,x2,y2): the point distance through the
+                 * scaled hypot (batch A, 2026-11-15) */
+                Val a, b, c, d;
+                Csn dx, dy;
+                int err;
+                a = parse_numarg(ps);
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ',') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                b = parse_numarg(ps);
+                if (!b.good) { val_free(&a); return b; }
+                skip_ws(&ps->p);
+                if (*ps->p != ',') {
+                    val_err(&v, 3); val_free(&a); val_free(&b); return v;
+                }
+                ps->p++;
+                c = parse_numarg(ps);
+                if (!c.good) { val_free(&a); val_free(&b); return c; }
+                skip_ws(&ps->p);
+                if (*ps->p != ',') {
+                    val_err(&v, 3);
+                    val_free(&a); val_free(&b); val_free(&c); return v;
+                }
+                ps->p++;
+                d = parse_numarg(ps);
+                if (!d.good) {
+                    val_free(&a); val_free(&b); val_free(&c); return d;
+                }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') {
+                    val_err(&v, 3);
+                    val_free(&a); val_free(&b); val_free(&c); val_free(&d);
+                    return v;
+                }
+                ps->p++;
+                val_free(&v);
+                csn_zero(&v.num);
+                err = csn_sub(&dx, &c.num, &a.num);       /* x2-x1 */
+                if (!err) err = csn_sub(&dy, &d.num, &b.num);  /* y2-y1 */
+                if (!err) err = csn_hypot(&v.num, &dx, &dy);
+                val_free(&a); val_free(&b); val_free(&c); val_free(&d);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
             if (f == FN_FNOT) {
                 /* NOT(x): the Zadeh negation 1-x (fuzzy Boolean
                  * algebra, user request 2026-11-15).  The operand
@@ -995,7 +1224,8 @@ static Val parse_primary(P *ps)
             if (f == FN_MOD || f == FN_POWER || f == FN_COMBIN ||
                 f == FN_PERMUT || f == FN_GCD || f == FN_LCM ||
                 f == FN_ROUND || f == FN_TRUNC ||
-                f == FN_NCR || f == FN_NPR) {
+                f == FN_NCR || f == FN_NPR ||
+                f == FN_HYPOT || f == FN_ATAN2) {
                 Val a2;
                 int err;
                 Val a = parse_numarg(ps);
@@ -1032,6 +1262,12 @@ static Val parse_primary(P *ps)
                     break;
                 case FN_ROUND:
                     err = csn_round(&v.num, &a.num, &a2.num);
+                    break;
+                case FN_HYPOT:
+                    err = csn_hypot(&v.num, &a.num, &a2.num);
+                    break;
+                case FN_ATAN2:
+                    err = eng_atan2(&v.num, &a.num, &a2.num);
                     break;
                 default:
                     err = csn_trunc(&v.num, &a.num, &a2.num);

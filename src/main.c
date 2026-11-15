@@ -1627,6 +1627,77 @@ static void run_tests(void)
             if (sf) free(sf);
         }
 
+        /* ==== the engineering batch A (user list, 2026-11-15) ==== */
+        /* HYPOT: the scaled form survives the exponent range */
+        ckc("HYPOT 3,4", "HYPOT(3,4)", "+5.0000000000000E+1");
+        ckc("HYPOT 3,-4", "HYPOT(3,-4)", "+5.0000000000000E+1");
+        ckc("HYPOT 0,0", "HYPOT(0,0)", "0");
+        ckc("HYPOT 0,7", "HYPOT(0,7)", "+7.0000000000000E+1");
+        ckc("HYPOT huge", "HYPOT(1E500,1E500)", "+1.4142135623730E+501");
+        ckc("HYPOT tiny", "HYPOT(1E-500,1E-500)", "+1.4142135623730E-499");
+        cke("HYPOT 1 arg", "HYPOT(1)", 3);
+        cke("HYPOT text", "HYPOT(\"x\",1)", 6);
+        /* ATAN2: the quadrants and the axes */
+        ckc("ATAN2 1,1", "ATAN2(1,1)", "+7.8539816339744E+0");
+        ckc("ATAN2 1,-1", "ATAN2(1,-1)", "+2.3561944901923E+1");
+        ckc("ATAN2 -1,-1", "ATAN2(-1,-1)", "-2.3561944901923E+1");
+        ckc("ATAN2 0,1", "ATAN2(0,1)", "0");
+        ckc("ATAN2 1,0", "ATAN2(1,0)", "+1.5707963267948E+1");
+        ckc("ATAN2 -1,0", "ATAN2(-1,0)", "-1.5707963267948E+1");
+        cke("ATAN2 0,0", "ATAN2(0,0)", -1);
+        cke("ATAN2 1 arg", "ATAN2(1)", 3);
+        /* CEIL/FLOOR: toward +-infinity, both signs */
+        ckc("CEIL 3.2", "CEIL(3.2)", "+4.0000000000000E+1");
+        ckc("CEIL -3.2", "CEIL(-3.2)", "-3.0000000000000E+1");
+        ckc("CEIL -2", "CEIL(-2)", "-2.0000000000000E+1");
+        ckc("CEIL 0.5", "CEIL(0.5)", "+1.0000000000000E+1");
+        ckc("CEIL -0.5", "CEIL(-0.5)", "0");
+        ckc("CEIL 1E-20", "CEIL(1E-20)", "+1.0000000000000E+1");
+        ckc("CEIL huge", "CEIL(1E500)", "+1.0000000000000E+501");
+        ckc("FLOOR 3.8", "FLOOR(3.8)", "+3.0000000000000E+1");
+        ckc("FLOOR -3.8", "FLOOR(-3.8)", "-4.0000000000000E+1");
+        ckc("FLOOR -0.5", "FLOOR(-0.5)", "-1.0000000000000E+1");
+        ckc("FLOOR -1E-20", "FLOOR(-1E-20)", "-1.0000000000000E+1");
+        ckc("FLOOR huge", "FLOOR(1E500)", "+1.0000000000000E+501");
+        ckc("FLOOR int", "FLOOR(5)", "+5.0000000000000E+1");
+        cke("CEIL no arg", "CEIL()", 6);
+        /* the dB family */
+        ckc("DB 10", "DB(10)", "+2.0000000000000E+2");
+        ckc("DB 1", "DB(1)", "0");
+        cke("DB 0", "DB(0)", -1);
+        cke("DB -5", "DB(-5)", -1);
+        ckc("DBM 1", "DBM(1)", "+3.0000000000000E+2");
+        ckc("DBM 1mW", "DBM(0.001)", "0");
+        ckc("DBW 1", "DBW(1)", "0");
+        ckc("DBW 2", "DBW(2)", "+3.0102999566398E+1");
+        ckc("LIN 20", "LIN(20)", "+1.0000000000000E+2");
+        ckc("LIN 0", "LIN(0)", "+1.0000000000000E+1");
+        ckc("LIN -20", "LIN(-20)", "+1.0000000000000E+0");
+        ckc("DB(LIN) round", "DB(LIN(20))", "+2.0000000000000E+2");
+        ckc("LIN(DB) round", "LIN(DB(100))", "+1.0000000000000E+3");
+        /* STEP: 0 below, 1 at-or-above (STEP(0) = 1, flagged) */
+        ckc("STEP -1", "STEP(-1)", "0");
+        ckc("STEP 0", "STEP(0)", "+1.0000000000000E+1");
+        ckc("STEP 0.5", "STEP(0.5)", "+1.0000000000000E+1");
+        /* CLAMP / LERP / UNLERP */
+        ckc("CLAMP in", "CLAMP(5,0,10)", "+5.0000000000000E+1");
+        ckc("CLAMP high", "CLAMP(15,0,10)", "+1.0000000000000E+2");
+        ckc("CLAMP low", "CLAMP(-5,0,10)", "0");
+        cke("CLAMP bad range", "CLAMP(5,10,0)", -1);
+        cke("CLAMP 2 args", "CLAMP(5,0)", 3);
+        ckc("DIST 3,4", "DIST(0,0,3,4)", "+5.0000000000000E+1");
+        ckc("DIST offset", "DIST(1,1,4,5)", "+5.0000000000000E+1");
+        ckc("DIST huge", "DIST(1E500,1E500,1E500,2E500)",
+            "+1.0000000000000E+501");
+        cke("DIST 3 args", "DIST(0,0,1)", 3);
+        ckc("LERP mid", "LERP(0,10,0.5)", "+5.0000000000000E+1");
+        ckc("LERP lo", "LERP(10,20,0)", "+1.0000000000000E+2");
+        ckc("LERP hi", "LERP(10,20,1)", "+2.0000000000000E+2");
+        ckc("LERP extrap", "LERP(0,10,1.5)", "+1.5000000000000E+2");
+        ckc("UNLERP mid", "UNLERP(0,10,5)", "+5.0000000000000E+0");
+        ckc("UNLERP off", "UNLERP(10,20,15)", "+5.0000000000000E+0");
+        cke("UNLERP flat", "UNLERP(0,0,5)", -1);
+
         ckc("SUM streams 513", "SUM(A1>C255)", "+5.1300000000000E+3");
         ckc("AVG streams 513", "AVG(A1>C255)", "+1.0000000000000E+1");
         ckc("MAX streams 513", "MAX(A1>C255)", "+1.0000000000000E+1");

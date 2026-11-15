@@ -1253,6 +1253,58 @@ int csn_mod(Csn *r, const Csn *a, const Csn *b)
     return CSN_OK;
 }
 
+/* floor / ceil toward -/+ infinity (the engineering batch,
+ * 2026-11-15): from the truncated integer part and the SIGN of the
+ * fraction.  A fraction beyond the mantissa's honest digits reads as
+ * none - the value IS its integer part as stored. */
+int csn_floor(Csn *r, const Csn *x)
+{
+    Csn one;
+    trunc_int(r, x);
+    if (x->sign && csn_cmp(r, x) != 0) {
+        csn_from_int(&one, 1);
+        return csn_sub(r, r, &one);
+    }
+    return CSN_OK;
+}
+
+int csn_ceil(Csn *r, const Csn *x)
+{
+    Csn one;
+    trunc_int(r, x);
+    if (!x->sign && csn_cmp(r, x) != 0) {
+        csn_from_int(&one, 1);
+        return csn_add(r, r, &one);
+    }
+    return CSN_OK;
+}
+
+/* hypot = sqrt(x*x + y*y), computed overflow-free: scaled by the
+ * larger magnitude (m * sqrt(1 + (n/m)^2)).  The direct form loses to
+ * the exponent range for inputs near 1E500 whose SUM OF SQUARES is
+ * unrepresentable while the result is not.  When n/m underflows to 0
+ * the answer is honestly m (n is negligible next to m). */
+int csn_hypot(Csn *r, const Csn *x, const Csn *y)
+{
+    Csn ax, ay, m, n, q, t, one;
+    int err;
+    csn_abs(&ax, x);
+    csn_abs(&ay, y);
+    if (csn_cmp(&ay, &ax) > 0) { m = ay; n = ax; }
+    else                       { m = ax; n = ay; }
+    if (csn_is_zero(&m)) { mkzero(r); return CSN_OK; }
+    err = csn_div(&q, &n, &m);          /* n/m */
+    if (err != CSN_OK) return err;
+    err = csn_mul(&t, &q, &q);          /* (n/m)^2 */
+    if (err != CSN_OK) return err;
+    csn_from_int(&one, 1);
+    err = csn_add(&t, &one, &t);        /* 1 + (n/m)^2 */
+    if (err != CSN_OK) return err;
+    err = csn_sqrt(&t, &t);
+    if (err != CSN_OK) return err;
+    return csn_mul(r, &m, &t);
+}
+
 /* radians -> degrees and back; both derive from the shared PI so every
  * conversion is self-consistent.  Boundary-exact values (DEGREES(PI())
  * = 180) come out clean through round30. */
@@ -1720,7 +1772,12 @@ static void trunc_int(Csn *r, const Csn *a)
     n = a->exp10;
     if (n > CSN_DIGS) n = CSN_DIGS;
     for (i = 0; i < n; i++) ms[i] = a->nd[i];
-    finish(r, ms, n, 0, a->sign);
+    /* baseExp = place of the LAST kept digit (finish derives exp10 =
+     * baseExp + n): for exp10 <= CSN_DIGS that is 0 (the old value,
+     * unchanged); for a clamped keep the exponent must survive - the
+     * old 0 truncated 1E500 to 1E40 (found writing the CEIL/FLOOR
+     * batch, 2026-11-15) */
+    finish(r, ms, n, a->exp10 - n, a->sign);
 }
 
 /* round / truncate to d decimal places; d may be negative (tens,

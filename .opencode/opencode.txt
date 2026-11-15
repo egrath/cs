@@ -48,6 +48,27 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-a"): engineering batch A (2026-11-15):
+- USER handed over the engineering-functions list (6 groups); batch
+  A = the scalar math + EE functions.  The plan discussion settled:
+  7-bit ASCII unit names; PERCENTILE.INC, QUART q 0..4; the variance
+  edge table (VAR/STDEV n<=1 Error, VARP/STDEVP n=1 -> 0, n=0
+  Error); CORR skip pairing; DIFF 3-arg (slope of the interpolant);
+  ROOT expression-based bisection with bound variable X; INTEG
+  trapezoidal; SPLINE natural cubic table-based; table data holes =
+  Error; ISPRIME Miller-Rabin 12 bases capped at 19 digits; ATAN2(0,0)
+  = Error.  Batches: A scalars, B stats, C pair-walker+CORR/RSQ/
+  INTEG, D CONV, E SPLINE+DIFF, F ROOT.
+- BATCH A DONE: csn_floor/csn_ceil/csn_hypot (scaled form) in num.c;
+  the TRUNC_INT baseExp bug fixed (exp10 > CSN_DIGS truncated the
+  exponent - 1E500 -> 1E40); the name scanner accepts a digit tail
+  sealed by '(' (ATAN2!); eng_atan2 with quadrant logic; DB/DBM/
+  DBW/LIN/STEP/CLAMP/DIST/LERP/UNLERP dispatch.  62 pins, all
+  verified against 60-digit python decimal.  --test 591 ok; the idle
+  gate EXACT; the pty ?-calculator answers verified.  THE CANON
+  GOTCHA keeps biting: 100 = +1.0E+3 (E = exp10), wrote E+2 first.
+- NEXT: batch B on the user's go (stats + PCT/QUART).
+
 ## BATCH (branch "loadfix" -> merged to master): the review fixes merged (2026-11-15):
 - USER approved; merged fast-forward to master (a3f8b6a), pushed,
   the loadfix branch deleted (local + origin).  Post-merge gates:

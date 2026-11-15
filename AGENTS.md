@@ -1042,6 +1042,34 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **ENGINEERING BATCH A (user list 2026-11-15, branch "eng-batch-a")**:
+  the scalar math + EE functions.  ENGINE: csn_floor/csn_ceil (from
+  trunc_int + the sign of the fraction; a fraction beyond the
+  mantissa's honest digits reads as none) and csn_hypot (the SCALED
+  form m*sqrt(1+(n/m)^2) - the direct x*x+y*y overflows the exponent
+  range near 1E500 while the result is representable; n/m underflow
+  -> 0 is honest: n negligible next to m).  TRUNC_INT BASEEXP FIX
+  (found writing this batch): trunc_int passed baseExp 0 always, so
+  any value with exp10 > CSN_DIGS truncated to exp10 = the digit
+  count (1E500 -> 1E40); now baseExp = a->exp10 - n (identical for
+  exp10 <= CSN_DIGS, correct above).  PARSER: the function-name
+  scanner accepts a DIGIT TAIL sealed by '(' (ATAN2 - the name
+  scanner stopped at digits, which is why LOG10 never existed); safe
+  because is_coord_ahead runs first, so a word that letters+digits
+  make a coordinate never reaches the name scan - a function name
+  may never LOOK like a coordinate (2 letters max + digits).  ATAN2
+  is eng_atan2 (quadrant logic on atan(y/x) +- pi, x=0 -> +-pi/2,
+  (0,0) -> domain error per the user).  DB = 20*log10(x) (x > 0),
+  DBM = 10*log10(w)+30, DBW = 10*log10(w), LIN = 10^(dB/20), STEP
+  (0 below, 1 at-or-above - STEP(0)=1 Heaviside, FLAGGED), CLAMP
+  (lo>hi -> Error 0, FLAGGED), DIST through csn_hypot, LERP
+  (t outside [0,1] extrapolates, FLAGGED), UNLERP (b=a -> Error 0).
+  PINS: 62 (all values verified against 60-digit decimal arithmetic;
+  canon gotcha bit once more - 100 = +1.0E+3, not E+2).  VERIFIED:
+  --test 591 ok; the idle gate EXACT; the pty ?-calculator shows
+  HYPOT=5, ATAN2(1,-1)=2.356194490192344928846982, CEIL(-3.2)=-3,
+  DBM(1)=30, LIN(-20)=0.1, CLAMP=10.0, UNLERP=0.5.
+
 - **THE ZADEH FUZZY BOOLEAN ALGEBRA (user spec 2026-11-15, branch
   "fuzzy")**: NOT/AND/OR/XOR in the parser dispatch, plain numeric
   results (VT_NUM, never a new type), all exact BCD (min/max and

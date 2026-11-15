@@ -247,6 +247,28 @@ the alignment to copies.  (For SET-written text cells the `
 ` `\l`
 `\c` escapes inside the string work as before.)
 
+### Engineering batch A: distance, angles, dB and interpolation scalars
+
+All exact BCD (2026-11-15, batch A of the engineering list):
+
+```text
+HYPOT(3,4)        5          overflow-free: scaled by the larger
+                             magnitude, so HYPOT(1E500,1E500) works
+ATAN2(1,-1)       2.3561...  quadrant-aware angle in (-pi, pi];
+                             ATAN2(0,0) is an error (C convention)
+CEIL(3.2)         4          toward +infinity
+FLOOR(-3.8)      -4          toward -infinity
+DB(10)            20         amplitude -> 20*log10(x), x > 0
+DBM(1)            30         watts -> 10*log10(w)+30
+DBW(1)             0         watts -> 10*log10(w)
+LIN(20)           10         dB -> 10^(dB/20) (the DB inverse)
+STEP(-1)           0         0 below zero, 1 at-or-above (STEP(0)=1)
+CLAMP(15,0,10)    10         restricted to a range (min>max: error)
+DIST(0,0,3,4)      5         point distance (through HYPOT)
+LERP(0,10,0.5)     5         a+(b-a)*t (t outside [0,1] extrapolates)
+UNLERP(0,10,5)   0.5         (x-a)/(b-a) (b=a: error)
+```
+
 ### EVEN() and ODD(): the integer parity
 
 `EVEN(x)` returns 1 if the integer x is even and 0 otherwise;
