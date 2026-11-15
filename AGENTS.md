@@ -1042,6 +1042,59 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **ENGINEERING BATCH G (user request 2026-11-15, branch
+  "eng-batch-g")**: ISPRIME + the random family.  ISPRIME: the
+  12-base deterministic Miller-Rabin (2..37, Sorenson-Webster -
+  exact for x < 3.3e24), the 19-digit cap (modmul's full product
+  must stay inside the 40-digit mantissa), x < 2 (negatives too) ->
+  0, fractional/unextractable -> Error 0 (the EVEN/ODD contract),
+  Carmichael numbers (561/1105/1729) fail correctly, the values
+  verified against sympy.  TWO ENGINE LESSONS: (a) csn_div is the
+  REAL quotient (1/2 = 0.5), NOT the integer one - the modpow bit
+  extraction must SUBTRACT the bit before halving (the remainder is
+  even -> the /2 is exact); the first draft looped 64 times on
+  0.5^n and hit the overflow return, making every prime composite.
+  (b) THE 19-DIGIT DISPATCH BUG: csn_to_long_val overflows above
+  LONG_MAX (9223372036854775837 > ...807!) - the trivial checks
+  (x < 2, == 2, even) now run in BCD (cmp/mod) and mr_test consumes
+  the Csn directly.  RAND/RANDF/SEED: the BCD LCG (state·a+c mod
+  10^40, Hull-Dobell-complete: a = 847562105789531461 = 1 mod 20,
+  c = 1234567890123456789, period 10^40), the update splits the
+  state base 10^20 so every product is exact (lo = (s0*a+c) mod
+  10^20, hi = (s1*a + carry) mod 10^20); the DRAW uses the HIGH
+  digits with REJECTION SAMPLING (the low digits of a decimal LCG
+  are weak); the scale10(-20) extracts needed csn_floor (scale10
+  alone leaves the fraction - the second silent bug, found by
+  RAND(3,3) = 3.7278).  RAND: a uniform INTEGER on [min,max], the
+  bounds truncate OUTWARD, min>max swaps; RANDF: [min,max) (flagged
+  - the max is excluded by construction); SEED(x): sets the state,
+  returns the value, so the pinnable draw is SEED(42)-SEED(42)+
+  RAND(...) (SEED returns its value - my first pins added it!).  THE
+  SEED: the wall clock * 10^6 + clock() mod 10^6 at first use (both
+  ISO C89; time_t enters through its DECIMAL DIGIT STRING - the
+  width is implementation-defined; %lu of the unsigned magnitude,
+  bounded by analysis).  THE VOLATILE FLAG (the user's refinement -
+  parse-time, not per-pass): Cell.volatf set by the commit wrappers
+  (cs_entry_volatile scans RAND(/RANDF(/SEED( case-insensitively -
+  the stored text keeps the case as typed); cs_set_text/cs_set_num
+  CLEAR it (raw content commits), copy_one carries it, the SET
+  preserve-formulas path writes val directly so it survives; the
+  CSD record GAINED a volatf byte (save/load/rd_check_record
+  updated - the format changes freely pre-release); the sensor in
+  cs_recalc_entry_p suppresses the change on a flagged cell (the
+  sheet settles; every ;R redraws).  examples/brainf.csd
+  REGENERATED (the old file's record layout misaligned under the
+  new byte; the genprobe updated to cs_alloc_cell, the file
+  re-verified: loads, 1769 passes, "Hello World!" in S7).  THE
+  UNIFORMITY: 6000 draws in [1,6] spread 956..1047 per face; 2000
+  RANDF(2,5) draws all in [2,5).  PINS: 55 (ISPRIME's set incl.
+  sympy-verified 19-digit cases, the seeded determinism, the range
+  membership conditionals, truncate-outward, swap, min=max, RANDF
+  bounds, the arg-count/type errors, the volatile flag + settling
+  + CSD round trip).  VERIFIED: --test 805 ok; the idle gate
+  EXACT; the pty shows the ISPRIME answers, the seeded draw, and
+  the RANDF value.
+
 - **ENGINEERING BATCH F + the dm2 follow-up (user, 2026-11-15,
   branch "eng-batch-f")**: ROOT(f, lo, hi) - the EXPRESSION-BASED
   root finder, the one architectural item of the list.  THE

@@ -24,6 +24,10 @@ typedef struct {
     CellType type;
     unsigned char col, row;  /* the cell's own coordinate (the sparse
                               * store: frees and the sort need it) */
+    unsigned char volatf;    /* the entry draws a fresh value every
+                              * evaluation (RAND/RANDF/SEED - flagged
+                              * at commit): the recalculation loop's
+                              * stability sensor ignores its changes */
     unsigned short ref;      /* the slot's own 1-based pool ref: the
                               * chunk ownership is BY FIELD, not by
                               * pointer arithmetic (ISO C makes
@@ -122,6 +126,7 @@ char  *cs_sort_refs(const char *s, int c1, int r1, int c2, int r2,
 void   cs_range_norm(int *c1, int *r1, int *c2, int *r2);
 int    cs_set_text(Cell *c, const char *cont, char just);
 int    cs_set_num(Cell *c, const char *cont, const Csn *val, int iserr, const char *strres);
+int    cs_entry_volatile(const char *s);
 void   cs_free_cell(Cell *c);
 void   cs_clear_all(void);
 int    cs_scan_refs(const char *s, void (*cb)(int col, int row, void *), void *ctx);

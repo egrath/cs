@@ -319,6 +319,41 @@ INTEG(G1>G4,H1>H4)  9.5      trapezoidal rule over a table; x strictly
 (the trapezoidal rule's honest overestimate; the exact integral is
 9).
 
+### ISPRIME and the random family
+
+`ISPRIME(x)` (batch G): the deterministic Miller–Rabin test with the
+12 bases 2..37 — proven exact for every x < 3.3·10²⁴, so within the
+19-digit cap the answer is not probabilistic.  The cap exists
+because modular multiplication needs the full product inside the
+40-digit mantissa.  x < 2 (including negatives) → 0; fractional or
+unextractable x → Error 0 (the EVEN/ODD contract):
+
+```text
+ISPRIME(101)             1
+ISPRIME(561)             0        (the Carmichael numbers all fail)
+ISPRIME(9223372036854775837)  1   (verified against sympy)
+```
+
+`RAND(min,max)` / `RANDF(min,max)` / `SEED(x)` — the BCD linear
+congruential generator, `state = (state·a + c) mod 10^40` with
+Hull–Dobell-complete constants (period exactly 10⁴⁰).  The update
+splits the state base 10²⁰ so every product stays inside the
+mantissa exactly.  RAND draws the **high** digits (the low digits of
+a decimal LCG are weak) with **rejection sampling** for perfect
+uniformity, and returns a uniform INTEGER on [min,max] — bounds
+truncate outward, min>max swaps.  RANDF returns a uniform real on
+**[min, max)** (the max is excluded by construction — flagged).
+The state seeds from the wall clock mixed with the process CPU
+clock on first use (both ISO C89; `time_t` enters through its
+decimal digit string, never a fixed-width integer — the width is
+implementation-defined).  `SEED(x)` sets the state and returns the
+value, so `SEED(42)-SEED(42)+RAND(1,6)` is a deterministic,
+pinnable draw.  Entries calling any of the three are
+**volatile-flagged** at commit (the flag is persisted in the CSD
+file): the recalculation loop's stability sensor ignores their
+changes, so a sheet with `+RAND(1,6)` still settles under `;R A`
+and redraws the values every pass.
+
 ### ROOT: the expression-based root finder
 
 `ROOT(f, lo, hi)` bisects f(X) = 0 on the bracket (2026-11-15,

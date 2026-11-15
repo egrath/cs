@@ -128,6 +128,10 @@ int cs_recalc_entry_p(Cell *c)
     else if (!changed && oldstr && str && strcmp(oldstr, str) != 0)
         changed = 1;                    /* the string result changed */
     if (oldstr) free(oldstr);
+    /* the VOLATILE cell (RAND/RANDF/SEED in the entry) draws a fresh
+     * value every pass BY DESIGN - the change never keeps the
+     * iteration alive; the sheet settles once everything else does */
+    if (c->volatf) changed = 0;
     if (changed) cs_sheet_changed = 1;
     csn_copy(&c->val, &val);
     c->iserr = 0;
@@ -291,14 +295,20 @@ static int cs_commit_core(int col, int rw, const char *entry);
  * refused - the original cell is untouched (cs_set_* allocate first) */
 static int commit_text(Cell *c, const char *cont, char just)
 {
-    if (cs_set_text(c, cont, just)) return 1;
+    if (cs_set_text(c, cont, just)) {
+        c->volatf = cs_entry_volatile(cont);
+        return 1;
+    }
     cs_msg("MEMORY IS TOO LOW");
     return 0;
 }
 static int commit_num(Cell *c, const char *cont, const Csn *val,
                       int iserr, const char *strres)
 {
-    if (cs_set_num(c, cont, val, iserr, strres)) return 1;
+    if (cs_set_num(c, cont, val, iserr, strres)) {
+        c->volatf = cs_entry_volatile(cont);
+        return 1;
+    }
     cs_msg("MEMORY IS TOO LOW");
     return 0;
 }

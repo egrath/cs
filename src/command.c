@@ -126,6 +126,7 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
         dst->type = CE_NUM;
         dst->just = src->just;    /* the alignment carries (the string
                                    * result's /r /l /c) */
+        dst->volatf = src->volatf;
         dst->cont = use;
         csn_copy(&dst->val, &val);       /* zeroed by eval on error */
         dst->iserr = err ? 1 : 0;
@@ -145,12 +146,14 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
         cs_free_cell(dst);
         dst->type = CE_TEXT;
         dst->just = src->just;
+        dst->volatf = src->volatf;
         dst->cont = nc;
         dst->rep = nr;
         csn_zero(&dst->val); dst->iserr = 0;
     } else {
         cs_free_cell(dst);
         dst->type = CE_ALLOC;
+        dst->volatf = 0;
         dst->cont = NULL;
     }
 }

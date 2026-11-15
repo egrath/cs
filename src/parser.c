@@ -3,8 +3,10 @@
  * All arithmetic is BCD decimal through num.c - no floating point
  * anywhere, matching the original CalcStar engine. */
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 #include "cs.h"
 
 #define MAXDEPTH 12
@@ -242,7 +244,9 @@ typedef enum {
     FN_CORR, FN_RSQ, FN_INTEG,
     FN_CONV,
     FN_SPLINE, FN_DIFF,
-    FN_ROOT
+    FN_ROOT,
+    FN_ISPRIME,
+    FN_RAND, FN_RANDF, FN_SEED
 } FnId;
 
 static int fnid(const char *name)
@@ -332,6 +336,10 @@ static int fnid(const char *name)
     if (!strcmp(name, "SPLINE")) return FN_SPLINE;
     if (!strcmp(name, "DIFF"))  return FN_DIFF;
     if (!strcmp(name, "ROOT"))  return FN_ROOT;
+    if (!strcmp(name, "ISPRIME")) return FN_ISPRIME;
+    if (!strcmp(name, "RAND"))   return FN_RAND;
+    if (!strcmp(name, "RANDF"))  return FN_RANDF;
+    if (!strcmp(name, "SEED"))   return FN_SEED;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -733,6 +741,200 @@ static int root_eval(const char *text, const Csn *xval, Csn *out)
     if (sf) { free(sf); return 1; }     /* a string result is no root */
     if (e) return 1;
     csn_copy(out, &val);
+    return 0;
+}
+
+/* ---- ISPRIME (engineering batch G, 2026-11-15): the deterministic
+ * Miller-Rabin test with the 12 bases 2..37 - PROVEN exact for every
+ * x < 3.3e24 (Sorenson-Webster), so within the 19-digit cap the
+ * answer is not probabilistic.  The cap exists because modmul needs
+ * the full product a*b to stay inside the 40-digit mantissa: with
+ * m <= 1e19 the product reaches 1e38, at 20 digits it overflows.
+ * x < 2 (including negatives) -> 0 (primality is a positive-integer
+ * property); a fractional or unextractable x -> Error 0 (the EVEN/
+ * ODD contract). ---- */
+#define ISPRIME_MAXPOW10 "10000000000000000000"    /* 1e19: the cap */
+
+/* t = (a*b) mod m, both a, b < m <= 1e19: the product is < 1e38,
+ * inside the mantissa */
+static int mr_modmul(Csn *r, const Csn *a, const Csn *b, const Csn *m)
+{
+    Csn t;
+    int err;
+    err = csn_mul(&t, a, b);
+    if (err) return err;
+    return csn_mod(r, &t, m);
+}
+
+/* r = a^e mod m, square-and-multiply; the exponent's bits are
+ * extracted low-first (e <= 1e19 -> <= 64 bits) */
+static int mr_modpow(Csn *r, const Csn *base, const Csn *e, const Csn *m)
+{
+    Csn bits[64], eb, two, t;
+    int nb = 0, i, err;
+    Csn acc;
+    csn_copy(&eb, e);
+    csn_from_int(&two, 2L);
+    while (!csn_is_zero(&eb) && nb < 64) {
+        if (csn_mod(&t, &eb, &two)) return CSN_ER_DOMAIN;
+        csn_copy(&bits[nb++], &t);
+        /* subtract the bit first: the remainder is EVEN, so the
+         * division by 2 is exact - csn_div is the REAL quotient
+         * (1/2 = 0.5), not the integer one */
+        if (csn_sub(&eb, &eb, &t)) return CSN_ER_DOMAIN;
+        if (csn_div(&eb, &eb, &two)) return CSN_ER_DOMAIN;
+    }
+    if (!csn_is_zero(&eb)) return CSN_ER_OVERFLOW;   /* > 64 bits */
+    csn_from_int(&acc, 1L);
+    for (i = nb - 1; i >= 0; i--) {
+        err = mr_modmul(&acc, &acc, &acc, m);        /* square */
+        if (err) return err;
+        if (!csn_is_zero(&bits[i])) {
+            err = mr_modmul(&acc, &acc, base, m);    /* multiply */
+            if (err) return err;
+        }
+    }
+    csn_copy(r, &acc);
+    return CSN_OK;
+}
+
+/* the 12 deterministic bases */
+static const int mr_bases[12] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37 };
+
+/* 1 = prime, 0 = composite (deterministic under the cap); the
+ * caller has validated the integer and the cap */
+static int mr_test(const Csn *x)
+{
+    Csn one, d, m1, mm, t, base;
+    int s, b;
+    csn_from_int(&one, 1L);
+    csn_copy(&mm, x);
+    /* d = x-1, s = its 2-adic valuation */
+    csn_sub(&d, &mm, &one);
+    csn_copy(&m1, &d);                  /* x-1 */
+    s = 0;
+    {
+        Csn two;
+        csn_from_int(&two, 2L);
+        for (;;) {
+            Csn rem;
+            if (csn_mod(&rem, &d, &two)) return 0;
+            if (!csn_is_zero(&rem)) break;
+            if (csn_div(&d, &d, &two)) return 0;
+            s++;
+        }
+    }
+    for (b = 0; b < 12; b++) {
+        Csn acc;
+        int j, ok = 0;
+        csn_from_int(&base, (long) mr_bases[b]);
+        if (csn_cmp(x, &base) == 0) return 1;        /* x IS the base */
+        if (csn_mod(&t, x, &base)) return 0;
+        if (csn_is_zero(&t)) return 0;               /* base | x */
+        if (mr_modpow(&acc, &base, &d, &mm)) return 0;
+        if (!csn_cmp(&acc, &one) || !csn_cmp(&acc, &m1))
+            continue;                                /* this base passes */
+        for (j = 0; j < s - 1; j++) {
+            if (mr_modmul(&acc, &acc, &acc, &mm)) return 0;
+            if (!csn_cmp(&acc, &m1)) { ok = 1; break; }
+        }
+        if (!ok) return 0;                           /* composite */
+    }
+    return 1;
+}
+
+/* ---- RAND / RANDF / SEED (engineering batch G, 2026-11-15): the
+ * BCD linear congruential generator.  state = (state*a + c) mod
+ * 10^40 with Hull-Dobell-complete constants (period exactly 10^40):
+ * c coprime to 10, a == 1 (mod 20) - a-1 = ...460 is divisible by
+ * 2, 5 and 4.  The update splits the state base 10^20 so every
+ * product stays inside the 40-digit mantissa EXACTLY:
+ *   lo = (s0*a + c) mod 10^20,  hi = (s1*a + carry) mod 10^20,
+ * with s = s1*10^20 + s0.  The DRAW uses the HIGH digits (the low
+ * digits of a decimal LCG are weak): hi20 = floor(state/10^20),
+ * rejection-sampled against the range for perfect uniformity (the
+ * rejection probability is below N/10^20 - practically never). ---- */
+static Csn g_lcg;               /* the generator state */
+static int g_lcg_seeded = 0;
+
+#define LCG_A  "847562105789531461"          /* == 1 (mod 20) */
+#define LCG_C  "1234567890123456789"         /* coprime to 10 */
+#define LCG_P20 "100000000000000000000"      /* 10^20 */
+#define LCG_P40 "10000000000000000000000000000000000000000"  /* 10^40 */
+
+/* one update: state = (state*a + c) mod 10^40, exact */
+static void lcg_update(void)
+{
+    Csn a, c, p20, p40, s1, s0, p0, p1, t, hi, lo, carry;
+    csn_parse(LCG_A, &a);
+    csn_parse(LCG_C, &c);
+    csn_parse(LCG_P20, &p20);
+    csn_parse(LCG_P40, &p40);
+    /* the split: s1 = the HIGH digits (the floor - scale10 alone
+     * would leave the fraction), s0 = state mod 10^20 */
+    if (csn_scale10(&s1, &g_lcg, -20)) return;
+    if (csn_floor(&s1, &s1)) return;
+    if (csn_mod(&s0, &g_lcg, &p20)) return;
+    /* the halves */
+    if (csn_mul(&p0, &s0, &a)) return;          /* < 1e38 */
+    if (csn_mul(&p1, &s1, &a)) return;          /* < 1e36 */
+    if (csn_add(&t, &p0, &c)) return;           /* < 1.01e38 */
+    if (csn_mod(&lo, &t, &p20)) return;
+    if (csn_div(&carry, &t, &p20)) return;      /* exact: < 1.01e18 */
+    if (csn_add(&hi, &p1, &carry)) return;      /* < 1.01e36 */
+    if (csn_mod(&hi, &hi, &p20)) return;
+    /* state = hi*10^20 + lo (< 10^40, no truncation) */
+    if (csn_scale10(&hi, &hi, 20)) return;
+    if (csn_add(&g_lcg, &hi, &lo)) return;
+    if (csn_mod(&g_lcg, &g_lcg, &p40)) return;
+}
+
+/* the first-use seed: the wall clock mixed with the process CPU
+ * clock - both ISO C89 (time/clock, <time.h>).  time_t's width is
+ * implementation-defined, so the value enters through its DECIMAL
+ * digit string (sprintf %lu of the unsigned magnitude), never
+ * through a fixed-width integer. */
+static void lcg_seed(void)
+{
+    time_t now = time(NULL);
+    clock_t ck = clock();
+    unsigned long tu = (now < 0) ? (unsigned long) -now
+                                 : (unsigned long) now;
+    unsigned long ku = (unsigned long) (ck % 1000000L);
+    char buf[32];
+    Csn p20, p40, tt;
+    sprintf(buf, "%lu", (unsigned long) tu);
+    if (csn_parse(buf, &g_lcg) != CSN_OK) csn_from_int(&g_lcg, 1L);
+    csn_parse(LCG_P20, &p20);
+    csn_parse(LCG_P40, &p40);
+    if (csn_scale10(&g_lcg, &g_lcg, 6)) return;         /* * 10^6 */
+    csn_from_int(&tt, (long) ku);
+    if (csn_add(&g_lcg, &g_lcg, &tt)) return;
+    if (csn_mod(&g_lcg, &g_lcg, &p40)) return;
+    lcg_update();                                       /* one stir */
+    g_lcg_seeded = 1;
+}
+
+/* the uniform integer draw on [0, n-1] from the HIGH digits, with
+ * rejection (n >= 1); 0 = ok */
+static int lcg_draw(const Csn *n, Csn *out)
+{
+    Csn p20, q, lim, hi;
+    int tries;
+    csn_parse(LCG_P20, &p20);
+    for (tries = 0; tries < 100; tries++) {
+        lcg_update();
+        if (csn_scale10(&hi, &g_lcg, -20)) return 1;
+        if (csn_floor(&hi, &hi)) return 1;      /* the high 20 digits */
+        if (csn_div(&q, &p20, n)) return 1;             /* floor */
+        if (csn_mul(&lim, &q, n)) return 1;             /* <= 1e20 */
+        if (csn_cmp(&hi, &lim) < 0) {
+            if (csn_mod(out, &hi, n)) return 1;
+            return 0;
+        }
+    }
+    /* practically unreachable; the honest fallback */
+    if (csn_mod(out, &hi, n)) return 1;
     return 0;
 }
 
@@ -1430,6 +1632,50 @@ static Val parse_primary(P *ps)
                 csn_from_int(&v.num,
                              f == FN_EVEN ? (long) (cc % 2 == 0)
                                           : (long) (cc % 2 != 0));
+                v.good = 1;
+                return v;
+            }
+            if (f == FN_ISPRIME) {
+                /* ISPRIME(x): 1 for a prime, 0 otherwise (engineering
+                 * batch G, 2026-11-15).  A fractional or oversized
+                 * argument is Error 0 (the EVEN/ODD contract); more
+                 * than 19 digits is Error 0 (the modmul cap); x < 2
+                 * (including negatives) is 0. */
+                Val a = parse_numarg(ps);
+                Csn t, cap;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                val_free(&v);
+                csn_zero(&v.num);
+                if (!csn_integer_part(&a.num, &t) ||
+                    csn_cmp(&t, &a.num) != 0) {
+                    val_free(&a); val_err(&v, 0); return v;
+                }
+                csn_parse(ISPRIME_MAXPOW10, &cap);
+                if (csn_cmp(&t, &cap) >= 0) {
+                    val_free(&a); val_err(&v, 0); return v;
+                }
+                val_free(&a);
+                {
+                    Csn two, tt;
+                    /* the checks stay in BCD: a 19-digit value can
+                     * exceed LONG_MAX (the csn_to_long_val round trip
+                     * overflows) - mr_test consumes the Csn directly */
+                    csn_from_int(&two, 2L);
+                    if (csn_cmp(&t, &two) < 0) { v.good = 1; return v; }
+                    if (csn_cmp(&t, &two) == 0) {
+                        csn_from_int(&v.num, 1L);
+                        v.good = 1;
+                        return v;
+                    }
+                    if (!csn_mod(&tt, &t, &two) && csn_is_zero(&tt)) {
+                        v.good = 1;                   /* even */
+                        return v;
+                    }
+                }
+                csn_from_int(&v.num, (long) mr_test(&t));
                 v.good = 1;
                 return v;
             }
@@ -2461,6 +2707,111 @@ static Val parse_primary(P *ps)
                 csn_zero(&v.num);
                 if (ia.n < 2) { val_err(&v, 0); return v; }
                 csn_copy(&v.num, &ia.total);
+                v.good = 1;
+                return v;
+            }
+            /* RAND(min,max) / RANDF(min,max) / SEED(x) (engineering
+             * batch G, 2026-11-15).  RAND: a uniform INTEGER on
+             * [min,max] - the bounds truncate OUTWARD (floor/ceil)
+             * so the interval stays covered, min > max swaps.  RANDF:
+             * a uniform real on [min,max) (the max is excluded by
+             * construction - flagged).  SEED: sets the state, returns
+             * the value; entries calling any of the three are
+             * volatile-flagged at commit. */
+            if (f == FN_RAND || f == FN_RANDF) {
+                Val a, b;
+                Csn mnl, mxl, n, r, diff;
+                int err;
+                a = parse_numarg(ps);
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ',') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                b = parse_numarg(ps);
+                if (!b.good) { val_free(&a); return b; }
+                skip_ws(&ps->p);
+                if (*ps->p != ')') {
+                    val_err(&v, 3); val_free(&a); val_free(&b);
+                    return v;
+                }
+                ps->p++;
+                val_free(&v);
+                csn_zero(&v.num);
+                if (!g_lcg_seeded) lcg_seed();
+                err = 0;
+                if (f == FN_RAND) {
+                    /* truncate outward: floor(min), ceil(max) */
+                    if (csn_floor(&mnl, &a.num) ||
+                        csn_ceil(&mxl, &b.num)) err = 1;
+                    if (!err && csn_cmp(&mnl, &mxl) > 0) {
+                        csn_copy(&r, &mnl);
+                        csn_copy(&mnl, &mxl);
+                        csn_copy(&mxl, &r);
+                    }
+                    if (!err) err = csn_sub(&n, &mxl, &mnl);
+                    if (!err) {
+                        Csn one;
+                        csn_from_int(&one, 1L);
+                        if (csn_add(&n, &n, &one)) err = 1;
+                    }
+                    /* N == 1 draws r = 0 -> the fixed value */
+                    if (!err) {
+                        if (lcg_draw(&n, &r)) err = 1;
+                        if (!err && csn_add(&v.num, &mnl, &r)) err = 1;
+                    }
+                } else {
+                    /* RANDF: the raw bounds, [min, max) */
+                    if (csn_cmp(&a.num, &b.num) > 0) {
+                        csn_copy(&r, &a.num);
+                        csn_copy(&mnl, &b.num);
+                        csn_copy(&mxl, &r);
+                    } else {
+                        csn_copy(&mnl, &a.num);
+                        csn_copy(&mxl, &b.num);
+                    }
+                    if (csn_cmp(&mnl, &mxl) == 0) {
+                        csn_copy(&v.num, &mnl);
+                    } else {
+                        Csn frac, hi;
+                        if (csn_sub(&diff, &mxl, &mnl)) err = 1;
+                        if (!err) {
+                            lcg_update();
+                            if (csn_scale10(&hi, &g_lcg, -20)) err = 1;
+                            if (!err && csn_floor(&hi, &hi)) err = 1;
+                            /* frac = hi20 * 10^-20, in [0,1) - the
+                             * HIGH digits, like the integer draw */
+                            if (!err &&
+                                csn_scale10(&frac, &hi, -20)) err = 1;
+                        }
+                        if (!err && csn_mul(&r, &diff, &frac)) err = 1;
+                        if (!err && csn_add(&v.num, &mnl, &r)) err = 1;
+                    }
+                }
+                val_free(&a); val_free(&b);
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            if (f == FN_SEED) {
+                Val a = parse_numarg(ps);
+                Csn p40;
+                if (!a.good) return a;
+                skip_ws(&ps->p);
+                if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
+                ps->p++;
+                val_free(&v);
+                csn_copy(&v.num, &a.num);           /* returns the value */
+                csn_parse(LCG_P40, &p40);
+                if (!csn_mod(&g_lcg, &a.num, &p40) &&
+                    g_lcg.sign) {
+                    Csn tt;
+                    csn_copy(&tt, &g_lcg);
+                    csn_sub(&g_lcg, &tt, &p40);     /* negative state
+                                                       wraps positive */
+                    csn_neg(&g_lcg, &g_lcg);
+                }
+                g_lcg_seeded = 1;
+                val_free(&a);
                 v.good = 1;
                 return v;
             }

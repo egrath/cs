@@ -1,6 +1,7 @@
 /* cells.c - cell storage, coordinates, recalculation */
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "cs.h"
 
 int  colw[CS_MAXCOL];
@@ -465,6 +466,38 @@ void cs_range_norm(int *c1, int *r1, int *c2, int *r2)
     if (*r1 > *r2) { t = *r1; *r1 = *r2; *r2 = t; }
 }
 
+/* the VOLATILE ENTRY scan (engineering batch G, 2026-11-15): 1 when
+ * the entry text calls RAND/RANDF/SEED - the function-name lookup is
+ * case-insensitive (the stored text keeps the case as typed), and
+ * the '(' disambiguates RANDF from RAND.  Flagged once at commit
+ * time; the recalculation loop's stability sensor ignores a change
+ * on a flagged cell (a random value changes every pass BY DESIGN). */
+int cs_entry_volatile(const char *s)
+{
+    const char *p = s;
+    while (*p) {
+        if ((*p == 'r' || *p == 'R' || *p == 's' || *p == 'S') &&
+            (p == s || !isalnum((unsigned char) p[-1]))) {
+            const char *w = p;
+            char name[8];
+            int n = 0;
+            while ((*w >= 'A' && *w <= 'Z') || (*w >= 'a' && *w <= 'z')) {
+                if (n < 7) name[n++] = (char) toupper((unsigned char) *w);
+                w++;
+            }
+            name[n] = '\0';
+            if (*w == '(' && (!strcmp(name, "RAND") ||
+                              !strcmp(name, "RANDF") ||
+                              !strcmp(name, "SEED")))
+                return 1;
+            p = w;
+            continue;
+        }
+        p++;
+    }
+    return 0;
+}
+
 /* the SET discipline (external review item 6, 2026-11-15): allocate
  * EVERYTHING first, check, then free the old and commit - a failed
  * allocation leaves the original cell untouched and the caller
@@ -486,6 +519,8 @@ int cs_set_text(Cell *c, const char *cont, char just)
     csn_zero(&c->val);
     c->iserr = 0;
     c->strres = NULL;
+    c->volatf = 0;      /* a raw content commit is never volatile
+                            (the commit wrappers re-flag formulas) */
     entriesUsed++;
     return 1;
 }
@@ -509,6 +544,7 @@ int cs_set_num(Cell *c, const char *cont, const Csn *val, int iserr, const char 
     csn_copy(&c->val, val);
     c->iserr = iserr;
     c->strres = ns;
+    c->volatf = 0;      /* see cs_set_text */
     entriesUsed++;
     return 1;
 }

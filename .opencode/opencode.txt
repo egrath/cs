@@ -48,6 +48,35 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-g"): ISPRIME + RAND/RANDF/SEED (2026-11-15):
+- USER: ISPRIME (approved the conventions) + RAND(min,max); the
+  discussion settled: RAND AND RANDF, the BCD LCG, truncate-outward
+  bounds, the parse-time volatile flag (the user's refinement), the
+  fixed seed -> CHANGED to the system time (time/clock, ISO C89;
+  time_t through its decimal digit string), SEED(x) kept.
+- ISPRIME: the 12-base MR; LESSON (a) csn_div is the REAL quotient
+  - the bit extraction subtracts the bit first (the /2 is then
+  exact); the first draft hit the 64-bit overflow return for every
+  input (all primes -> composite).  LESSON (b) csn_to_long_val
+  overflows above LONG_MAX (9223372036854775837!) - the dispatch
+  checks run in BCD now.  Verified against sympy incl. 19 digits.
+- RAND: the BCD LCG (a = 847562105789531461 = 1 mod 20, c =
+  1234567890123456789, Hull-Dobell period 10^40), the base-10^20
+  split update (exact products), the HIGH-digit draw with
+  rejection sampling.  LESSON (c): the scale10(-20) extracts need
+  csn_floor (scale10 leaves the fraction) - found by RAND(3,3) =
+  3.7278.  SEED returns its value (the pinnable draw is
+  SEED(42)-SEED(42)+RAND(...) - my first pins added the 42!).
+- THE VOLATILE FLAG: Cell.volatf, cs_entry_volatile at commit (the
+  wrappers own it; cs_set_* clear it; copy carries it; SET-preserve
+  survives by writing val directly), the CSD gained a byte (the
+  pre-scan updated), the sensor suppresses flagged changes.
+  examples/brainf.csd REGENERATED (the layout changed; genprobe
+  updated to cs_alloc_cell; re-verified 1769 passes).
+- VERIFIED: --test 805 ok; the idle gate EXACT; the pty shows the
+  ISPRIME/seeded-draw/RANDF answers; the uniformity spot checks
+  (6000 dice draws 956..1047/face; 2000 RANDF in range).
+
 ## BATCH (branch "eng-batch-f"): ROOT + dm2 (2026-11-15):
 - USER: merge E (done, 83003e0 ff) and implement batch F; ALSO the
   missing dm2 area unit from batch D.

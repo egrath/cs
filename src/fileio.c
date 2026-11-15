@@ -23,6 +23,9 @@
  *            (bits 5-6: 0=auto,1=sci,2=dec - flagged ext 2026-11;
  *            old CSD4 files have zero high bits and load as (auto)),
  *          unsigned char formf,
+ *          unsigned char volatf (the volatile-entry flag, batch G
+ *            2026-11-15 - old files have no byte; the format may
+ *            change freely until release),
  *          unsigned short contlen + bytes (u16 LE),
  *          [type==3] BCD number of value:
  *               unsigned char sign (0/1),
@@ -163,6 +166,7 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
             fputc(((cl->prec + 1) & 31) | ((cl->notation & 3) << 5) |
                   ((cl->factf & 1) << 7), f);
             fputc(cl->formf, f);
+            fputc(cl->volatf, f);
             len = cl->cont ? (int) strlen(cl->cont) : 0;
             wr16(f, len);
             if (len) fwrite(cl->cont, 1, (size_t) len, f);
@@ -200,6 +204,7 @@ static int rd_check_record(FILE *f)
     if (fgetc(f) == EOF) return 0;              /* just */
     if (fgetc(f) == EOF) return 0;              /* prec/notation/factf */
     if (fgetc(f) == EOF) return 0;              /* formf */
+    if (fgetc(f) == EOF) return 0;              /* volatf */
     /* an unknown type would desync the stream (the loader would not
      * know which payload fields follow) */
     if (ty != 2 && ty != 3) return 0;
@@ -296,7 +301,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
     count = rd16(f);
     if (count < 0) { fclose(f); cs_msg("READ ERROR"); return 0; }
     for (i = 0; i < count; i++) {
-        int cc, rr, ty, just, prc, frm, nta, fct, len;
+        int cc, rr, ty, just, prc, frm, nta, fct, len, vol;
         int dr, dc, drop;
         Cell *cl, scratch;
         cc = fgetc(f);
@@ -308,6 +313,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
         fct = (nta >> 7) & 1;           /* bit 7: factorial entry */
         nta = (nta >> 5) & 3;           /* bits 5-6: notation */
         frm = fgetc(f);
+        vol = fgetc(f);                 /* the volatile-entry flag */
         if (cc == EOF || rr < 0) break; /* pass 1 made this impossible */
         /* Load position (manual 14-9: "If the upper left corner is to
          * be positioned at another location, enter the coordinates of
@@ -342,6 +348,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->type = CE_TEXT;
             cl->just = just;
             cl->formf = frm;
+            cl->volatf = (vol != 0);
             cl->prec = prc;
             cl->notation = nta;
             cl->factf = fct;
@@ -375,6 +382,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->type = CE_NUM;
             cl->just = just;
             cl->formf = frm;
+            cl->volatf = (vol != 0);
             cl->prec = prc;
             cl->notation = nta;
             cl->factf = fct;

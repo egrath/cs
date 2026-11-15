@@ -2071,6 +2071,90 @@ static void run_tests(void)
          * syntax error as always */
         cke("X unbound", "X", 6);
         cke("X+1 unbound", "X+1", 6);
+        /* ==== ISPRIME (batch G) ==== */
+        ckc("ISPRIME 2", "ISPRIME(2)", "+1.0000000000000E+1");
+        ckc("ISPRIME 3", "ISPRIME(3)", "+1.0000000000000E+1");
+        ckc("ISPRIME 97", "ISPRIME(97)", "+1.0000000000000E+1");
+        ckc("ISPRIME 101", "ISPRIME(101)", "+1.0000000000000E+1");
+        ckc("ISPRIME 0", "ISPRIME(0)", "0");
+        ckc("ISPRIME 1", "ISPRIME(1)", "0");
+        ckc("ISPRIME -7", "ISPRIME(-7)", "0");
+        ckc("ISPRIME 4", "ISPRIME(4)", "0");
+        ckc("ISPRIME 561", "ISPRIME(561)", "0");
+        ckc("ISPRIME 1105", "ISPRIME(1105)", "0");
+        ckc("ISPRIME 1729", "ISPRIME(1729)", "0");
+        ckc("ISPRIME 19digit", "ISPRIME(9223372036854775837)",
+            "+1.0000000000000E+1");
+        ckc("ISPRIME 19digit2", "ISPRIME(9223372036854775783)",
+            "+1.0000000000000E+1");
+        ckc("ISPRIME 11digit", "ISPRIME(32416190071)",
+            "+1.0000000000000E+1");
+        cke("ISPRIME 2.5", "ISPRIME(2.5)", -1);
+        cke("ISPRIME cap", "ISPRIME(10000000000000000000)", -1);
+        cke("ISPRIME no arg", "ISPRIME()", 6);
+        ckc("ISPRIME NOT", "NOT(ISPRIME(4))", "+1.0000000000000E+1");
+        /* ==== RAND / RANDF / SEED (batch G) ==== */
+        ckc("SEED returns", "SEED(7)", "+7.0000000000000E+1");
+        /* SEED returns its value, so the draw alone needs a
+         * neutralizing prefix - the second SEED re-seeds the state
+         * and cancels the first: draw from state 42 = 1 */
+        ckc("RAND seeded", "SEED(42)-SEED(42)+RAND(1,100)",
+            "+1.0000000000000E+1");
+        ckc("RAND seeded 6", "SEED(42)-SEED(42)+RAND(1,6)",
+            "+1.0000000000000E+1");
+        ckc("RAND determinism",
+            "(SEED(42)+RAND(1,6) = SEED(42)+RAND(1,6)):1:0",
+            "+1.0000000000000E+1");
+        ckc("RAND fixed", "RAND(3,3)", "+3.0000000000000E+1");
+        ckc("RAND range", "(AND(RAND(1,6)>=1,RAND(1,6)<=6)):1:0",
+            "+1.0000000000000E+1");
+        ckc("RAND truncate",
+            "(AND(RAND(1.5,6.7)>=1,RAND(1.5,6.7)<=7)):1:0",
+            "+1.0000000000000E+1");
+        ckc("RAND swap", "(AND(RAND(6,1)>=1,RAND(6,1)<=6)):1:0",
+            "+1.0000000000000E+1");
+        ckc("RANDF range", "(AND(RANDF(2,5)>=2,RANDF(2,5)<5)):1:0",
+            "+1.0000000000000E+1");
+        ckc("RANDF frac bounds",
+            "(AND(RANDF(0.25,0.5)>=0.25,RANDF(0.25,0.5)<0.5)):1:0",
+            "+1.0000000000000E+1");
+        cke("RAND 1 arg", "RAND(1)", 3);
+        cke("RAND text", "RAND(\"x\",5)", 6);
+        cke("RANDF 1 arg", "RANDF(2)", 3);
+        cke("SEED no arg", "SEED()", 6);
+        /* the VOLATILE machinery: the flagged cell settles, the flag
+         * survives the CSD round trip, the sheet never overruns */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "+RAND(1,6)");            /* A1 */
+        if (!tread(0, 0)->volatf)
+            { printf("FAIL volatf flag\n"); fails++; }
+        else printf("ok   the volatile flag set at commit\n");
+        cs_run_recalc_passes(1);
+        if (cs_recalc_limit_hit())
+            { printf("FAIL volatile overran\n"); fails++; }
+        else if (cs_recalc_last_passes > 3)
+            { printf("FAIL volatile passes %d\n", cs_recalc_last_passes);
+              fails++; }
+        else printf("ok   the volatile cell settles (%d passes)\n",
+                    cs_recalc_last_passes);
+        cs_run_recalc_passes(1);
+        if (cs_recalc_limit_hit())
+            { printf("FAIL second recalc overran\n"); fails++; }
+        else printf("ok   the second recalculation settles\n");
+        if (cs_save("t_vol", 0, 0, 2, 2, "")) {
+            cs_clear_all();
+            if (cs_load("t_vol", 0, 0, 0)) {
+                if (!tread(0, 0)->volatf)
+                    { printf("FAIL volatf round trip\n"); fails++; }
+                else printf("ok   the volatile flag survives the file\n");
+                cs_run_recalc_passes(1);
+                if (cs_recalc_limit_hit())
+                    { printf("FAIL loaded volatile overran\n"); fails++; }
+                else printf("ok   the loaded volatile cell settles\n");
+            } else { printf("FAIL volatile load\n"); fails++; }
+        } else { printf("FAIL volatile save\n"); fails++; }
+        remove("t_vol.csd");
+        cs_clear_all();
 
         /* the /r /l /c alignment on a FORMULA's string result
          * (user request 2026-11-15) */
