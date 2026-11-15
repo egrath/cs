@@ -255,7 +255,13 @@ void cs_relink_cell(int fc, int fr, int tc, int tr)
         CsIdxEnt *ne = (CsIdxEnt *) realloc(dp->e,
                         (size_t) nc * sizeof(CsIdxEnt));
         if (!ne) {                  /* the slot is lost from the index:
-                                     * keep it consistent (freelist) */
+                                     * keep it consistent (freelist) -
+                                     * the strings die FIRST (the next
+                                     * pool_take memsets the slot, which
+                                     * would leak them) */
+            if (c->cont) { free(c->cont); c->cont = NULL; }
+            if (c->rep) { free(c->rep); c->rep = NULL; }
+            if (c->strres) { free(c->strres); c->strres = NULL; }
             c->cont = (char *) cs_freelist;
             cs_freelist = c;
             if (c->type != CE_EMPTY) entriesUsed--;
@@ -505,9 +511,28 @@ void cs_free_cell(Cell *c)
     c->prec = -1;
 }
 
+/* release every populated cell's owned strings before the chunk
+ * memory dies (the sparse clear frees the CHUNKS directly - without
+ * this walk every cs_clear_all leaked all the sheet's heap strings,
+ * user report 2026-11-14) */
+static void cs_clear_strings(void)
+{
+    int r, i;
+    for (r = 0; r < CS_MAXROW; r++) {
+        CsRow *rp = &cs_rows[r];
+        for (i = 0; i < rp->n; i++) {
+            Cell *c = cs_ref_ptr(rp->e[i].ref);
+            if (c->cont) { free(c->cont); c->cont = NULL; }
+            if (c->rep) { free(c->rep); c->rep = NULL; }
+            if (c->strres) { free(c->strres); c->strres = NULL; }
+        }
+    }
+}
+
 void cs_clear_all(void)
 {
     int r, c;
+    cs_clear_strings();
     for (r = 0; r < CS_MAXROW; r++) {
         if (cs_rows[r].e) { free(cs_rows[r].e); cs_rows[r].e = NULL; }
         cs_rows[r].n = 0;

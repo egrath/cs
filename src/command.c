@@ -214,15 +214,34 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
                    int dw, int dh, int rep, int nfill, int rel)
 {
     int sw = c2 - c1 + 1, i, n;
-    Cell **tmp;
-    tmp = clone_cells(c1, r1, c2, r2, &n);
-    if (!tmp || !n) { free_clones(tmp, n, sw); cs_msg("MEMORY IS TOO LOW"); return; }
+    int d2c = d1 + dw - 1, e2r = e1 + dh - 1;
+    int overlap = (d1 <= c2 && d2c >= c1 && e1 <= r2 && e2r >= r1);
+    Cell **tmp = NULL;
+    /* the snapshot exists ONLY for an overlapping copy (the write of
+     * a target would destroy a not-yet-copied source cell); a
+     * non-overlapping copy reads the source cells LIVE - the
+     * full-rectangle clone used to cost 3.4 MB for a whole-sheet
+     * copy, empties included (user report 2026-11-15) */
+    if (overlap) {
+        tmp = clone_cells(c1, r1, c2, r2, &n);
+        if (!tmp || !n) { free_clones(tmp, n, sw);
+                          cs_msg("MEMORY IS TOO LOW"); return; }
+    } else
+        n = (r2 - r1 + 1) * sw;
     for (i = 0; i < (rep ? nfill : n); i++) {
         int sc = rep ? c1 : (c1 + i % sw);
         int sr = rep ? r1 : (r1 + i / sw);
         int dc = d1 + i % dw, dr = e1 + i / dw;
+        Cell *src, esrc;
         Cell *dst = cs_alloc_cell(dc, dr);
         if (!dst) { cs_msg("MEMORY IS TOO LOW"); break; }
+        if (tmp)
+            src = &tmp[rep ? 0 : i / sw][rep ? 0 : i % sw];
+        else {
+            src = cs_getcell(sc, sr);
+            if (!src) { memset(&esrc, 0, sizeof(esrc));
+                        src = &esrc; }
+        }
         {
             /* the DESTINATION is the evaluation context (ROW()/COL()):
              * the dc/dr of copy_one are the relative SHIFT deltas */
@@ -231,13 +250,12 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
             cs_eval_ctx_on = 1;
             cs_eval_ctx_col = dc;
             cs_eval_ctx_row = dr;
-            copy_one(dst, &tmp[rep ? 0 : i / sw][rep ? 0 : i % sw],
-                     rel, dc - sc, dr - sr);
+            copy_one(dst, src, rel, dc - sc, dr - sr);
             cs_eval_ctx_on = so; cs_eval_ctx_col = sc2;
             cs_eval_ctx_row = sr2;
         }
     }
-    free_clones(tmp, n, sw);
+    if (tmp) free_clones(tmp, n, sw);
     cs_recount_entries();
 }
 
@@ -890,34 +908,64 @@ void cs_lock_cmd(void)
  * get their in-range references remapped to the rows where the cells
  * landed (frozen '!' refs excepted, like the insert/delete shifter).
  * Empty keys sort last in both orders; the sort is stable. */
+/* swap the two cells at (c, ra) and (c, rb): ra's content is saved
+ * (its strings duplicated, since the relink frees the target), the
+ * rb slot relinks into ra, and the saved content lands in rb.  An
+ * absent side simply ends up empty. */
+static void swap_two_cells(int c, int ra, int rb)
+{
+    Cell *a = cs_getcell(c, ra);
+    Cell t;
+    if (a) {
+        t = *a;
+        t.cont = a->cont ? cs_strdup(a->cont) : NULL;
+        t.rep = a->rep ? cs_strdup(a->rep) : NULL;
+        t.strres = a->strres ? cs_strdup(a->strres) : NULL;
+    } else
+        memset(&t, 0, sizeof(t));
+    cs_relink_cell(c, rb, c, ra);   /* rb's slot moves into ra */
+    if (t.type != CE_EMPTY) {
+        Cell *dst = cs_alloc_cell(c, rb);
+        if (dst) {
+            *dst = t;
+            dst->col = (unsigned char) c;
+            dst->row = (unsigned char) rb;
+            if (dst->type != CE_EMPTY) entriesUsed++;
+        }
+    }
+}
+
 void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
 {
     int nrows = r2 - r1 + 1, ncols = c2 - c1 + 1;
-    int n = 0, i, j, r, c, ne, ne0;
-    Cell **snap;                        /* clone_cells snapshot, per row */
+    int i, j, ne, ne0;
     int *order, *nonempty, *empties, *perm;
     Cell *kc;
 
     if (nrows <= 0 || ncols <= 0 || keycol < c1 || keycol > c2) return;
-    snap = clone_cells(c1, r1, c2, r2, &n);
-    if (!snap) return;
     order = (int *) malloc((size_t) nrows * sizeof(int));
     nonempty = (int *) malloc((size_t) nrows * sizeof(int));
     empties = (int *) malloc((size_t) nrows * sizeof(int));
     perm = (int *) malloc((size_t) nrows * sizeof(int));
     if (!order || !nonempty || !empties || !perm) {
-        free_clones(snap, n, ncols);
         free(order); free(nonempty); free(empties); free(perm);
         return;
     }
     /* partition: rows with a usable key sort first, empty-key rows
-     * keep their relative order and go last (both directions) */
+     * keep their relative order and go last (both directions) - the
+     * keys are read from the LIVE cells (nothing changes until the
+     * permutation is applied; NO snapshot of the rectangle - the
+     * whole-sheet sort used to transiently copy all 32,385 slots,
+     * empties included, user report 2026-11-15) */
     ne = ne0 = 0;
     for (i = 0; i < nrows; i++) {
-        kc = &snap[i][keycol - c1];
+        kc = cs_getcell(keycol, r1 + i);
+        /* an ABSENT key cell reads as empty (the sparse store's
+         * NULL return - the dense slot was never NULL) */
+        if (!kc) empties[ne0++] = i;
         /* a string-result formula cell is a TEXT key (the derived
          * type, 2026-11-13) */
-        if (kc->type == CE_NUM && !kc->iserr && !kc->strres)
+        else if (kc->type == CE_NUM && !kc->iserr && !kc->strres)
             nonempty[ne++] = i;
         else if (kc->type == CE_TEXT && kc->cont && kc->cont[0])
             nonempty[ne++] = i;
@@ -927,9 +975,9 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
     /* stable insertion sort on the key */
     for (i = 1; i < ne; i++) {
         int t = nonempty[i];
-        kc = &snap[t][keycol - c1];
+        kc = cs_getcell(keycol, r1 + t);
         for (j = i - 1; j >= 0; j--) {
-            Cell *k2 = &snap[nonempty[j]][keycol - c1];
+            Cell *k2 = cs_getcell(keycol, r1 + nonempty[j]);
             int cv;
             if (kc->type == CE_NUM && !kc->strres &&
                 k2->type == CE_NUM && !k2->strres)
@@ -948,42 +996,41 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
     for (i = 0; i < ne0; i++) order[ne + i] = empties[i];
     /* the permutation: perm[si] = the destination row of source row si */
     for (i = 0; i < nrows; i++) perm[order[i]] = r1 + i;   /* absolute rows */
-    /* write back: release the block, then place the snapshot rows */
-    for (r = 0; r < nrows; r++)
-        for (c = 0; c < ncols; c++)
-            cs_free_cell_at(c1 + c, r1 + r);
-    for (r = 0; r < nrows; r++) {
-        int src = order[r];
-        for (c = 0; c < ncols; c++) {
-            Cell *dst = cs_alloc_cell(c1 + c, r1 + r);
-            Cell *sc = &snap[src][c];
-            if (!dst) { cs_msg("MEMORY IS TOO LOW");
-                        free_clones(snap, n, ncols);
-                        free(order); free(nonempty); free(empties);
-                        free(perm); cs_recount_entries();
-                        cs_mark_sheet_change(); return; }
-            *dst = *sc;
-            dst->col = (unsigned char) (c1 + c);
-            dst->row = (unsigned char) (r1 + r);
-            if (dst->cont)   dst->cont   = cs_strdup(dst->cont);
-            if (dst->rep)    dst->rep    = cs_strdup(dst->rep);
-            if (dst->strres) dst->strres = cs_strdup(dst->strres);
-            if (dst->type != CE_EMPTY) entriesUsed++;
-        }
-    }
-    free_clones(snap, n, ncols);
-    /* the formulas: remap in-range references to the new rows */
+    /* apply the permutation IN PLACE by swapping row pairs: no
+     * snapshot at all - each swap relinks the cells through the row
+     * index (the slots never move, the released targets are freed by
+     * the relink, and an absent side ends up empty).  The swaps fix
+     * the perm entries, so the ORIGINAL permutation is copied for
+     * the reference remap below. */
     {
-        int r2 = 0, c2 = 0;
-        Cell *cl;
-        while ((cl = cs_next_cell(&c2, &r2)) != NULL) {
-            char *nc2;
-            if (cl->cont && cl->type != CE_EMPTY) {
-                nc2 = cs_sort_refs(cl->cont, c1, r1, c2, r2, perm);
-                if (nc2) { free(cl->cont); cl->cont = nc2; }
+        int *perm0 = (int *) malloc((size_t) nrows * sizeof(int));
+        int r;
+        if (!perm0) { free(order); free(nonempty); free(empties);
+                      free(perm); return; }
+        memcpy(perm0, perm, (size_t) nrows * sizeof(int));
+        for (r = 0; r < nrows; r++) {
+            while (perm[r] != r1 + r) {
+                int jj = perm[r] - r1, c;
+                for (c = c1; c <= c2; c++)
+                    swap_two_cells(c, r1 + r, r1 + jj);
+                { int t2 = perm[r]; perm[r] = perm[jj]; perm[jj] = t2; }
             }
-            c2 = cl->col + 1;
         }
+        /* the formulas: remap in-range references to the new rows (the
+         * scan locals must NOT shadow the range bounds r2/c2) */
+        {
+            int sr2 = 0, sc2 = 0;
+            Cell *cl;
+            while ((cl = cs_next_cell(&sc2, &sr2)) != NULL) {
+                char *nc2;
+                if (cl->cont && cl->type != CE_EMPTY) {
+                    nc2 = cs_sort_refs(cl->cont, c1, r1, c2, r2, perm0);
+                    if (nc2) { free(cl->cont); cl->cont = nc2; }
+                }
+                sc2 = cl->col + 1;
+            }
+        }
+        free(perm0);
     }
     free(order); free(nonempty); free(empties); free(perm);
     cs_recount_entries();

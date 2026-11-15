@@ -48,6 +48,32 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "memfix"): the memory audit fixes (2026-11-15):
+- USER SCAN (verified): the sort/copy snapshot copied the whole
+  rectangle INCLUDING empties (a whole-sheet sort = ~3.4 MB
+  transient); cs_clear_all leaked all the live heap strings (the
+  sparse clear freed the chunks without walking the cells — the
+  missing cs_clear_strings); bonus: cs_relink_cell's OOM path pushed
+  slots with live strings (the next pool_take memset would leak
+  them).
+- FIXED: cs_clear_strings (walk the row index, free
+  cont/rep/strres); the relink OOM path frees first; the SORT is
+  zero-snapshot (the keys read live, the permutation applied in
+  place by swapping row pairs — the swap helper strdup-saves one
+  side and relinks the other; perm0 = the ORIGINAL permutation for
+  the cs_sort_refs remap because the swaps fix perm in place); the
+  COPY snapshots ONLY for an overlapping destination (the
+  non-overlapping path reads the sources live, absent = the empty
+  struct).  PIN NOTES: the sort's key cells can be NULL (absent ->
+  the empties partition); the remap scan locals must not shadow the
+  range bounds (r2/c2 vs sr2/sc2 — the shadowing broke the remap);
+  the overlap pin pins the HISTORICAL sequential-eval behavior
+  (A2=1, A3=2, the texts adjusted).
+- VERIFIED: --test 432 ok; the idle gate EXACT.  ASAN leak
+  detection unsupported on macOS — the fixes are code-level.
+- The optional string pool (cutting the ~190 KB malloc overhead)
+  stays deferred.
+
 ## BATCH (branch "DOS" -> merged to master): the cookbook + the merge (2026-11-14):
 - USER: merge to master, document everything with good examples of
   the day's features.  README gained a COOKBOOK section (the string

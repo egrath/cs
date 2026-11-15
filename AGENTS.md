@@ -918,6 +918,38 @@ Batch workflow (do all steps before reporting done):
   the bounded aggregates, the brainf cross-link).  The docs PDF and
   the manual PDF remain in docs/.
 
+- **THE MEMORY AUDIT FIXES (user report 2026-11-15, branch
+  "memfix")**: (1) cs_clear_all LEAKED every live heap string (the
+  sparse clear freed the chunk memory directly without walking the
+  cells — the missing cs_clear_strings the user remembered): the new
+  cs_clear_strings walks the row index and frees cont/rep/strres per
+  populated cell before the chunks die.  (2) cs_relink_cell's OOM
+  path pushed the slot to the freelist WITH its live strings (the
+  next pool_take memsets over the pointers) — the strings are freed
+  first now.  (3) the SORT's snapshot is GONE: the keys are read
+  from the LIVE cells (nothing changes until the permutation is
+  applied), and the permutation is applied IN PLACE by swapping row
+  pairs (the swap = strdup-save one side, cs_relink_cell moves the
+  other side, the strdup'd content lands in the vacated row; the
+  while-swap loop fixes perm entries, so the ORIGINAL permutation is
+  copied to perm0 for the cs_sort_refs remap — the swaps mutate perm
+  and the first version remapped with the fixed-up identity).  A
+  whole-sheet sort no longer transiently copies all 32,385 slots
+  (~3.4 MB) — the sort's transient is now just the perm arrays
+  (nrows x 4 ints).  (4) the COPY's snapshot exists ONLY for an
+  overlapping destination (the overlap test d1<=c2 && d2c>=c1 &&
+  e1<=r2 && e2r>=r1); a non-overlapping copy reads the source cells
+  LIVE (absent sources read as the empty struct — copy_one's
+  CE_ALLOC branch).  The overlapping copy's sequential evaluation is
+  the HISTORICAL behavior (the snapshot protects the source TEXTS;
+  the formulas evaluate against the mid-copy sheet — pinned:
+  A2 = 1, A3 = 2 with the adjusted texts).  (5) the sort's NULL key
+  cells guarded (an absent key reads as empty -> the empties
+  partition).  VERIFIED: --test 432 ok (the new overlap pin, all the
+  sort/fill/copy pins), the idle gate EXACT.  ASAN's leak detection
+  is unavailable on this macOS platform ("detect_leaks is not
+  supported") — the leak fixes are by code inspection.
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

@@ -1521,6 +1521,29 @@ static void run_tests(void)
         ckc("MIN streams 513", "MIN(A1>C255)", "+1.0000000000000E+1");
         ckc("CNT streams 513", "CNT(A1>C255)", "+5.1300000000000E+3");
         cs_clear_all();
+        /* the OVERLAPPING copy: A1=1, A2=+A1+1, the copy A1>A2 to
+         * A2>A3 - the snapshot protects the SOURCE TEXTS (the clone),
+         * while the formulas evaluate sequentially against the
+         * mid-copy sheet (the historical behavior): A2 = the copy of
+         * A1 = 1, A3 = +A2+1 = 2 */
+        cs_clear_all();
+        setv(0, 0, "1");
+        cs_commit_entry(0, 1, "+A1+1");
+        cs_copy_block(0, 0, 0, 1, 0, 1, 1, 2, 0, 2, 1);
+        {
+            Csn want;
+            char g[48];
+            int ok5 = 1;
+            csn_from_int(&want, 1);
+            if (csn_cmp(&tread(0, 1)->val, &want) != 0) ok5 = 0;
+            csn_from_int(&want, 2);
+            if (csn_cmp(&tread(0, 2)->val, &want) != 0) ok5 = 0;
+            if (!tread(0, 2)->cont || strcmp(tread(0, 2)->cont, "+A2+1"))
+                ok5 = 0;
+            if (!ok5) { printf("FAIL overlap copy\n"); fails++; }
+            else printf("ok   overlapping copy: the texts survive\n");
+        }
+        cs_clear_all();
         /* the empty-as-zero rule (user report 2026-11-14): a relative
          * copy across empty cells yields numbers; VAL stays strict */
         cs_clear_all();
