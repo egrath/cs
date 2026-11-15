@@ -48,6 +48,11 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "loadfix" -> merged to master): the review fixes merged (2026-11-15):
+- USER approved; merged fast-forward to master (a3f8b6a), pushed,
+  the loadfix branch deleted (local + origin).  Post-merge gates:
+  --test 529 ok, build.count 116, the idle gate EXACT.
+
 ## BATCH (branch "loadfix"): the external-review fixes, items 5-7 (2026-11-15):
 - USER: an external AI review of the code (items 5-7 pasted; 1-4 never
   shown - ask if they exist).  (5) cs_ptr_ref UB; (6) unchecked
