@@ -1479,6 +1479,12 @@ static void run_tests(void)
         if (tread(0, 2)->val.nd[0] != 1)
             { printf("FAIL sort key outside\n"); fails++; }
         else printf("ok   sort rejects a key outside the range\n");
+        /* a ONE-ROW range: nothing to permute (the core guard, user
+         * 2026-11-15) */
+        cs_sort_range(0, 2, 5, 2, 0, 0);
+        if (tread(0, 2)->val.nd[0] != 1)
+            { printf("FAIL one-row sort\n"); fails++; }
+        else printf("ok   a one-row sort range is a no-op\n");
         /* MED(range): the median (user-ext 2026-11-13) - odd count,
          * Excel-style even count, text/empties skipped, a rectangle
          * range, unsorted input, an error cell -> Error 0, empty -> 0

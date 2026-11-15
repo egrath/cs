@@ -48,6 +48,22 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "memfix", follow-up): the sort range rules (2026-11-15):
+- USER: a one-column range (A1>A5) implies the key (no Key prompt);
+  a horizontal range (A1>F1) errors ("we don't support sorting
+  horizontally").  Wording: "bad sort range" (the user picked the
+  lowercase family voice over my "Bad sort range" proposal).
+- IMPLEMENTED: sort_cmd checks r1==r2 -> cs_msg("bad sort range")
+  before the key prompt; c1==c2 -> kc = c1+1 (the key implied, the
+  Key prompt skipped); cs_sort_range gained the defensive
+  nrows <= 1 early return.  Pinned: a one-row cs_sort_range call is
+  a no-op.  pty: the single-column sort runs without the Key
+  prompt; the horizontal attempt paints "bad sort range".
+  LESSON: my first pty script typed the values ACROSS the row (^D)
+  instead of down the column (^X) — the sort "failed" on a sheet
+  that only had one value in its range; the app was right.
+- VERIFIED: --test 433 ok; the idle gate EXACT.
+
 ## BATCH (branch "memfix"): the memory audit fixes (2026-11-15):
 - USER SCAN (verified): the sort/copy snapshot copied the whole
   rectangle INCLUDING empties (a whole-sheet sort = ~3.4 MB

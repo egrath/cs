@@ -434,7 +434,11 @@ budget) aggregates in constant memory.  `MED` keeps a bounded buffer
 of **512 values**; a range beyond that returns an error rather than a
 silently truncated median.
 
-### Sorting: the `;#` command (user-extended 2026-11-13)
+### Sorting: the `;#` command
+
+The range must be **vertical**: a single-column range (`A1>A5`)
+implies its key — no key question is asked — and a horizontal range
+(one row) is rejected with `bad sort range`. (user-extended 2026-11-13)
 
 Reorders the rows of a rectangular range by one key column.  Not shown
 in the command panel or the original help screens (they stay

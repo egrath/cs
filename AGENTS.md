@@ -950,6 +950,19 @@ Batch workflow (do all steps before reporting done):
   is unavailable on this macOS platform ("detect_leaks is not
   supported") — the leak fixes are by code inspection.
 
+- **THE SORT RANGE RULES (user request 2026-11-15, branch
+  "memfix")**: (1) a ONE-COLUMN range (A1>A5) implies the key — the
+  Key (Column)? prompt is skipped (the key is that column);
+  (2) a ONE-ROW range (horizontal, or the degenerate 1x1) is
+  rejected with "bad sort range" (the terse-lowercase family voice;
+  the user's wording) — before the key prompt, so the horizontal
+  case errors immediately; (3) cs_sort_range gained a defensive
+  early return for nrows <= 1 (nothing to permute; the core stays
+  safe for any caller).  Pinned: a one-row cs_sort_range call is a
+  no-op; the pty verified both flows (the single-column sort runs
+  straight to Order (A/D)?; the horizontal attempt paints the
+  inverse "bad sort range").
+
 ## Things deliberately assumed (flag, don't silently change)
 
 - Form mode (`;F F`) marks an empty cell CE_ALLOC (counted in `entriesUsed`, type line "(empty, but allocated) (form mode set)") and the flag **survives** commits / `;D E` / copy / save/load; only `cs_clear_all` resets it. The `;A` course reports `Form Control Mode` per stop, `Auto complete` at the end, `Auto aborted` on ESC; a bare RETURN at a stop keeps the value and jumps on. `;` inside the course is the command lead-in (opens `cs_command_menu`, never enters the cell; pending text survives). During an entry the type line shows the live interpretation plus the form suffix, and `current:` tracks the stop cell.

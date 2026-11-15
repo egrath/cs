@@ -942,7 +942,8 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
     int *order, *nonempty, *empties, *perm;
     Cell *kc;
 
-    if (nrows <= 0 || ncols <= 0 || keycol < c1 || keycol > c2) return;
+    if (nrows <= 1 || ncols <= 0 || keycol < c1 || keycol > c2)
+        return;     /* one row has nothing to permute (defensive) */
     order = (int *) malloc((size_t) nrows * sizeof(int));
     nonempty = (int *) malloc((size_t) nrows * sizeof(int));
     empties = (int *) malloc((size_t) nrows * sizeof(int));
@@ -1044,12 +1045,20 @@ static void sort_cmd(void)
     if (cs_prompt_coord("Range? ", "", buf, (int) sizeof(buf), 2) < 0) return;
     redraw();
     if (!cs_coord_text(buf, &c1, &r1, &c2, &r2)) { cs_msg("bad range coord"); return; }
-    if (cs_prompt_str("Key (Column)? ", "", buf, (int) sizeof(buf)) < 0) return;
-    redraw();
-    err = 0;
-    kc = cs_eval_keycol(buf, &err);
-    if (err || kc < 1 || kc - 1 < c1 || kc - 1 > c2) {
-        cs_msg("bad key column"); return;
+    if (r1 == r2) { cs_msg("bad sort range"); return; }   /* one row: horizontal
+                                                           * or 1x1 - nothing
+                                                           * to sort (user
+                                                           * 2026-11-15) */
+    if (c1 == c2) {
+        kc = c1 + 1;              /* a single column: the key is implied */
+    } else {
+        if (cs_prompt_str("Key (Column)? ", "", buf, (int) sizeof(buf)) < 0) return;
+        redraw();
+        err = 0;
+        kc = cs_eval_keycol(buf, &err);
+        if (err || kc < 1 || kc - 1 < c1 || kc - 1 > c2) {
+            cs_msg("bad key column"); return;
+        }
     }
     for (;;) {
         ch = cs_prompt_char("Order (A/D)? ");
