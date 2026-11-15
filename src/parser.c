@@ -238,7 +238,8 @@ typedef enum {
     FN_DB, FN_DBM, FN_DBW, FN_LIN, FN_STEP,
     FN_CLAMP, FN_DIST, FN_LERP, FN_UNLERP,
     FN_SUMSQ, FN_RMS, FN_VAR, FN_VARP, FN_STDEV, FN_STDEVP,
-    FN_PCT, FN_QUART
+    FN_PCT, FN_QUART,
+    FN_CORR, FN_RSQ, FN_INTEG
 } FnId;
 
 static int fnid(const char *name)
@@ -321,6 +322,9 @@ static int fnid(const char *name)
     if (!strcmp(name, "STDEVP")) return FN_STDEVP;
     if (!strcmp(name, "PCT"))   return FN_PCT;
     if (!strcmp(name, "QUART")) return FN_QUART;
+    if (!strcmp(name, "CORR"))  return FN_CORR;
+    if (!strcmp(name, "RSQ"))   return FN_RSQ;
+    if (!strcmp(name, "INTEG")) return FN_INTEG;
     if (!strcmp(name, "ORD"))   return FN_ORD;
     return FN_UNKNOWN;
 }
@@ -435,6 +439,136 @@ static int eng_atan2(Csn *r, const Csn *y, const Csn *x)
     if (err) return err;
     if (ys < 0) csn_neg(r, r);
     return CSN_OK;
+}
+
+/* the PAIRED RANGE WALKER (engineering batch C, 2026-11-15): two
+ * aligned ranges (the shapes must agree - the user's locked rule),
+ * walked in row-major order.  The pairing policy differs by caller:
+ * the statistics SKIP a pair when either side has no number, the
+ * table functions treat a hole as an error - so the walker takes a
+ * `holes` flag: 1 = skip text/empty pairs, 0 = Error 0.
+ * Returns the pair count, or -1 on a walk error (errp = the code),
+ * or -2 on shape mismatch. */
+static int pair_ranges(P *ps, int holes, int *errp,
+                       int *c1p, int *r1p, int *swp, int *shp,
+                       void *ctx,
+                       int (*visit)(void *ctx, const Csn *x,
+                                    const Csn *y))
+{
+    Val a, b;
+    int c1, r1, c2, r2, d1, e1, d2, e2, sw, sh, dw, dh;
+    int i, j;
+    *errp = 0;
+    a = parse_condexpr(ps);
+    if (!a.good) { *errp = a.err ? a.err : 0; return -1; }
+    if (a.type != VT_RANGE) { val_free(&a); *errp = 6; return -1; }
+    c1 = a.rng.start.col; r1 = a.rng.start.row;
+    c2 = a.rng.end.col;   r2 = a.rng.end.row;
+    val_free(&a);
+    skip_ws(&ps->p);
+    if (*ps->p != ',') { *errp = 3; return -1; }
+    ps->p++;
+    b = parse_condexpr(ps);
+    if (!b.good) { *errp = b.err ? b.err : 0; return -1; }
+    if (b.type != VT_RANGE) { val_free(&b); *errp = 6; return -1; }
+    d1 = b.rng.start.col; e1 = b.rng.start.row;
+    d2 = b.rng.end.col;   e2 = b.rng.end.row;
+    val_free(&b);
+    skip_ws(&ps->p);
+    if (*ps->p != ')') { *errp = 3; return -1; }
+    ps->p++;
+    sw = c2 - c1 + 1; sh = r2 - r1 + 1;
+    dw = d2 - d1 + 1; dh = e2 - e1 + 1;
+    if (sw != dw || sh != dh) { *errp = 0; return -2; }
+    *c1p = c1; *r1p = r1; *swp = sw; *shp = sh;
+    for (i = 0; i < sh; i++)
+        for (j = 0; j < sw; j++) {
+            Cell *x = cs_getcell(c1 + j, r1 + i);
+            Cell *y = cs_getcell(d1 + j, e1 + i);
+            int e;
+            int xok = (x && x->type == CE_NUM && !x->iserr &&
+                       !x->strres);
+            int yok = (y && y->type == CE_NUM && !y->iserr &&
+                       !y->strres);
+            if (!xok || !yok) {
+                if (holes) continue;
+                *errp = 0;
+                return -1;
+            }
+            e = visit(ctx, &x->val, &y->val);
+            if (e) { *errp = 0; return -1; }    /* any visit failure
+                                                   is the value-range
+                                                   class */
+        }
+    return 0;
+}
+
+/* the CORR/RSQ accumulator: sums through one aligned walk */
+struct corr_acc {
+    Csn sx, sy, sxx, syy, sxy;
+    long n;
+};
+
+static int corr_visit(void *ctx, const Csn *x, const Csn *y)
+{
+    struct corr_acc *ca = (struct corr_acc *) ctx;
+    Csn t;
+    int err;
+    err = csn_add(&ca->sx, &ca->sx, x);
+    if (err) return 1;
+    err = csn_add(&ca->sy, &ca->sy, y);
+    if (err) return 1;
+    err = csn_mul(&t, x, x);
+    if (err) return 1;
+    err = csn_add(&ca->sxx, &ca->sxx, &t);
+    if (err) return 1;
+    err = csn_mul(&t, y, y);
+    if (err) return 1;
+    err = csn_add(&ca->syy, &ca->syy, &t);
+    if (err) return 1;
+    err = csn_mul(&t, x, y);
+    if (err) return 1;
+    err = csn_add(&ca->sxy, &ca->sxy, &t);
+    if (err) return 1;
+    ca->n++;
+    return 0;
+}
+
+/* the INTEG accumulator: the trapezoidal rule over consecutive
+ * pairs; x must be STRICTLY increasing in walk order (the user's
+ * locked rule) and every pair must be numeric (holes are errors) */
+struct integ_acc {
+    Csn total;
+    Csn px, py;         /* the previous x, y */
+    long n;
+};
+
+static int integ_visit(void *ctx, const Csn *x, const Csn *y)
+{
+    struct integ_acc *ia = (struct integ_acc *) ctx;
+    Csn dx, sy2, t;
+    int err;
+    if (ia->n > 0) {
+        err = csn_sub(&dx, x, &ia->px);
+        if (err) return 1;
+        if (csn_is_zero(&dx) || dx.sign) return 1;   /* not increasing */
+        err = csn_add(&sy2, &ia->py, y);
+        if (err) return 1;
+        err = csn_mul(&t, &dx, &sy2);
+        if (err) return 1;
+        {
+            Csn two;
+            csn_from_int(&two, 2L);
+            err = csn_div(&t, &t, &two);
+            if (err) return 1;
+        }
+        err = csn_add(&ia->total, &ia->total, &t);
+        if (err) return 1;
+    }
+    csn_copy(&ia->px, x);
+    csn_copy(&ia->py, y);
+    ia->n++;
+    return 0;
 }
 
 /* the streaming aggregation for SUM/CNT/AVG/MAX/MIN (2026-11-14): no
@@ -1528,6 +1662,78 @@ static Val parse_primary(P *ps)
                 }
                 val_free(&a);
                 if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            /* CORR/RSQ: the paired statistics (engineering batch C,
+             * 2026-11-15).  Two aligned ranges; a pair with no number
+             * on either side is SKIPPED (the user's locked rule);
+             * r = (n*sxy - sx*sy) / sqrt((n*sxx-sx^2)*(n*syy-sy^2)).
+             * Zero variance on either side or fewer than 2 pairs is
+             * an error.  RSQ = r*r, computed as num^2/denom. */
+            if (f == FN_CORR || f == FN_RSQ) {
+                struct corr_acc ca;
+                int c1, r1, sw, sh, werr;
+                Csn ncs, numr, dx, dy, dd, t;
+                int err;
+                memset(&ca, 0, sizeof(ca));
+                csn_zero(&ca.sx); csn_zero(&ca.sy);
+                csn_zero(&ca.sxx); csn_zero(&ca.syy);
+                csn_zero(&ca.sxy);
+                if (pair_ranges(ps, 1, &werr,
+                                &c1, &r1, &sw, &sh, &ca,
+                                corr_visit) < 0) {
+                    if (werr >= 0) { val_err(&v, werr); return v; }
+                    val_err(&v, 0); return v;
+                }
+                val_free(&v);
+                csn_zero(&v.num);
+                if (ca.n < 2) { val_err(&v, 0); return v; }
+                csn_from_int(&ncs, ca.n);
+                err = csn_mul(&numr, &ncs, &ca.sxy);
+                if (!err) err = csn_mul(&t, &ca.sx, &ca.sy);
+                if (!err) err = csn_sub(&numr, &numr, &t);
+                if (!err) err = csn_mul(&dx, &ncs, &ca.sxx);
+                if (!err) { err = csn_mul(&t, &ca.sx, &ca.sx);
+                            if (!err) err = csn_sub(&dx, &dx, &t); }
+                if (!err) err = csn_mul(&dy, &ncs, &ca.syy);
+                if (!err) { err = csn_mul(&t, &ca.sy, &ca.sy);
+                            if (!err) err = csn_sub(&dy, &dy, &t); }
+                if (!err) err = csn_mul(&dd, &dx, &dy);
+                if (err) { val_err(&v, 0); return v; }
+                if (csn_is_zero(&dd)) { val_err(&v, 0); return v; }
+                if (f == FN_RSQ) {
+                    err = csn_mul(&t, &numr, &numr);
+                    if (!err) err = csn_div(&v.num, &t, &dd);
+                } else {
+                    err = csn_sqrt(&t, &dd);
+                    if (!err) err = csn_div(&v.num, &numr, &t);
+                }
+                if (err) { val_err(&v, 0); return v; }
+                v.good = 1;
+                return v;
+            }
+            /* INTEG: the trapezoidal rule over a paired table
+             * (engineering batch C, 2026-11-15).  x strictly
+             * increasing in walk order; a hole in the table is an
+             * ERROR (the table IS the function - the user's locked
+             * rule, unlike the statistics' skip). */
+            if (f == FN_INTEG) {
+                struct integ_acc ia;
+                int c1, r1, sw, sh, werr;
+                memset(&ia, 0, sizeof(ia));
+                csn_zero(&ia.total);
+                csn_zero(&ia.px); csn_zero(&ia.py);
+                if (pair_ranges(ps, 0, &werr,
+                                &c1, &r1, &sw, &sh, &ia,
+                                integ_visit) < 0) {
+                    if (werr >= 0) { val_err(&v, werr); return v; }
+                    val_err(&v, 0); return v;
+                }
+                val_free(&v);
+                csn_zero(&v.num);
+                if (ia.n < 2) { val_err(&v, 0); return v; }
+                csn_copy(&v.num, &ia.total);
                 v.good = 1;
                 return v;
             }

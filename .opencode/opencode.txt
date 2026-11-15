@@ -48,6 +48,26 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-c"): engineering batch C, paired ranges (2026-11-15):
+- USER: merge B to master (done, b9c0c42 ff, branch deleted) and
+  implement batch C on eng-batch-c.  SCOPE: CORR/RSQ/INTEG through
+  the paired two-range walker.
+- DONE: pair_ranges (shapes must agree, row-major, the holes flag
+  picks skip-vs-error, a visit callback accumulates); CORR (r =
+  (n*sxy-sx*sy)/sqrt(...), zero-variance/n<2 -> Error 0), RSQ
+  (num^2/denom), INTEG (trapezoidal, x strictly increasing, holes =
+  Error).  Reversed ranges normalize independently (pinned).
+- TRAPS: the visit contract (csn error 0 = "success"!) - the visit
+  returns 0/1 and the caller maps to Error 0; two pin-authoring
+  slips (the "zero variance" data was correlated; the INTEG seed was
+  transposed); the pty data-entry semantics bit twice (commit KEEPS
+  the cursor - RETURN moves right - so column seeding needs ^X after
+  every commit; the CORR Error 0 the scripts showed was CORRECT for
+  their accidental row-scattered seeds).  Diff-painting hides later
+  ?-answers entirely; --test is the authority.
+- VERIFIED: --test 668 ok; the idle gate EXACT; the pty shows the
+  live CORR answer.
+
 ## BATCH (branch "eng-batch-b"): engineering batch B, statistics (2026-11-15):
 - USER: merge A to master (done: 03b5a6a ff, branch deleted) and
   implement batch B on eng-batch-b.  SCOPE: SUMSQ/RMS/VAR/VARP/

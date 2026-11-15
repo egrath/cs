@@ -1780,6 +1780,53 @@ static void run_tests(void)
         cke("VAR huge dev", "VAR(1E501,3E501)", -1);
         cke("STDEV huge dev", "STDEV(1E501,3E501)", -1);
         ckc("VAR huge equal", "VAR(1E500,1E500)", "0");
+        /* ==== the paired statistics and the trapezoid (batch C) ====
+         * A1..A4 = 1..4 (x); B1..B4 = 2,4,6,8 (y = 2x); D1..D4 =
+         * 8,6,4,2 (y = -x+9); F1..F4 = 2,1,4,3 (mixed); G/H = the
+         * x^2 table; I/J = the two-point table; K/L = unordered */
+        cs_clear_all();
+        setv(0, 0, "1"); setv(0, 1, "2"); setv(0, 2, "3"); setv(0, 3, "4");
+        setv(1, 0, "2"); setv(1, 1, "4"); setv(1, 2, "6"); setv(1, 3, "8");
+        setv(3, 0, "8"); setv(3, 1, "6"); setv(3, 2, "4"); setv(3, 3, "2");
+        setv(5, 0, "2"); setv(5, 1, "1"); setv(5, 2, "4"); setv(5, 3, "3");
+        setv(6, 0, "0"); setv(6, 1, "1"); setv(6, 2, "2"); setv(6, 3, "3");
+        setv(7, 0, "0"); setv(7, 1, "1"); setv(7, 2, "4"); setv(7, 3, "9");
+        ckc("CORR perfect", "CORR(A1>A4,B1>B4)", "+1.0000000000000E+1");
+        ckc("CORR negative", "CORR(A1>A4,D1>D4)", "-1.0000000000000E+1");
+        ckc("RSQ perfect", "RSQ(A1>A4,D1>D4)", "+1.0000000000000E+1");
+        ckc("CORR mixed", "CORR(A1>A4,F1>F4)", "+6.0000000000000E+0");
+        ckc("RSQ mixed", "RSQ(A1>A4,F1>F4)", "+3.6000000000000E+0");
+        /* a reversed range normalizes independently */
+        ckc("CORR reversed", "CORR(A1>A4,B4>B1)", "+1.0000000000000E+1");
+        ckc("INTEG both reversed", "INTEG(B4>B1,A4>A1)",
+            "+1.5000000000000E+2");
+        /* the skip rule: a text hole drops the PAIR, not the data
+         * (the remaining three pairs stay perfectly correlated) */
+        cs_set_text(tcell(1, 1), "hole", 'L');
+        ckc("CORR skip pair", "CORR(A1>A4,B1>B4)", "+1.0000000000000E+1");
+        setv(1, 1, "4");
+        /* the error paths */
+        cke("CORR n1", "CORR(A1>A1,B1>B1)", -1);
+        cke("CORR shape", "CORR(A1>A4,B1>B2)", -1);
+        cke("CORR non-range", "CORR(5,B1>B4)", 6);
+        cke("CORR 1 arg", "CORR(A1>A4)", 3);
+        ckc("RSQ self", "RSQ(A1>A2,A1>A2)", "+1.0000000000000E+1");
+        setv(12, 0, "5"); setv(12, 1, "5");
+        cke("RSQ zero var", "RSQ(M1>M2,M1>M2)", -1);   /* constant x */
+        /* the trapezoidal rule */
+        ckc("INTEG x^2", "INTEG(G1>G4,H1>H4)", "+9.5000000000000E+1");
+        setv(8, 0, "0"); setv(8, 1, "2");
+        setv(9, 0, "1"); setv(9, 1, "3");
+        ckc("INTEG two pts", "INTEG(I1>I2,J1>J2)", "+4.0000000000000E+1");
+        cs_set_text(tcell(7, 1), "hole", 'L');
+        cke("INTEG hole", "INTEG(G1>G4,H1>H4)", -1);
+        setv(7, 1, "1");
+        setv(10, 0, "1"); setv(10, 1, "3"); setv(10, 2, "2");
+        setv(11, 0, "1"); setv(11, 1, "9"); setv(11, 2, "4");
+        cke("INTEG not increasing", "INTEG(K1>K3,L1>L3)", -1);
+        cke("INTEG n1", "INTEG(A1>A1,B1>B1)", -1);
+        cke("INTEG shape", "INTEG(A1>A4,B1>B2)", -1);
+        cke("INTEG non-range", "INTEG(5,B1>B4)", 6);
         cs_clear_all();
         /* the /r /l /c alignment on a FORMULA's string result
          * (user request 2026-11-15) */

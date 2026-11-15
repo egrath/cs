@@ -296,6 +296,29 @@ fractional `QUART` q, or an empty data set is an error.  An error
 cell in a range aborts the family as always; more than 512 values
 (the median's bound) is an error.
 
+### Engineering batch C: correlation and the trapezoidal integral
+
+The paired two-range functions (2026-11-15, batch C).  Both ranges
+must have the SAME SHAPE (mismatch: error); the walker goes
+row-major, and a reversed range normalizes independently:
+
+```text
+CORR(A1>A4,B1>B4)   1        correlation; a pair with no number on
+                               either side is SKIPPED; n < 2 or a
+                               zero-variance side: error
+RSQ(A1>A4,B1>B4)    1        the coefficient of determination (r^2,
+                               computed as num^2/denom)
+INTEG(G1>G4,H1>H4)  9.5      trapezoidal rule over a table; x strictly
+                               increasing in walk order; a hole in
+                               the table is an ERROR (the table IS
+                               the function - unlike the skip rule
+                               of the statistics)
+```
+
+`INTEG(0,1,2,3; 0,1,4,9)` = the trapezoid of x^2 over [0,3] = 9.5
+(the trapezoidal rule's honest overestimate; the exact integral is
+9).
+
 ### EVEN() and ODD(): the integer parity
 
 `EVEN(x)` returns 1 if the integer x is even and 0 otherwise;

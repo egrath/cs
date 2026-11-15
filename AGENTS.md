@@ -1042,6 +1042,38 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **ENGINEERING BATCH C (user list 2026-11-15, branch "eng-batch-c")**:
+  the paired two-range functions: CORR, RSQ, INTEG.  THE PAIR WALKER
+  (pair_ranges): two aligned ranges, shapes must agree (the user's
+  locked rule -> mismatch Error 0), row-major walk, a `holes` flag
+  selects the pairing policy (the statistics SKIP a pair when either
+  side has no number; the table functions treat a hole as an Error -
+  the locked rule); a visit CALLBACK accumulates (visit returns 0 =
+  ok, nonzero = failure -> the caller maps to Error 0 - the first
+  draft returned the csn error code 0 = "success", a silent-bug trap
+  caught before the first run).  CORR: r = (n*sxy-sx*sy) /
+  sqrt((n*sxx-sx^2)*(n*syy-sy^2)), zero variance on either side or
+  n < 2 -> Error 0; RSQ = num^2/denom (never negative by
+  construction).  INTEG: the trapezoidal rule over consecutive
+  pairs, x STRICTLY increasing in walk order (duplicates and
+  decreasing -> Error 0), n < 2 -> Error 0.  Reversed ranges
+  normalize independently (the established rng rule) - pinned.
+  PINS: 21 (perfect/negative/mixed correlations, the skip rule with
+  a text hole, zero-variance, shape mismatch, non-range Error 6,
+  arg-count Error 3, the x^2 trapezoid 9.5 over [0,3], the two-point
+  exact integral, holes, unordered x).  AUTHORING SLIPS: (a) my
+  "zero variance" pin data was actually perfectly correlated - the
+  constant-range seed was needed; (b) I transposed the two-point
+  INTEG seed.  THE PTY GOTCHA (again, worse): the data-entry commit
+  KEEPS the cursor - RETURN with an empty buffer moves RIGHT, so
+  column seeding needs ^X (down) after every commit; my first two
+  scripts scattered the digits across row 1 (n=1 -> the CORR Error 0
+  was CORRECT behavior, the seeds were wrong).  Diff-painting also
+  hid the later ?-answers (identical/near-identical frames paint
+  nothing) - the pins are the authority.  VERIFIED: --test 668 ok;
+  the idle gate EXACT; the pty shows the live CORR = 1.0 and the
+  seeded columns.
+
 - **ENGINEERING BATCH B (user list 2026-11-15, branch "eng-batch-b")**:
   the statistics + percentiles.  STREAMING: CsAgg gained sumsq/mean/
   m2; SUMSQ/RMS accumulate the running sum of squares (RMS = sqrt of
