@@ -607,6 +607,14 @@ REGR(A1>A10,B2)         x = A1..A10, y starts at B2
 REGR(REF(1,1)>REF(1,5),B1)      dynamic spelling
 ```
 
+The state is the snapshot of the most recent REGR **attempt**:
+starting a new REGR resets it, so a failed attempt leaves
+`SLOPE()`/`PROJ()`/`DEPD()` answering the no-regression error
+instead of stale numbers — and clearing or (re)loading the sheet
+invalidates it too.  Ordinary edits and sorts leave it alone (the
+running sums are order-independent), and every observation in the
+series participates — there is no observation cap.
+
 ### Comparisons are not ranges
 
 With references on both sides, `>` builds a range; to compare values,

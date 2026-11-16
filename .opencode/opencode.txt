@@ -48,6 +48,22 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "bugfix-alloc", follow-up 5): the regression state (2026-11-16):
+- USER: (1) the regression snapshot survived cs_clear_all/loads/
+  failed REGR attempts (SLOPE() served stale results); (2) the 512
+  cap silently truncated; (3) gInd/gDep were write-only dead arrays.
+- DONE: cs_reg_reset at THREE sites (cs_clear_all, the merge
+  branch, the REGR dispatch entry - the state rebuilds on success,
+  a failure leaves it empty); gInd/gDep/REGR_MAX deleted (the sums
+  run unconditionally; ~53 KB BSS back).  THE CAP WAS UNREACHABLE
+  (the 1-D constraint bounds a vertical REGR at 255 rows - my
+  600-observation pin was impossible; 255 is the legal max).  The
+  manual's snapshot semantics preserved (edits don't invalidate;
+  the sort leaves SLOPE() intact - order-independent sums).
+- MY PIN BUGS: the save range missed rows 4-5; the 600-pin; the
+  canon of 257 (E+3).
+- VERIFIED: --test 854 ok; the idle gate EXACT.
+
 ## BATCH (branch "bugfix-alloc", follow-up 4): the factorial fixes (2026-11-16):
 - USER: (1) cs_parse_only EXECUTED side effects (cs_eval_typed set
   ps.dry = 0 unconditionally) - the factorial syntax check ran the

@@ -672,6 +672,9 @@ void cs_clear_all(void)
 {
     int r, c;
     cs_clear_strings();
+    cs_reg_reset();     /* the regression snapshot dies with the
+                         * sheet (the user's report: SLOPE() after a
+                         * clear served the stale result) */
     for (r = 0; r < CS_MAXROW; r++) {
         if (cs_rows[r].e) { free(cs_rows[r].e); cs_rows[r].e = NULL; }
         cs_rows[r].n = 0;

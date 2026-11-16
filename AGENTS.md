@@ -1042,6 +1042,29 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE REGRESSION STATE FIXES (the user's reports, 2026-11-16,
+  branch "bugfix-alloc")**: (1) THE STALE SNAPSHOT: cs_reg_reset()
+  existed but nothing called it - a valid REGR, then a clear, then
+  SLOPE() served the OLD regression (the user's repro); a FAILED
+  new REGR left the old state available too.  FIX: cs_reg_reset at
+  THREE sites - cs_clear_all (which covers the non-merge load), the
+  merge branch of cs_load, and at the TOP of the REGR dispatch
+  (every attempt starts fresh: the state rebuilds from the sums on
+  success, a failure leaves it EMPTY -> SLOPE() answers Error 9).
+  The manual's snapshot semantics otherwise PRESERVED: ordinary
+  edits don't invalidate; THE SORT doesn't either (the sums are
+  order-independent - pinned).  (2) THE 512-CAP + THE DEAD ARRAYS:
+  REGR_MAX/gInd/gDep deleted - the sums run unconditionally so
+  every observation participates (NO cap, no silent drop), and the
+  report's third finding confirmed the arrays were write-only dead
+  weight (~53 KB of BSS reclaimed for the DOS target).  THE CAP WAS
+  UNREACHABLE IN PRACTICE: the 1-D constraint bounds a vertical
+  range at 255 rows (my "600 observations" pin was impossible -
+  REGR's Error 2 caught it; the pin uses the full legal 255).
+  PINS: the clear invalidates, the failure invalidates, the load
+  resets, the sort leaves SLOPE() intact, the full-255 regression
+  (meany 257, slope 2, PROJ(300) = 601).  --test 854 ok.
+
 - **THE FACTORIAL FIXES (the user's reports, 2026-11-16, branch
   "bugfix-alloc")**: (1) THE DRY PARSE EXECUTED SIDE EFFECTS:
   cs_parse_only routed through cs_eval_typed which set ps.dry = 0

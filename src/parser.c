@@ -10,7 +10,6 @@
 #include "cs.h"
 
 #define MAXDEPTH 12
-#define REGR_MAX 512
 
 /* Val.good == 0 : error, .err holds the CalcStar evaluation error code
    (0 = value range error, 1 illegal coord, 2 bad range, 3 missing paren,
@@ -140,8 +139,6 @@ static int val_deref(Val *v)
                                          * absent = empty = 0 */
     return 1;                           /* an error / strict-empty cell */
 }
-
-static Csn gInd[REGR_MAX], gDep[REGR_MAX];
 
 static int is_coord_ahead(const char *p, int *cl, int *nd)
 {
@@ -2058,6 +2055,12 @@ static Val parse_primary(P *ps)
                 Val a = parse_condexpr(ps);
                 Val b;
                 int c1, r1, c2, r2, c3, r3;
+                /* the attempt RESETS the regression state (the user's
+                 * report, 2026-11-16): a failed REGR must not leave
+                 * the previous result available to SLOPE()/PROJ()/
+                 * DEPD() - the state rebuilds from the sums on
+                 * success */
+                cs_reg_reset();
                 if (!a.good) return a;
                 if (a.type != VT_RANGE) { val_free(&a); val_err(&v, 2); return v; }
                 c1 = a.rng.start.col; r1 = a.rng.start.row;
@@ -2102,19 +2105,20 @@ static Val parse_primary(P *ps)
                         Csn px;
                         if (!x || !y || x->type != CE_NUM || x->iserr ||
                             y->type != CE_NUM || y->iserr) { val_err(&v, 9); return v; }
-                        if (n < REGR_MAX) {
-                            csn_copy(&gInd[n], &x->val);
-                            csn_copy(&gDep[n], &y->val);
-                            n++;
-                            err = csn_add(&sx, &sx, &x->val); if (err) { val_err(&v, 255); return v; }
-                            err = csn_add(&sy, &sy, &y->val); if (err) { val_err(&v, 255); return v; }
-                            err = csn_mul(&px, &x->val, &x->val);
-                            if (err) { val_err(&v, 255); return v; }
-                            err = csn_add(&sxx, &sxx, &px); if (err) { val_err(&v, 255); return v; }
-                            err = csn_mul(&px, &x->val, &y->val);
-                            if (err) { val_err(&v, 255); return v; }
-                            err = csn_add(&sxy, &sxy, &px); if (err) { val_err(&v, 255); return v; }
-                        }
+                        /* EVERY observation feeds the running sums -
+                         * the old REGR_MAX 512-cap truncated the
+                         * regression silently (the user's report,
+                         * 2026-11-16); the dead gInd/gDep arrays it
+                         * served are gone */
+                        n++;
+                        err = csn_add(&sx, &sx, &x->val); if (err) { val_err(&v, 255); return v; }
+                        err = csn_add(&sy, &sy, &y->val); if (err) { val_err(&v, 255); return v; }
+                        err = csn_mul(&px, &x->val, &x->val);
+                        if (err) { val_err(&v, 255); return v; }
+                        err = csn_add(&sxx, &sxx, &px); if (err) { val_err(&v, 255); return v; }
+                        err = csn_mul(&px, &x->val, &y->val);
+                        if (err) { val_err(&v, 255); return v; }
+                        err = csn_add(&sxy, &sxy, &px); if (err) { val_err(&v, 255); return v; }
                     }
                     if (n == 0) { val_err(&v, 255); return v; }
                     csn_from_int(&ncs, n);

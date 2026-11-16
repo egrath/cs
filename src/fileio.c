@@ -290,6 +290,8 @@ int cs_load(const char *name, int c0, int r0, int merge)
         fname[0] = '\0';
         lockCols = lockRows = 0;
         winCol = winRow = 0;
+    } else {
+        cs_reg_reset();     /* merged data under an old snapshot */
     }
     for (c = 0; c < CS_MAXCOL; c++) {
         int a = fgetc(f), b = fgetc(f);

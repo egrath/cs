@@ -677,6 +677,53 @@ static void run_tests(void)
     ckc("PROJ(6)", "PROJ(6)", "+1.3000000000000E+2");
     ckc("DEPD(13)", "DEPD(13)", "+6.0000000000000E+1");
     ckc("DEPD(7)", "DEPD(7)", "+3.0000000000000E+1");
+    /* the REGRESSION INVALIDATION (the user's report, 2026-11-16) */
+    /* the snapshot survives an unrelated edit (the manual's
+     * semantics: the state is a deliberate REGR snapshot) */
+    setv(3, 9, "999");
+    ckc("SLOPE() after an edit", "SLOPE()", "+2.0000000000000E+1");
+    /* the clear invalidates: SLOPE() must not serve the stale state */
+    cs_clear_all();
+    cke("SLOPE() after clear", "SLOPE()", 9);
+    /* a FAILED attempt invalidates */
+    setv(0, 0, "1"); setv(0, 1, "2"); setv(0, 2, "3");
+    setv(1, 0, "1"); setv(1, 1, "2");
+    cke("REGR diagonal", "REGR(A1>B2,C3)", 2);   /* the state reset */
+    cke("SLOPE() after failure", "SLOPE()", 9);
+    /* a valid REGR re-establishes */
+    for (i = 0; i < 5; i++) {
+        char t[8];
+        sprintf(t, "%d", i + 1);
+        setv(0, i, t);
+        sprintf(t, "%d", 2 * (i + 1) + 1);
+        setv(1, i, t);
+    }
+    ckc("REGR re-establish", "REGR(A1>A5,B1)", "+7.0000000000000E+1");
+    ckc("SLOPE() again", "SLOPE()", "+2.0000000000000E+1");
+    /* the load resets (the merge branch too) */
+    cs_save("t_regr", 0, 0, 1, 4, "");
+    cs_load("t_regr", 0, 0, 0);
+    cke("SLOPE() after load", "SLOPE()", 9);
+    remove("t_regr.csd");
+    /* the SORT leaves the state intact (order-independent sums) */
+    ckc("REGR re-establish 2", "REGR(A1>A5,B1)", "+7.0000000000000E+1");
+    cs_sort_range(0, 0, 0, 4, 0, 1);             /* descending */
+    ckc("SLOPE() after sort", "SLOPE()", "+2.0000000000000E+1");
+    /* the FULL legal width: 255 observations (the 1-D constraint
+     * bounds a vertical range at 255 rows - the old 512 cap was
+     * unreachable in practice; the dead arrays are simply gone) */
+    cs_clear_all();
+    for (i = 0; i < 255; i++) {
+        char t[8];
+        sprintf(t, "%d", i + 1);
+        setv(0, i, t);
+        sprintf(t, "%d", 2 * (i + 1) + 1);
+        setv(1, i, t);
+    }
+    ckc("REGR 255", "REGR(A1>A255,B1)", "+2.5700000000000E+3");
+    ckc("SLOPE() 255", "SLOPE()", "+2.0000000000000E+1");
+    ckc("PROJ(300) 255", "PROJ(300)", "+6.0100000000000E+3");
+    cs_clear_all();
 
     /* Appendix evaluation-error codes (2nd manual table): the parser's
      * internal codes ARE the manual's; cs_commit_entry returns them for
