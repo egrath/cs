@@ -1872,6 +1872,50 @@ master when every phase passes.
     binary per checkpoint.
 - Remaining phases: 5 = fine-grained cursor; 6 = static menu painted
   once; 7 = final measurement. Merge to master when all pass.
+- **Phase 5 (DONE, `b34103a`): the fine-grained cursor.** The
+  simplification that fell out of reading `cell_render`: it never
+  consults `g_editstate` (pending entry text lives ONLY in the edit
+  line and the type line) and every cell content change marks the GRID
+  — so the CURSOR component paints ZERO cells: `paint_cursor` erases
+  the two old mark gaps (plain spaces) and paints the two `A_REVERSE`
+  marks at the new position — 4 single-character writes instead of a
+  full grid paint. `draw_rows` syncs the tracked mark position
+  (`markCol`/`markRow`) at the end of every full grid paint; a scroll
+  never reaches the fine-grained path (it marks the GRID too, and the
+  full paint syncs the tracking). `paint_cell_at` was dropped as
+  unnecessary: no cursor path changes cell content.
+  Verification: 16/16 checkpoints, the move-sequence pty comparison,
+  --test, the idle gate, gcc-14.
+- **Phase 6 (DONE, no code change): the static menu by construction.**
+  The audit: `CS_D_MENU` is marked only by `cs_touch_all` (the redraw
+  fallback: startup, resize, help-close, the extended toggle, the
+  errpend key, load) and by the commit/DEL (which change entriesUsed —
+  the memwarn). The truly hot paths (cursor steps, typing, backspace,
+  ?, @) never mark MENU, so the five menu lines are painted only at
+  startup/resize/toggle — "painted once" is already true through the
+  phase-4 flags.
+- **Phase 7 (this commit): the measurement table.** All numbers on
+  this machine (macOS, M-series; the pty writes through a pipe — a Pi
+  through a serial USB-tty pays the byte counts literally):
+  | interaction | master (pre-uidraw) | uidraw |
+  |---|---|---|
+  | the 40-key bench sequence | 2842 B, 4 full-erase frames | 1259 B, 1 (ncurses's own startup clear) |
+  | 25 cursor moves | 2818 B | 1302 B |
+  | 10 commits (type+RETURN) | 2906 B | 1157 B |
+  | bytes per cursor move | (full repaints per key) | 74.7 (marks + status diff) |
+  | CPU per cursor move (400 unbatched moves, 77 numeric cells) | ~11.8 µs (phases 3+4 stage) | ~9.3 µs |
+  The structural claim: `paint_cursor` is O(1) (4 char writes) where
+  the pre-branch paint was O(screen) per key with a full erase; the
+  dirty flags make every hot path paint only what changed. The bytes
+  per move are EQUAL at the phases-3+4 and phase-5 stages — ncurses
+  diff-suppression absorbs the grid repaint's bytes — so phase 5's
+  measurable win is CPU (and it scales with the per-cell render cost:
+  BCD formatting on a slow CPU); the byte win came from the phase-1
+  clear() removal.
+- **Phase 4b (next): the remaining command dialogs** — copy/delete/
+  insert/save/print/quit/sort/what repaints narrowed from touch-all;
+  insert/delete/load/merge/auto stay touch-all (they shift or replace
+  the whole sheet).
 
 ## Source map
 

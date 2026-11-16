@@ -1901,3 +1901,27 @@ PREVIOUS BATCH (5 items, verified):
   invalidates the later checkpoints (killed + restarted the run twice).
 - Harness runtime: ~35 min for all 15 checkpoints (the delete-row and
   help segments are slow); run in background.
+
+## uidraw phases 5-7 (2026-11-16)
+- Phase 5 (b34103a): paint_cursor = 4 char writes (erase the 2 old mark
+  gaps, paint the 2 new marks); draw_rows syncs markCol/markRow at the
+  end of every full grid paint; scrolls never reach the fine path.
+  paint_cell_at DROPPED - no cursor path changes cell content (pending
+  text lives only in the edit/type lines; content changes mark GRID).
+- Phase 6: no code change - the hot paths never mark CS_D_MENU (only
+  touch_all, the commit, DEL do); the menu is static by construction.
+- Phase 7 table (macOS pty): bench 2842B/4-erases -> 1259B/1; 25 moves
+  2818->1302; 10 commits 2906->1157; 74.7 B/move (bytes EQUAL at the
+  p34 and p5 stages - ncurses diffs both); CPU/move 11.8->9.3us on 77
+  numeric cells. The byte win is the phase-1 clear removal; phase 5's
+  win is CPU/structural (O(1) per move).
+- Benchmark tooling: /tmp/cpudrv2.py (python pty driver, wait4 rusage,
+  seeds 7x11 numeric cells - nav: commit keeps the cursor, arrows move
+  then ^X down at the row end), /tmp/cpudrv.py (brainf sheet),
+  /tmp/mvbench.exp + /tmp/cbench.exp (byte counts vs /tmp/cs_master).
+- GOTCHA: ";Q" then "N" CANCELS the quit (the app stays alive; expect
+  waits 30s at eof - the harness checkpoints were slow but valid). Quit
+  for real with ";Q" "Y".
+- Next: phase 4b (narrow copy/delete/insert/save/print/quit/sort/what
+  repaints; keep touch-all for insert/delete/load/merge/auto), then
+  merge uidraw to master.
