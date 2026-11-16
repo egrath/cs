@@ -2002,6 +2002,77 @@ static void run_tests(void)
               fails++; }
         else printf("ok   the single-row remap still works\n");
         cs_clear_all();
+        /* the DEPENDENCY '&' FIX (the user's report, 2026-11-16):
+         * A5&" units" must be seen as a reference to A5 */
+        cs_commit_entry(0, 4, "7");              /* A5 = 7 */
+        cs_commit_entry(1, 0, "+A5&\" units\""); /* B1 */
+        {
+            char list[256];
+            dep_check_range(0, 4, 4, list, (int) sizeof(list));
+            if (!list[0])
+                { printf("FAIL dep & miss\n"); fails++; }
+            else printf("ok   the '&' reference is found: %s\n", list);
+        }
+        /* the shifter's '&' (the same delimiter set, pinned) */
+        {
+            char *adj = cs_adjust_refs("+A5&\"x\"", 0, 1);
+            if (!adj || strcmp(adj, "+A6&\"x\""))
+                { printf("FAIL adjust & (%s)\n", adj ? adj : "(null)");
+                  fails++; }
+            else printf("ok   the '&' shifts with the copy\n");
+            if (adj) free(adj);
+            adj = cs_shift_refs("+A5&\"x\"", 0, 4, 1);   /* after row 4 */
+            if (!adj || strcmp(adj, "+A6&\"x\""))
+                { printf("FAIL shift & (%s)\n", adj ? adj : "(null)");
+                  fails++; }
+            else printf("ok   the '&' shifts with the insert\n");
+            if (adj) free(adj);
+        }
+        cs_clear_all();
+        /* the REF POLICY (the user's decision, 2026-11-16): REF's
+         * coordinates are DATA - structural edits never renumber
+         * them, the dependency check never follows them, a deletion
+         * proceeds.  The multi-level indirection chain re-resolves */
+        cs_commit_entry(0, 0, "1");              /* A1 = 1 */
+        cs_commit_entry(1, 0, "+VAL(A1)");       /* B1 */
+        cs_commit_entry(2, 0, "+VAL(B1)");       /* C1 */
+        cs_commit_entry(3, 0, "+VAL(C1)");       /* D1 = 1 */
+        cs_commit_entry(3, 1, "2");              /* D2 = 2 */
+        cs_commit_entry(0, 1, "test");           /* A2 = test */
+        cs_commit_entry(0, 2, "+VAL(REF(VAL(D1),VAL(D2)))");
+        {
+            Cell *c = tread(0, 2);
+            if (!c->strres || strcmp(c->strres, "test"))
+                { printf("FAIL ref chain (%s)\n",
+                         c->strres ? c->strres : "(null)"); fails++; }
+            else printf("ok   the indirection chain resolves\n");
+        }
+        cs_delete_rows(10, 10);                  /* an unrelated row */
+        if (!tread(0, 2)->strres || strcmp(tread(0, 2)->strres, "test"))
+            { printf("FAIL ref chain survives\n"); fails++; }
+        else printf("ok   the chain re-resolves after a deletion\n");
+        /* REF(2,7) is never renumbered */
+        cs_clear_all();
+        cs_commit_entry(0, 6, "42");             /* A7 = 42 */
+        cs_commit_entry(2, 9, "+VAL(REF(2,7))"); /* C10 -> A7 */
+        cs_delete_rows(5, 5);                    /* above the target? no:
+                                                    row 5 < 7: the sheet
+                                                    shifts but REF stays */
+        if (!tread(2, 8)->cont || strcmp(tread(2, 8)->cont, "+VAL(REF(2,7))"))
+            { printf("FAIL ref renumber (%s)\n",
+                     tread(2, 8)->cont ? tread(2, 8)->cont : "(null)");
+              fails++; }
+        else printf("ok   REF(2,7) is never renumbered\n");
+        /* the deletion PROCEEDS when a REF formula exists */
+        cs_commit_entry(4, 3, "+VAL(REF(2,5))"); /* a REF formula */
+        cs_delete_rows(5, 5);                    /* proceeds: no veto */
+        if (!tread(2, 7)->cont ||
+            strcmp(tread(2, 7)->cont, "+VAL(REF(2,7))") ||
+            !tread(4, 3)->cont ||
+            strcmp(tread(4, 3)->cont, "+VAL(REF(2,5))"))
+            { printf("FAIL ref deletion vetoed\n"); fails++; }
+        else printf("ok   the deletion proceeds beside REF formulas\n");
+        cs_clear_all();
         /* ==== CONV: the unit conversion (batch D) ==== */
         ckc("CONV cm m", "CONV(100,\"cm\",\"m\")", "+1.0000000000000E+1");
         ckc("CONV inch mm", "CONV(1,\"inch\",\"mm\")",

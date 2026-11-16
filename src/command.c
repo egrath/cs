@@ -549,7 +549,7 @@ static int dep_check(int iscol, int at, char *list, int listmax)
                             if (*s == '!' || *s == '>' || *s == ',' || *s == ')' ||
                                 *s == ' ' || *s == ':' || *s == '+' || *s == '-' ||
                                 *s == '*' || *s == '/' || *s == '%' || *s == '\0' ||
-                                *s == '<' || *s == '=') {
+                                *s == '<' || *s == '=' || *s == '&') {
                                 char tmp[8];
                                 int i;
                                 for (i = 0; i < (s - st); i++)
@@ -1069,15 +1069,11 @@ static void swap_two_cells(int c, int ra, int rb)
         }
     } else
         memset(&t, 0, sizeof(t));
-    fprintf(stderr, "DBG swap c=%d ra=%d rb=%d a=%d t=%d\n",
-            c, ra, rb, a ? (int) a->type : -1, (int) t.type);
     cs_relink_cell(c, rb, c, ra);   /* rb's slot moves into ra */
     if (t.type != CE_EMPTY) {
         Cell *dst = cs_alloc_cell(c, rb);
         if (dst) {
             *dst = t;
-            fprintf(stderr, "DBG swap landed dst=%p ttype=%d\n",
-                    (void *) dst, (int) dst->type);
             dst->col = (unsigned char) c;
             dst->row = (unsigned char) rb;
             if (dst->type != CE_EMPTY) entriesUsed++;

@@ -1042,6 +1042,38 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE DEPENDENCY '&' FIX + THE REF POLICY (the user's reports,
+  2026-11-16, branch "bugfix-alloc")**: (1) dep_check's delimiter
+  list lacked '&' - the string batch added it to the FOUR cells.c
+  scanner lists but not to command.c's, so +A5&" units" slipped the
+  row-5 deletion check (the formula silently re-pointed at the
+  former row 6).  FIXED (one token); the audit confirms all FIVE
+  scanner lists now agree (dep_check + cs_adjust_refs/cs_shift_refs
+  x2/cs_sort_refs, each with ! > , ) space : + - * / % \\0 < = &).
+  (2) THE REF POLICY (the user's decision, with the multi-level
+  indirection argument: VAL(REF(VAL(D1),VAL(D2))) through a
+  VAL-chain - the address graph is unbounded, following it is not
+  reasonable): REF's coordinates are DATA - NEVER renumbered by
+  row/column insert/delete/copy/sort, and the dependency check does
+  NOT attempt to follow them: a deletion PROCEEDS beside REF
+  formulas (no veto), the chain re-resolves on the next
+  recalculation.  The least-special-cased option: every text
+  scanner naturally ignores REF( (no coordinate token) - no new
+  code path.  Consequence documented in README's REF section: a
+  formula whose address must follow the STRUCTURE uses a static
+  reference; whose address is DATA uses REF.  PINS: the & repro
+  found by dep_check_range (B1), the '&' through the copy shifter
+  and the insert shifter, the user's six-cell indirection chain
+  (resolves "test", survives an unrelated deletion), REF(2,7)
+  never renumbered across a deletion, and the deletion proceeding
+  beside a REF formula.  MY PIN BUGS: dep_check_range/cs_shift_refs
+  take 0-BASED rows (I passed 5 = row 6 - three FAILs that were
+  off-by-one pin args, no code bugs) and the text commit stores the
+  typed quotes ("\"test\"" is content WITH quotes - the pin needed
+  a bare "test").  --test 836 ok; the pty shows the refusal
+  "ERROR: would delete ref(s) at B1" and the REF deletion
+  proceeding.
+
 - **THE SORT FIXES (the user's persistence review, 2026-11-16,
   branch "bugfix-alloc")**: (1) THE COMPARATOR'S INCONSISTENCY: the
   three key classes (numeric, text, formula-string) made text vs

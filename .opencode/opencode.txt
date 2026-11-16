@@ -48,6 +48,26 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "bugfix-alloc", follow-up 3): dep '&' + the REF policy (2026-11-16):
+- USER: (1) the dependency scanner missed '&' after a reference
+  (+A5&" units" slipped the row-5 deletion check); (2) the
+  REF(col,row) interaction with structural edits needs a policy.
+- (1) FIXED: '&' added to dep_check's list; the audit confirms all
+  FIVE scanner lists agree (the four cells.c sites already had it).
+- (2) THE USER'S POLICY (their multi-level indirection argument:
+  VAL(REF(VAL(D1),VAL(D2))) - the address graph is unbounded,
+  following it is not reasonable): REF is DATA - never renumbered,
+  never followed by the dependency check, deletions PROCEED (the
+  optimistic rule; my veto proposal REJECTED).  The least-cased
+  option: every scanner naturally ignores REF( - no new code.
+  Documented in README's REF section.
+- MY PIN BUGS: dep_check_range/cs_shift_refs take 0-BASED rows
+  (three off-by-one FAILs); the text commit stores typed quotes.
+  Also removed the leftover DBG swap prints (they had masked a
+  stale-object confusion earlier).
+- VERIFIED: --test 836 ok; the pty shows the refusal naming B1 and
+  the REF deletion proceeding; the idle gate EXACT.
+
 ## BATCH (branch "bugfix-alloc", follow-up 2): the sort fixes (2026-11-16):
 - USER: (1) the comparator returned +1 both ways for text vs a
   formula's string result (an inconsistent comparator); (2) the
