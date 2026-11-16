@@ -206,8 +206,9 @@ static int rd_check_record(FILE *f)
     if (fgetc(f) == EOF) return 0;              /* formf */
     if (fgetc(f) == EOF) return 0;              /* volatf */
     /* an unknown type would desync the stream (the loader would not
-     * know which payload fields follow) */
-    if (ty != 2 && ty != 3) return 0;
+     * know which payload fields follow); 1 = the ALLOC-EMPTY record
+     * (the form-mode cell - the same payload shape as 2) */
+    if (ty != 1 && ty != 2 && ty != 3) return 0;
     len = rd16(f);                              /* cont */
     if (len < 0) return 0;
     for (; len > 0; len--)
@@ -336,7 +337,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
          * first (bookkeeping stays exact) */
         if (!drop && cl->type != CE_EMPTY)
             cs_free_cell(cl);
-        if (ty == 2) {
+        if (ty == 1 || ty == 2) {
             len = rd16(f);
             cl->cont = (char *) malloc((size_t) len + 1);
             if (!cl->cont) { fclose(f); cs_msg("MEMORY IS TOO LOW"); return 0; }
@@ -345,7 +346,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
                 fclose(f); cs_msg("READ ERROR"); return 0;
             }
             cl->cont[len] = '\0';
-            cl->type = CE_TEXT;
+            cl->type = (ty == 1) ? CE_ALLOC : CE_TEXT;
             cl->just = just;
             cl->formf = frm;
             cl->volatf = (vol != 0);
@@ -356,6 +357,12 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->iserr = 0;
             cl->strres = NULL;
             cl->rep = NULL;
+            if (ty == 1) {
+                /* the allocated-empty cell has NO content (the
+                 * in-memory form-mode state) */
+                free(cl->cont);
+                cl->cont = NULL;
+            }
             if (!drop) entriesUsed++;
             len = rd16(f);
             if (len > 0) {
@@ -438,6 +445,16 @@ int cs_file_password(const char *name, char *pw, int max)
     if (!f) { pw[0] = '\0'; return 0; }
     pw[0] = '\0';
     if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD4", 4)) { fclose(f); return 0; }
+    /* the CSD4 header carries the ORIGIN (1 col + 2 row bytes) between
+     * the magic and the column table - the old CSD1 probe walked
+     * straight into the column table and read the precision bytes as
+     * a password, so EVERY overwrite asked for verification and even
+     * the correct password failed (the user's persistence bug,
+     * 2026-11-16) */
+    if (fgetc(f) == EOF || fgetc(f) == EOF || fgetc(f) == EOF) {
+        fclose(f);
+        return 0;
+    }
     for (c = 0; c < CS_MAXCOL * 2; c++) fgetc(f);
     pwlen = fgetc(f);
     if (pwlen > 0 && pwlen < max) {

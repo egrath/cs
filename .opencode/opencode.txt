@@ -48,6 +48,25 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "bugfix-alloc"): the persistence bugs (2026-11-16):
+- USER: (1) the alloc-empty cell broke the save/load round trip (the
+  loader accepted only types 2/3; the save writes type 1); (2) the
+  overwrite password check: "the file has no password" yet ENTER
+  gives "not ok".  The message STAYS "not ok" (the user's call).
+- (1) FIXED: rd_check_record + pass 2 accept type 1 (the alloc-empty
+  record, the type-2 payload shape) -> CE_ALLOC with the flags, the
+  empty cont released (the native NULL-content state).  PINS: the
+  alloc cell + formatting + neighbors + the honest count.
+- (2) THE REAL BUG: cs_file_password was written for CSD1's layout -
+  it skipped magic + 254 colw = offset 258, but CSD4 has the 3 ORIGIN
+  bytes first -> the probe read colp[A] (2) as the password length
+  and two column bytes as the password: EVERY overwrite asked for
+  verification and even the correct password failed.  FIXED: skip
+  the 3 origin bytes first.  PTY-VERIFIED the full flow (wrong pw ->
+  not ok refused; correct pw -> SAVED - broken before!; the
+  passwordless file -> NO verify prompt -> SAVED; the final pwdlen
+  0).  VERIFIED: --test 815 ok.
+
 ## BATCH (branch "eng-batch-g" -> merged to master): batch G + the volatile semantics merged (2026-11-16):
 - USER approved; merged fast-forward to master (3c09e35), pushed,
   the branch deleted (local + origin).  The batch carries ISPRIME +

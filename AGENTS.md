@@ -1042,6 +1042,33 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE PERSISTENCE BUGS (the user's reports, 2026-11-16, branch
+  "bugfix-alloc")**: (1) THE ALLOC-EMPTY CELL BROKE THE ROUND TRIP:
+  the save writes every non-CE_EMPTY cell (type 1 = CE_ALLOC), but
+  the hardened loader accepted only types 2/3 - a form-mode cell in
+  the file was refused with READ ERROR (and the PRE-hardening loader
+  silently DESYNCED on it - the record's payload parsed as the next
+  record's header).  FIX: rd_check_record accepts ty in {1,2,3} (the
+  type-1 payload shape = type 2's: cont + rep); pass 2 materializes
+  it as CE_ALLOC with the flags (formf/prec/notation/factf/volatf/
+  just), releasing the empty cont so the in-memory state is the
+  native NULL-content one.  PINS: the alloc cell + its formatting +
+  both neighbors + the honest entry count after the round trip.
+  (2) THE PASSWORD-PROBE OFFSET BUG: cs_file_password (written for
+  the CSD1 layout) skipped magic + 254 colw bytes = offset 258, but
+  CSD4 carries the 3 ORIGIN bytes first - the probe read colp[A] as
+  the password length and two column bytes as the password: EVERY
+  overwrite asked "Verify the password to remove" and even the
+  CORRECT password failed ("not ok") - the user's exact repro
+  ("the file has no password" yet ENTER fails).  FIX: skip the 3
+  origin bytes before the column table.  THE MESSAGE STAYS "not ok"
+  (the user's instruction; the planned "password mismatch" is NOT
+  applied).  PTY-VERIFIED THE WHOLE FLOW: save with secret ->
+  wrong pw -> VERIFY + not ok (refused); correct pw -> VERIFY +
+  SAVED (this path was ALSO broken before the fix); the now-
+  passwordless file overwrites with NO verify prompt -> SAVED; the
+  final pwdlen byte 0 (the remove semantics).  --test 815 ok.
+
 - **THE VOLATILE SEMANTICS CHANGE (the user's call, 2026-11-16,
   branch "eng-batch-g")**: a random cell RETAINS its value once set
   - the whole-sheet drivers (;R A, RECALC(), the settle passes) SKIP

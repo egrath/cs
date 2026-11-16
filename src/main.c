@@ -1828,6 +1828,49 @@ static void run_tests(void)
         cke("INTEG shape", "INTEG(A1>A4,B1>B2)", -1);
         cke("INTEG non-range", "INTEG(5,B1>B4)", 6);
         cs_clear_all();
+        /* the ALLOC-EMPTY round trip (the user's persistence bug,
+         * 2026-11-16): a form-mode cell (type 1) must save AND load */
+        {
+            Cell *ac = cs_alloc_cell(0, 0);
+            ac->type = CE_ALLOC;            /* the form-mode state */
+            ac->just = 'L';
+            ac->prec = -1;
+            ac->formf = 1;
+            colw[0] = 13;
+            colp[0] = 3;
+        }
+        setv(1, 0, "2");                    /* B1 numeric beside it */
+        cs_commit_entry(2, 0, "hello");     /* C1 text beside it */
+        if (cs_save("t_alloc", 0, 0, 3, 3, "")) {
+            cs_clear_all();
+            colw[0] = 10; colp[0] = 2;
+            if (cs_load("t_alloc", 0, 0, 0)) {
+                Cell *ac = tread(0, 0);
+                if (ac->type != CE_ALLOC || !ac->formf)
+                    { printf("FAIL alloc round trip (%d)\n", ac->type);
+                      fails++; }
+                else printf("ok   the allocated-empty cell round trips\n");
+                if (colw[0] != 13 || colp[0] != 3)
+                    { printf("FAIL alloc colw (%d/%d)\n", colw[0],
+                             colp[0]); fails++; }
+                else printf("ok   the alloc cell's formatting returns\n");
+                if (tread(1, 0)->type != CE_NUM ||
+                    strcmp(tread(1, 0)->cont, "2") != 0)
+                    { printf("FAIL alloc neighbor num\n"); fails++; }
+                else printf("ok   the numeric neighbor survives\n");
+                if (tread(2, 0)->type != CE_TEXT ||
+                    strcmp(tread(2, 0)->cont, "hello") != 0)
+                    { printf("FAIL alloc neighbor text\n"); fails++; }
+                else printf("ok   the text neighbor survives\n");
+                /* the record stream stayed in sync: the cell count */
+                if (entriesUsed != 3)
+                    { printf("FAIL alloc count (%d)\n", entriesUsed);
+                      fails++; }
+                else printf("ok   the entry count is honest\n");
+            } else { printf("FAIL alloc load\n"); fails++; }
+        } else { printf("FAIL alloc save\n"); fails++; }
+        remove("t_alloc.csd");
+        cs_clear_all();
         /* ==== CONV: the unit conversion (batch D) ==== */
         ckc("CONV cm m", "CONV(100,\"cm\",\"m\")", "+1.0000000000000E+1");
         ckc("CONV inch mm", "CONV(1,\"inch\",\"mm\")",
