@@ -1925,3 +1925,28 @@ PREVIOUS BATCH (5 items, verified):
 - Next: phase 4b (narrow copy/delete/insert/save/print/quit/sort/what
   repaints; keep touch-all for insert/delete/load/merge/auto), then
   merge uidraw to master.
+
+## uidraw phase 4b + the pty-deadlock discovery (2026-11-16)
+- 4b: the remaining command repaints narrowed (copy/delete/insert/entry-
+  delete/sort/recalc-tail -> GRID|STATUS|MENU; quit/storage/what/sort ->
+  STATUS; the auto course's inner loop -> crepaint; command.c's unused
+  static redraw removed). crepaint now paints UNCONDITIONALLY: a
+  deferred dialog paint has no guaranteed drain - a pasted burst that
+  ends by quitting would flush a stale screen at endwin (the t4b
+  regression: the committed 12.00 never painted).
+- THE PTY DEADLOCK: python pty drivers that never read the master
+  during sleeps freeze the app (the paint output fills the pty buffer,
+  the app blocks in write(), stops reading input, everything flushes
+  at EOF in one burst). The earlier CPU numbers (~11.8us/move) were
+  artifacts of that. Honest numbers (reading driver /tmp/cpudrv3.py):
+  400 unbatched moves on a seeded 7x11 numeric sheet = 0.242s user
+  (phases 3+4) -> 0.147s (phase 5, -40%).
+- render2.py was mangled by my repeated hand-edits and silently lost
+  paints; replaced by a clean /tmp/render3.py with full CSI support
+  (H/f/d/G/`/A/B/C/D/M/L/P/@/X/J/K + OSC/charset skips). render2's
+  output was WRONG for the t4b frames (a missing DCH handler made a
+  CORRECT app paint look like a ghost, again). ALWAYS diff the renderer
+  against a synthetic sequence when a frame looks impossible.
+- Gates green: --test, idle MATCH, gcc-14 zero warnings, t4b (sort/
+  save/print/auto/quit-cancel) IDENTICAL vs master with render3.
+  Harness for 4b in flight.

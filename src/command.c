@@ -14,7 +14,6 @@ extern int  cs_load_dialog(int merge); /* fileio.c */
 extern int  cs_file_password(const char *path, char *pw, int max);
 extern int  cs_prompt_hidden(const char *pr, char *out, int max);
 
-static void redraw(void);
 void cs_command_menu(void);   /* forward: auto entry loop needs it */
 
 static const char *collab(const char *w, int col, const char *rest);
@@ -25,8 +24,9 @@ static const char *collab(const char *w, int col, const char *rest);
 static void crepaint(int what)
 {
     cs_touch(what);
-    if (cs_input_pending()) return;
-    cs_paint();
+    cs_paint();   /* unconditional: a deferred dialog paint has no
+                     guaranteed drain (a pasted burst that ends by
+                     quitting would flush a stale screen at endwin) */
 }
 
 void cs_goto_cmd(void)
@@ -374,12 +374,12 @@ static void copy_cmd(void)
         }
         if (fill) {
             cs_fill_block(c1, r1, c2, r2, d1, e1, d2, e2, rel);
-            redraw();
+            crepaint(CS_D_GRID | CS_D_STATUS | CS_D_MENU);
             return;
         }
     }
     cs_copy_block(c1, r1, c2, r2, d1, e1, dw, dh, rep, nfill, rel);
-    redraw();
+    crepaint(CS_D_GRID | CS_D_STATUS | CS_D_MENU);
 }
 
 /* the copy core (shared with the --test pins): the source block
@@ -601,7 +601,7 @@ static void insert_cmd(void)
                 }
         for (r = 0; r < CS_MAXROW; r++) blank_cell_rowcol(r, at);
     } else return;
-    redraw();
+    crepaint(CS_D_GRID | CS_D_STATUS | CS_D_MENU);
 }
 
 /* ====================== Delete row/column/all ====================== */
@@ -865,7 +865,7 @@ static void delete_cmd(void)
     if (ch == 27) return;
     if (ch == 'E' || ch == 'e') {
         cs_free_cell_at(curCol, curRow);
-        redraw();
+        crepaint(CS_D_GRID | CS_D_STATUS | CS_D_MENU);
         return;
     }
     if (ch == 'R' || ch == 'r') {
@@ -927,7 +927,7 @@ static void delete_cmd(void)
         curCol = curRow = winCol = winRow = 0;
         lockCols = lockRows = 0;
     } else return;
-    redraw();
+    crepaint(CS_D_HEADER | CS_D_GRID | CS_D_STATUS | CS_D_MENU);
 }
 
 /* ============================ Format =============================== */
@@ -1046,7 +1046,7 @@ static void recalc_cmd(void)
         cs_volatile_draw_set(0);
     }
     else return;
-    redraw();
+    crepaint(CS_D_GRID | CS_D_STATUS);
     if (cs_nerrlist) {
         /* the manual's error replay: the ?n? cells report one after
          * another, confirmed with Space (see main.c walker) */
@@ -1313,7 +1313,7 @@ static void sort_cmd(void)
         if (ch == 'D' || ch == 'd') { desc = 1; break; }
     }
     cs_sort_range(c1, r1, c2, r2, kc - 1, desc);
-    redraw();
+    crepaint(CS_D_GRID | CS_D_STATUS);
 }
 
 static void storage_cmd(void)
@@ -1358,7 +1358,7 @@ static void auto_cmd(void)
         curCol = cc; curRow = cr;
         g_entryrow = cr;          /* "current:" must show the stop cell */
         g_entrycol = cc;
-        redraw();
+        crepaint(CS_D_CURSOR | CS_D_STATUS);
         cs_msg("Form Control Mode");   /* bottom-left, manual 11.3 */
         /* entry loop: existing cell values are NOT cleared - a bare
          * RETURN keeps the stored value and jumps to the next stop */
@@ -1366,13 +1366,13 @@ static void auto_cmd(void)
         k = 0;
         for (;;) {
             int ch = getch();
-            if (cs_was_resize(ch)) continue;
+                    if (cs_was_resize(ch)) continue;
             if (ch == 27) {
                 g_editstate = EDIT_IDLE;
                 g_edit[0] = '\0';
                 g_editlen = 0;
-                redraw();
-                cs_msg("Auto aborted");   /* paint after the redraw */
+                crepaint(CS_D_CURSOR | CS_D_STATUS);
+                cs_msg("Auto aborted");   /* paint after the repaint */
                 return;
             }
             if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) break;
@@ -1399,13 +1399,13 @@ static void auto_cmd(void)
             g_editlen = k;
             strncpy(g_edit, buf, CS_EDITMAX);
             g_edit[CS_EDITMAX - 1] = '\0';
-            redraw();
+            crepaint(CS_D_CURSOR | CS_D_STATUS);
         }
         if (k > 0) {
             int ec;
-            cs_recalc_limit_reset();  /* fresh overrun state per commit */
+                            cs_recalc_limit_reset();  /* fresh overrun state per commit */
             ec = cs_commit_entry(cc, cr, buf);
-            /* numeric eval error -> message (space is data inside Auto:
+                    /* numeric eval error -> message (space is data inside Auto:
              * no "hit space" confirm here) */
             {
                 Cell *fc3 = cs_getcell(cc, cr);
@@ -1425,8 +1425,8 @@ static void auto_cmd(void)
     }
     g_editstate = EDIT_IDLE;
     cs_recalc_all();
-    redraw();
-    cs_msg("Auto complete");   /* paint after the final redraw */
+    crepaint(CS_D_GRID | CS_D_STATUS);
+    cs_msg("Auto complete");   /* paint after the final repaint */
     if (cs_recalc_limit_hit())
         cs_msg("Recalculation limit reached");
 }
@@ -1439,10 +1439,9 @@ static void quit_cmd(void)
         endwin();
         exit(0);
     }
-    redraw();
+    crepaint(CS_D_STATUS);
 }
 
-static void redraw(void) { cs_draw(); }
 
 void cs_command_menu(void)
 {

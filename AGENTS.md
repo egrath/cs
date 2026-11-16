@@ -1903,7 +1903,7 @@ master when every phase passes.
   | 25 cursor moves | 2818 B | 1302 B |
   | 10 commits (type+RETURN) | 2906 B | 1157 B |
   | bytes per cursor move | (full repaints per key) | 74.7 (marks + status diff) |
-  | CPU per cursor move (400 unbatched moves, 77 numeric cells) | ~11.8 µs (phases 3+4 stage) | ~9.3 µs |
+  | CPU, 400 unbatched moves on a seeded 7×11 numeric sheet | 0.242 s user | 0.147 s user (−40%) |
   The structural claim: `paint_cursor` is O(1) (4 char writes) where
   the pre-branch paint was O(screen) per key with a full erase; the
   dirty flags make every hot path paint only what changed. The bytes
@@ -1912,10 +1912,34 @@ master when every phase passes.
   measurable win is CPU (and it scales with the per-cell render cost:
   BCD formatting on a slow CPU); the byte win came from the phase-1
   clear() removal.
-- **Phase 4b (next): the remaining command dialogs** — copy/delete/
-  insert/save/print/quit/sort/what repaints narrowed from touch-all;
-  insert/delete/load/merge/auto stay touch-all (they shift or replace
-  the whole sheet).
+  - **THE PTY-DEADLOCK LESSON (2026-11-16)**: the first CPU numbers
+    (~11.8 µs/move) were measured with a python pty driver that never
+    read the master during its sleeps — the app's paint output filled
+    the pty buffer, the app blocked in write(), stopped reading input,
+    and everything flushed at EOF in one giant burst (the app's CPU
+    read ~3 ms total). The honest numbers (a READING driver,
+    /tmp/cpudrv3.py) are 50× larger and show the real −40%. Corollary:
+    every pty driver must pump the master while waiting. The expect
+    scripts are safe (log_file pumps), but their per-key `sleep`s
+    still batch the paints — the frame-identity harness is a
+    final-state comparison by design.
+- **Phase 4b (DONE): the remaining command repaints narrowed.** copy
+  (both the fill and the plain branch) → GRID|STATUS|MENU; the row/
+  column/entry deletes → GRID|STATUS|MENU (the ALL-delete adds HEADER —
+  it resets the window and the locks, whose locked-column marks live in
+  draw_headers); the recalc tail → GRID|STATUS (the driver already
+  painted the changed passes); the sort → GRID|STATUS; quit-cancel and
+  the pure-message commands (storage `?`, What) → STATUS; the auto
+  course's inner loop (stop-entry, per-keystroke echo, abort, complete)
+  → crepaint(CURSOR|STATUS / GRID|STATUS). command.c's now-unused
+  static redraw() removed. **crepaint paints UNCONDITIONALLY** (no
+  defer): a deferred dialog paint has no guaranteed drain — a pasted
+  burst that ends by quitting would flush a stale screen at endwin
+  (the frame test caught a committed cell never painted). insert/
+  delete/load/merge/auto-start and the help pages keep touch-all.
+  Verification: the 16-checkpoint frame-identity harness, the
+  sort/save/print/auto/quit-cancel pty comparison vs master (render3),
+  --test, the idle gate, gcc-14 zero warnings.
 
 ## Source map
 

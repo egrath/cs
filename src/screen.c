@@ -1072,6 +1072,7 @@ int cs_getch_nodelay(void)
  * repaint and batch it until the input drains (a fast paste would
  * otherwise overflow the tty buffer and DROP bytes - the per-key full
  * redraw cannot keep up). */
+
 int cs_input_pending(void)
 {
     int ch = cs_getch_nodelay();

@@ -537,7 +537,7 @@ static int cs_commit_core(int col, int rw, const char *entry)
             if (str) free(str);
         }
         cs_run_recalc_passes(0);
-        return err;
+            return err;
     }
     commit_text(c, buf, 'L');
     return 0;
