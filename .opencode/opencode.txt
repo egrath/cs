@@ -48,6 +48,28 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "safetyfix"): the memory-safety batch (2026-11-16):
+- USER: print_render's unbounded strres; csn_fmt_sci/cs_fmt_num's
+  buffer sizes; cs_msg's vsprintf (the ~253-char dependency list
+  falsified the by-analysis bound); the loader's unvalidated widths;
+  cs_parse_coord's row wrap; factf_recompute (already fixed); the
+  printer's line[256] with an unbounded width; the RFC-4180 CSV
+  (the user chose RFC style); the truncate-before-input print open.
+- DONE: print_render's strres bounded to the width; csn_fmt_sci
+  self-bounds (the frac reduced to fit bufn; the 64-byte temp
+  truncates safely at width 63, verified with the poisoned guard);
+  cs_msg_vfmt (the C89 bounded formatter: %s/%d with checked copies)
+  in cs_msg/cs_msg_plain; the loader clamps the widths 3..63 and the
+  prec to CS_MAX_P; cs_parse_coord rejects >3 row digits; the
+  printer's width clamps at 240; the fopen LAST (the pty proof: the
+  cancelled print left the file PRECIOUS); the CSV quoting (the
+  text values quoted, the internal quotes doubled).
+- THE PTY GOTCHA: the print dialog needs FOUR returns (the file,
+  both corners, the form length) - the form editor silently ate the
+  mis-timed y/n keystroke, looking exactly like a hang.
+- VERIFIED: --test 895 ok; the idle gate EXACT; the CSV and the
+  cancel flows pty-verified.
+
 ## BATCH (branch "memfix2" -> merged to master): the memory batch merged (2026-11-16):
 - USER approved; merged fast-forward to master (54e03b4), pushed,
   the branch deleted (local + origin).  NOTE: the merge carried the

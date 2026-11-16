@@ -549,18 +549,58 @@ void cs_start_msg_clear(void)
 }
 
 
+/* the bounded formatter (the user's memory-safety report,
+ * 2026-11-16): vsnprintf is C99, so cs_msg walks the format itself -
+ * %s and %d are the only conversions the call sites use, and both
+ * are length-checked.  The dependency list (ERROR: would delete
+ * ref(s) at ...) can reach ~253 chars on its own, which falsified
+ * the old by-analysis bound. */
+static void cs_msg_vfmt(char *out, int outn, const char *fmt, va_list ap)
+{
+    const char *f = fmt;
+    int p = 0;
+    while (*f && p < outn - 1) {
+        if (*f == '%') {
+            f++;
+            if (*f == 's') {
+                const char *sv = va_arg(ap, const char *);
+                f++;
+                if (!sv) sv = "(null)";
+                while (*sv && p < outn - 1) out[p++] = *sv++;
+            } else if (*f == 'd') {
+                int dv = va_arg(ap, int);
+                char tmp[12];
+                int ti = 0, neg = 0, k;
+                f++;
+                if (dv < 0) { neg = 1; dv = -dv; }
+                if (dv == 0) tmp[ti++] = '0';
+                while (dv > 0 && ti < 11) { tmp[ti++] = (char) ('0' + dv % 10); dv /= 10; }
+                if (neg && p < outn - 1) out[p++] = '-';
+                for (k = ti - 1; k >= 0 && p < outn - 1; k--)
+                    out[p++] = tmp[k];
+            } else if (*f == '%') {
+                out[p++] = '%';
+                f++;
+            } else {
+                out[p++] = '%';     /* an unknown conversion: verbatim */
+                if (p < outn - 1) out[p++] = *f++;
+            }
+        } else {
+            out[p++] = *f++;
+        }
+    }
+    out[p] = '\0';
+}
+
 void cs_msg(const char *fmt, ...)
 {
     va_list ap;
     promptvis = 0;
     va_start(ap, fmt);
-    /* C89 (no vsnprintf): the bound is by ANALYSIS of every cs_msg
-     * call site - the only variable-width argument is a formula or
-     * coordinate text of at most CS_EDITMAX (120) chars, the fixed
-     * text around it stays under 60, so the expansion is always
-     * below lastmsg's 256 (the paste-crash fix 2026-11-13 keeps its
-     * guarantee by that analysis). */
-    vsprintf(lastmsg, fmt, ap);
+    /* the bounded formatter (C89, no vsnprintf): the dependency-list
+     * call site falsified the old by-analysis bound (the list alone
+     * can reach ~253 chars) */
+    cs_msg_vfmt(lastmsg, (int) sizeof(lastmsg), fmt, ap);
     va_end(ap);
     lastmsg[75] = '\0';
     cs_msg_text(lastmsg, A_REVERSE);
@@ -571,10 +611,10 @@ void cs_msg_plain(const char *fmt, ...)
     va_list ap;
     promptvis = 0;
     va_start(ap, fmt);
-    /* the same analysis: cs_msg_plain's %s arguments are bounded
+    /* the same bounded formatter: the %s arguments are bounded
      * number buffers (the =-answer); long STRING results go through
      * cs_msg_str, which copies bounded */
-    vsprintf(lastmsg, fmt, ap);
+    cs_msg_vfmt(lastmsg, (int) sizeof(lastmsg), fmt, ap);
     va_end(ap);
     lastmsg[75] = '\0';
     cs_msg_text(lastmsg, A_NORMAL);

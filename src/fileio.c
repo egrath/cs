@@ -296,7 +296,12 @@ int cs_load(const char *name, int c0, int r0, int merge)
     for (c = 0; c < CS_MAXCOL; c++) {
         int a = fgetc(f), b = fgetc(f);
         if (a == EOF || b == EOF) { fclose(f); cs_msg("READ ERROR"); return 0; }
-        colw[c] = a; colp[c] = b;
+        /* the RANGES are enforced (the user's memory-safety report,
+         * 2026-11-16): a corrupt width (0..255 raw) fed every
+         * downstream render buffer - the manual's Format-command
+         * range 3..63 clamps, the precision caps at CS_MAX_P */
+        colw[c] = (a < 3) ? 3 : ((a > CS_MAX_W) ? CS_MAX_W : a);
+        colp[c] = (b < 0) ? 0 : ((b > CS_MAX_P) ? CS_MAX_P : b);
     }
     pwlen = fgetc(f);
     if (pwlen == EOF) { fclose(f); cs_msg("READ ERROR"); return 0; }

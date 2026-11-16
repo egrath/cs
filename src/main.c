@@ -2266,6 +2266,42 @@ static void run_tests(void)
             "+2.0000060000000E+7");
         ckc("SLOPE() offset", "SLOPE()", "+2.0000000000000E+1");
         cs_clear_all();
+        /* ==== the memory-safety batch (the user's report, 2026-11-16) ==== */
+        /* cs_parse_coord: the row accumulator cannot wrap */
+        {
+            int c1 = 0, r1 = 0;
+            if (cs_parse_coord("A99999999999", &c1, &r1))
+                { printf("FAIL row wrap accepted\n"); fails++; }
+            else printf("ok   a 13-digit row is rejected\n");
+            if (!cs_parse_coord("A255", &c1, &r1) || r1 != 254)
+                { printf("FAIL A255 parse\n"); fails++; }
+            else printf("ok   the legal three-digit rows still parse\n");
+        }
+        /* the loader's width clamp */
+        {
+            FILE *g = fopen("t_wide.csd", "wb");
+            int k;
+            char *junk = (char *) malloc(400);
+            memset(junk, 0, 400);
+            fwrite("CSD4", 1, 4, g);
+            fputc(0, g); fwrite("\x00\x00", 1, 2, g);   /* the origin */
+            for (k = 0; k < 127; k++) {
+                fputc(k == 0 ? 255 : 10, g);           /* the width 255! */
+                fputc(2, g);
+            }
+            fputc(0, g);                                /* no password */
+            fwrite("\x00\x00", 1, 2, g);                /* count 0 */
+            fclose(g);
+            free(junk);
+            cs_clear_all();
+            if (cs_load("t_wide", 0, 0, 0)) {
+                if (colw[0] != CS_MAX_W)
+                    { printf("FAIL width clamp (%d)\n", colw[0]); fails++; }
+                else printf("ok   a corrupt width clamps to the manual's 63\n");
+            } else { printf("FAIL wide load\n"); fails++; }
+            remove("t_wide.csd");
+        }
+        cs_clear_all();
         /* ==== CONV: the unit conversion (batch D) ==== */
         ckc("CONV cm m", "CONV(100,\"cm\",\"m\")", "+1.0000000000000E+1");
         ckc("CONV inch mm", "CONV(1,\"inch\",\"mm\")",

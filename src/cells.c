@@ -382,8 +382,12 @@ int cs_parse_coord(const char *s, int *col, int *row)
         s++;
     }
     if (col_letter(s[0]) >= 0) return 0;   /* three or more letters */
+    /* the ROW accumulator cannot wrap (the user's report, 2026-11-16):
+     * no row above 255 is ever legal, so more than 3 digits is an
+     * outright rejection - a 13-digit row wrapped the int into a
+     * potentially valid-looking coordinate */
     while (*s >= '0' && *s <= '9') { r = r * 10 + (*s - '0'); s++; n++; }
-    if (!n || *s) return 0;
+    if (!n || n > 3 || *s) return 0;
     if (r < 1 || r > CS_MAXROW || c < 0 || c >= CS_MAXCOL) return 0;
     *col = c; *row = r - 1;
     return 1;
@@ -960,7 +964,7 @@ void cs_fmt_num(const Csn *v, int width, int prec, int iserr, int notation,
         int frac = width - 6;
         if (frac < 0) frac = 0;
         while (frac > 0) {
-            char e[64];
+            char e[CS_MAX_W + 8];
             csn_fmt_sci(v, frac, e, (int) sizeof(e));
             if ((int) strlen(e) <= width) break;
             frac--;

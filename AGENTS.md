@@ -1042,6 +1042,44 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE MEMORY-SAFETY BATCH (the user's report, 2026-11-16, branch
+  "safetyfix")**:
+  - print_render: the STRING-RESULT length is bounded to the width -
+    a 200-char loader-permitted result overran the ~65-byte render
+    buffer (the text branch already clipped; the strres branch's
+    negative-pad clamp didn't bound the copy).
+  - csn_fmt_sci: SELF-BOUNDS - the frac is reduced to fit bufn (the
+    legal width 63 gives frac 57 and a 66-byte total, past the
+    caller's 64-byte temp); cs_fmt_num's temp widened to
+    CS_MAX_W + 8.  VERIFIED with the poisoned-guard probe: the
+    64-byte temp truncates safely at width 63.
+  - cs_msg/cs_msg_plain: the BOUNDED FORMATTER (cs_msg_vfmt, C89 -
+    no vsnprintf) walking %s/%d with length-checked copies; the
+    dependency-list call site (ERROR: would delete ref(s) at ...) can
+    reach ~253 chars alone, falsifying the old by-analysis bound.
+  - cs_load: the column widths CLAMP to the manual's 3..63 and the
+    per-cell prec to CS_MAX_P (a corrupt width 255 fed every render
+    buffer).  PIN: the crafted width-255 file loads clamped to 63.
+  - cs_parse_coord: the row accumulator cannot wrap - more than 3
+    digits is an outright rejection (no row above 255 is legal; a
+    13-digit row wrapped into a valid-looking coordinate).  PIN: the
+    13-digit row rejected, A255 fine.
+  - factf_recompute's buffer: ALREADY FIXED (the factorial batch).
+  - THE PRINTER: the width clamps at 240 (the heading-assembly
+    line[256]); the output file opens LAST (after every prompt - the
+    old "w" open truncated an existing file BEFORE the range/options;
+    the pty proof: a cancelled print left the existing file with its
+    PRECIOUS content); the CSV export is RFC-4180 (the TEXT values
+    quoted, the internal quotes doubled, numerics bare - the user's
+    choice; the value remains the rendered width-bounded field,
+    flagged).  THE PTY GOTCHA THAT COST AN HOUR: the print dialog
+    needs FOUR returns (the file, both corners, the form length) -
+    my scripts under-counted and the form editor silently ate the
+    y/n keystroke, looking exactly like a hang (the app was fine).
+  PINS: +3 (the row wrap, the three-digit rows, the width clamp) +
+  the pty (the CSV quoting, the cancel-proof).  --test 895 ok; the
+  idle gate EXACT.
+
 - **THE MEMORY BATCH (the user's report, 2026-11-16, branch
   "memfix2")**:
   - (A) THE REGRESSION ARRAYS: already gone (the regression-state

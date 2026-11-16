@@ -64,9 +64,14 @@ static void print_render(int col, int row, char *out, int width)
         return;
     }
     if (c->strres) {
-        /* a string result prints like text: the cell's own just */
+        /* a string result prints like text: the cell's own just.
+         * The length is BOUNDED to the width (the user's report:
+         * a 200-char loader-permitted result overran the render
+         * buffer) */
         int len = (int) strlen(c->strres);
-        int pad = width - len;
+        int pad;
+        if (len > width) len = width;
+        pad = width - len;
         if (pad < 0) pad = 0;
         if (c->just == 'R') memcpy(out + pad, c->strres, (size_t) len);
         else if (c->just == 'C') memcpy(out + pad / 2, c->strres,
@@ -155,8 +160,6 @@ void cs_print_cmd(void)
                 }
             }
         }
-        f = fopen(path, "w");
-        if (!f) { cs_msg("can't open"); return; }
     }
 
     if (cs_prompt_coord("top left corner :", "A1", tl, (int) sizeof(tl), 1) < 0)
@@ -267,6 +270,9 @@ gotcol:
         goto fail;
     pw = atoi(tmp);
     if (pw < 10) pw = 132;
+    if (pw > 240) pw = 240;             /* the upper bound (the user's
+                                          * report: the heading
+                                          * assembly buffer is 256) */
     /* manual 14-13: the prompt appears when A1 was NOT chosen as the
      * top left corner; otherwise the array prints as shown */
     fix = 1;
@@ -315,6 +321,15 @@ gotcol:
         }
         segEnd[seg] = c2;
         nseg = seg + 1;
+    }
+
+    /* the output file opens LAST (the user's report: the old "w"
+     * open truncated an existing file BEFORE the range/options were
+     * entered - a later cancel destroyed it).  The existence question
+     * stays early (it destroys nothing). */
+    if (!console) {
+        f = fopen(path, "w");
+        if (!f) { cs_msg("can't open"); return; }
     }
 
     for (seg = 0; seg < nseg; seg++) {
@@ -376,12 +391,31 @@ gotcol:
                 for (cc = segStart[seg]; cc <= segEnd[seg]; cc++) {
                     char rend[CS_MAX_W + 2];
                     char *p;
+                    Cell *cl = cs_getcell(cc, row);
+                    /* RFC-4180 style (the user's choice): TEXT values
+                     * are quoted and their internal quotes doubled;
+                     * numeric values stay bare.  The value is the
+                     * rendered (width-bounded) field - the pre-existing
+                     * display semantics */
+                    int istext = cl && !cl->iserr &&
+                                 (cl->type == CE_TEXT ||
+                                  (cl->type == CE_NUM && cl->strres));
                     print_render(cc, row, rend, colw[cc] - 1);
                     if (!firstf) fputc(',', f);
                     firstf = 0;
                     p = rend;
                     while (*p == ' ') p++;
-                    fprintf(f, "%s", p);
+                    if (istext) {
+                        const char *q = p;
+                        fputc('"', f);
+                        for (; *q; q++) {
+                            if (*q == '"') fputc('"', f);
+                            fputc(*q, f);
+                        }
+                        fputc('"', f);
+                    } else {
+                        fprintf(f, "%s", p);
+                    }
                 }
                 fputc('\n', f);
             } else if (console) {

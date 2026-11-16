@@ -490,6 +490,18 @@ void csn_fmt_sci(const Csn *v, int frac, char *buf, int bufn)
     int p = 0, i, ee, d3[6], nd = 0, k;
     if (bufn < 10) { buf[0] = '\0'; return; }
     if (v->ndig == 0) { strcpy(buf, "0"); return; }
+    /* the SELF-BOUNDS (the user's report, 2026-11-16): a legal width
+     * up to 63 gives frac = 57, and the total (sign, digit, point,
+     * frac, E±, three exponent digits, NUL) reached 66 bytes - past
+     * the caller's 64-byte temp.  The frac is reduced to fit bufn;
+     * the exponent contributes at most 4 digits inside the range */
+    {
+        int need = 2 + (frac > 0 ? 1 + frac : 0) + 1 + 4;
+        if (need > bufn - 1) {
+            frac = bufn - 1 - 2 - 1 - 4;
+            if (frac < 0) frac = 0;
+        }
+    }
     if (v->sign) buf[p++] = '-';
     buf[p++] = (char) ('0' + v->nd[0]);
     if (frac > 0) {
