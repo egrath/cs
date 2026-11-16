@@ -306,6 +306,39 @@ static void draw_headers(void)
     }
 }
 
+/* the cursor marks (phase 5, the fine-grained cursor): the '>' '<'
+ * sit ON TOP of the 1-char separator gaps at cell_x(col)-1 and
+ * cell_x(col)+colw[col] on the cursor's row - cell re-renders never
+ * cover them.  The CURSOR component therefore paints ONLY the marks:
+ * erase the two old gaps (data-row gap characters are plain spaces,
+ * cs1.txt) and mark the two new ones.  A cell CONTENT change always
+ * marks the GRID, so no cell re-render belongs here; draw_rows keeps
+ * painting the marks inside the full grid paint and syncs the tracked
+ * position. */
+static int markCol = -1, markRow = -1;
+
+static void marks_erase(int col, int row)
+{
+    int y, cx;
+    if (col < 0 || row < 0) return;
+    y = row_line(row);
+    if (y < 0) return;
+    cx = cell_x(col);
+    if (cx - 1 >= 4) cchr(y, cx - 1, ' ');
+    if (cx + colw[col] < cs_scrw()) cchr(y, cx + colw[col], ' ');
+}
+
+static void marks_paint(int col, int row)
+{
+    int y, cx;
+    y = row_line(row);
+    if (y < 0) return;
+    cx = cell_x(col);
+    /* the same guards as draw_rows' mark paint */
+    if (cx - 1 >= 4 && cx - 1 < cs_scrw()) cchra(y, cx - 1, '>', A_REVERSE);
+    if (cx + colw[col] < cs_scrw()) cchra(y, cx + colw[col], '<', A_REVERSE);
+}
+
 static void draw_rows(void)
 {
     int i;
@@ -364,6 +397,10 @@ static void draw_rows(void)
             if (cx + colw[curCol] < w) cchra(y, cx + colw[curCol], '<', A_REVERSE);
         }
     }
+    /* the full paint leaves the marks exactly here (the CURSOR
+     * component's fine-grained erase relies on it) */
+    markCol = curCol;
+    markRow = curRow;
 }
 
 /* --------------------------------------------------------------- */
@@ -610,11 +647,20 @@ static void paint_status(void)
     draw_editline_idle();
 }
 
-/* the CURSOR component: phase 4 paints it through the grid renderer;
- * phase 5 replaces this with the fine-grained two-cell paint */
+/* the CURSOR component (phase 5, fine-grained): a pure cursor move
+ * changes NOTHING but the marks - erase the two old gaps, mark the
+ * two new ones.  The old cell needs no re-render (its content is
+ * untouched by the marks) and the new cell is already correct (content
+ * changes mark the GRID).  Scroll moves never come here: they mark the
+ * GRID too, and the full grid paint syncs the tracked position. */
 static void paint_cursor(void)
 {
-    paint_grid();
+    if (markCol != curCol || markRow != curRow) {
+        marks_erase(markCol, markRow);
+        markCol = curCol;
+        markRow = curRow;
+    }
+    marks_paint(curCol, curRow);
 }
 
 /* paint the dirty components, clear the flags.  The common tail
