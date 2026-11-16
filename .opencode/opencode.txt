@@ -48,6 +48,24 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-numfix"): the numerical-engine fixes (2026-11-16):
+- USER: POW (negative bases fail for integer exponents > 64), LCM
+  (opposite signs error), ROUND/TRUNC (overflow on representable
+  results), EVEN/ODD (the long conversion), csn_parse (malformed
+  exponents + the UBSan accumulator overflow at num.c:372), the
+  long portability audit, CORR/REGR (the raw-sum cancellation).
+- DONE: POW = BCD binary squaring (exact, no threshold, the sign by
+  the parity); LCM/GCD = the BCD euclid with the absolute values;
+  ROUND/TRUNC = the identity shortcut (the last digit's place >=
+  |dd|); EVEN/ODD = the last-digit parity (the mantissa-omits-zeros
+  trap: exp10 > ndig -> the last digit is 0); csn_parse = the
+  malformed-exponent rejection + the bounded accumulator (zero
+  UBSan errors); csn_int_val's 9-digit pre-check + csn_to_long_val's
+  checked loop (atol gone); CORR/RSQ/REGR = the two-pass centered
+  form.  1E+999 is out of range (the pin uses 9.9E+998).
+- VERIFIED: --test 886 ok; zero UBSan runtime errors; the pty shows
+  the exact 31-digit 2^100; the idle gate EXACT.
+
 ## BATCH (branch "bugfix-alloc" -> merged to master): the bugfix batch merged (2026-11-16):
 - USER approved; merged fast-forward to master (9bbe942), pushed,
   the branch deleted (local + origin).  THE BATCH: 8 review fixes in

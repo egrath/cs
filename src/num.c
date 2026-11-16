@@ -357,7 +357,7 @@ int csn_parse(const char *s, Csn *r)
 {
     unsigned char raw[CSN_PARSE_MAX + 4];
     int sign = 0, i = 0, n = 0, dec = 0, sawdig = 0, gotdot = 0;
-    int eval = 0, esign = 1, gotE = 0;
+    int eval = 0, esign = 1, gotE = 0, gotEdig = 0, efail = 0;
 
     mkzero(r);                       /* errors leave a defined zero */
     while (s[i] == ' ') i++;
@@ -369,7 +369,17 @@ int csn_parse(const char *s, Csn *r)
         char c = s[i];
         if (c >= '0' && c <= '9') {
             if (gotE) {
-                eval = eval * 10 + (c - '0');
+                /* the exponent accumulator is BOUNDED (the user's
+                 * UBSan report, 2026-11-16: a huge exponent overflowed
+                 * the signed int and the parser ACCEPTED a wrapped
+                 * exponent).  Past the representable range the input
+                 * is latched for rejection; the digits are still
+                 * consumed so the scan stays honest */
+                gotEdig = 1;
+                if (eval <= CSN_EMAX + 4)
+                    eval = eval * 10 + (c - '0');
+                else
+                    efail = 1;
             } else {
                 raw[n++] = (unsigned char) (c - '0');
                 if (gotdot) dec++;
@@ -390,7 +400,12 @@ int csn_parse(const char *s, Csn *r)
         }
     }
     if (!sawdig) return CSN_ER_SYNTAX;
+    /* a MALFORMED exponent: 'E' with no digits ("1E+", "1E") was
+     * silently accepted as 1 (the user's report); "1E0" stays valid */
+    if (gotE && !gotEdig) return CSN_ER_SYNTAX;
     if (gotE) eval *= esign;
+    if (gotE && (efail || eval > CSN_EMAX || eval < -CSN_EMAX))
+        return CSN_ER_OVERFLOW;      /* out of the engine's range */
     /* raw is already most-significant first (raw[n-1] sits at place
      * eval - dec) */
     return finish(r, raw, n, eval - dec, sign);
@@ -808,14 +823,18 @@ static void round_at(Csn *r, int ndig)
     finish(r, ms, n, r->exp10 - ndig, r->sign);
 }
 
-/* is the value exactly an integer small enough to handle in a long? */
+/* is the value exactly an integer small enough to handle in a long?
+ * The digit count is checked BEFORE the conversion (the portability
+ * audit, 2026-11-16): the old 15-digit cap converted values a 32-bit
+ * long cannot hold - the DOS compilers the design targets.  9 digits
+ * fit every long (999999999 < 2^31); the callers need no more. */
 static int csn_int_val(const Csn *a, long *k)
 {
     long v = 0;
     int i, n, sign = 1;
     if (a->ndig == 0) { *k = 0; return 1; }
     if (a->exp10 < a->ndig) return 0;   /* a digit sits below the units */
-    if (a->exp10 > 15) return 0;        /* too large for the fast path */
+    if (a->exp10 > 9) return 0;         /* not guaranteed to fit a long */
     n = a->exp10;                       /* number of integer digits */
     if (a->sign) sign = -1;
     for (i = 0; i < n; i++)
@@ -839,43 +858,45 @@ int csn_pow(Csn *r, const Csn *a, const Csn *b)
         return CSN_OK;                          /* 0 ** positive = 0 */
     }
     if (csn_int_val(b, &k)) {
-        Csn acc;
-        int i, n, neg;
-        if (k < 0) {
-            Csn pos;
-            if (a->sign && !csn_is_zero(a)) {
-                /* negative base, negative integer exponent: fine */
+        /* the INTEGER exponent: BINARY SQUARING on the BCD bits of
+         * |b| - no long arithmetic, no exponent threshold (the old
+         * k > 64 branch rejected a negative base outright: (-2)**100
+         * errored though 2^100 is representable; the user's report,
+         * 2026-11-16).  The sign of a negative base is applied by
+         * the parity of the exponent; a negative exponent divides
+         * 1 by the power.  The squarings overflow naturally when
+         * the result leaves the exponent range. */
+        Csn acc, base, eb, two, t, babs, bits[64];
+        int nb = 0, i, negbase;
+        negbase = a->sign && !csn_is_zero(a);
+        csn_copy(&babs, b);
+        if (babs.sign) csn_neg(&babs, &babs);
+        csn_from_int(&two, 2L);
+        csn_copy(&eb, &babs);
+        while (!csn_is_zero(&eb) && nb < 64) {
+            if (csn_mod(&t, &eb, &two)) return CSN_ER_DOMAIN;
+            csn_copy(&bits[nb++], &t);
+            if (csn_sub(&eb, &eb, &t)) return CSN_ER_DOMAIN;
+            if (csn_div(&eb, &eb, &two)) return CSN_ER_DOMAIN;
+        }
+        if (!csn_is_zero(&eb)) return CSN_ER_OVERFLOW;
+        csn_abs(&base, a);
+        csn_from_int(&acc, 1L);
+        for (i = nb - 1; i >= 0; i--) {
+            err = csn_mul(&acc, &acc, &acc);        /* square */
+            if (err != CSN_OK) return err;
+            if (!csn_is_zero(&bits[i])) {
+                err = csn_mul(&acc, &acc, &base);   /* multiply */
+                if (err != CSN_OK) return err;
             }
-            csn_neg(&pos, b);
-            err = csn_pow(r, a, &pos);
-            if (err != CSN_OK) return err;
-            {
-                Csn one;
-                csn_from_int(&one, 1);
-                return csn_div(r, &one, r);
-            }
         }
-        if (k > 64) {
-            /* huge integer exponent: exp path will overflow out */
-            Csn t;
-            if (!csn_is_zero(a) && a->sign) return CSN_ER_DOMAIN;
-            err = csn_ln(&t, a);
-            if (err != CSN_OK) return err;
-            err = csn_mul(&t, &t, b);
-            if (err != CSN_OK) return err;
-            return csn_exp(r, &t);
+        if (negbase && !csn_is_zero(&bits[0])) acc.sign = 1;
+        if (b->sign) {
+            Csn one;
+            csn_from_int(&one, 1L);
+            return csn_div(r, &one, &acc);
         }
-        /* repeated multiplication */
-        csn_from_int(&acc, 1);
-        n = (int) k;
-        neg = a->sign;
-        for (i = 0; i < n; i++) {
-            err = csn_mul(&acc, &acc, a);
-            if (err != CSN_OK) return err;
-        }
-        /* fix the sign for a negative base: odd k keeps the sign */
         csn_copy(r, &acc);
-        if (!csn_is_zero(r) && neg && (n % 2 == 1)) r->sign = 1;
         return CSN_OK;
     }
     /* fractional exponent: needs a nonnegative base */
@@ -1712,14 +1733,6 @@ int csn_perm(Csn *r, const Csn *n, const Csn *k)
     return CSN_OK;
 }
 
-/* Euclid on the integer path; wide inputs (>~12 digits) would overflow
- * the long-math walk, so they map to the value-range error */
-static long long_gcd(long a, long b)
-{
-    while (b) { long t = a % b; a = b; b = t; }
-    return a < 0 ? -a : a;
-}
-
 static int gcd_err(const Csn *a)
 {
     /* csn_int_val caps at 15 integer digits; longs hold 18 - use 12 to
@@ -1730,34 +1743,60 @@ static int gcd_err(const Csn *a)
     return 0;
 }
 
+/* the BCD euclid: g = gcd(|a|, |b|), no native arithmetic (the old
+ * long-math walk overflowed a 32-bit long on the very inputs the
+ * 12-digit cap admits - the portability audit, 2026-11-16) */
+static int bcd_gcd(Csn *g, const Csn *a, const Csn *b)
+{
+    Csn t, bb, rem;
+    int err;
+    csn_abs(&t, a);
+    csn_abs(&bb, b);
+    while (!csn_is_zero(&bb)) {
+        err = csn_mod(&rem, &t, &bb);
+        if (err != CSN_OK) return err;
+        csn_copy(&t, &bb);
+        csn_copy(&bb, &rem);
+    }
+    csn_copy(g, &t);
+    return CSN_OK;
+}
+
 int csn_gcd(Csn *r, const Csn *a, const Csn *b)
 {
-    long ka, kb;
+    Csn g;
     if (csn_is_zero(a) && csn_is_zero(b)) return CSN_ER_DOMAIN;
-    if (gcd_err(a) || gcd_err(b) || !int_arg(a, &ka) || !int_arg(b, &kb))
-        return CSN_ER_DOMAIN;
+    if (gcd_err(a) || gcd_err(b)) return CSN_ER_DOMAIN;
     {
-        long g = long_gcd(ka, kb);
-        csn_from_int(r, g ? g : 1);
+        int err = bcd_gcd(&g, a, b);
+        if (err != CSN_OK) return err;
     }
+    if (csn_is_zero(&g)) csn_from_int(r, 1L);   /* gcd(0, x) = |x|; the
+                                                 * zero-zero case is
+                                                 * refused above */
+    else csn_copy(r, &g);
     return CSN_OK;
 }
 
 int csn_lcm(Csn *r, const Csn *a, const Csn *b)
 {
-    long ka, kb, g, prod, l;
-    Csn lv;
+    Csn aa, bb, g, l;
+    int err;
     if (csn_is_zero(a) || csn_is_zero(b)) { mkzero(r); return CSN_OK; }
-    if (gcd_err(a) || gcd_err(b) || !int_arg(a, &ka) || !int_arg(b, &kb))
-        return CSN_ER_DOMAIN;
-    g = long_gcd(ka, kb);
-    if (g == 0) return CSN_ER_DOMAIN;
-    prod = (ka / g) * kb;              /* may exceed long: map to overflow */
-    if (prod < 0) return CSN_ER_OVERFLOW;
-    l = prod;
-    if (l > 999999999999L || l < -999999999999L) return CSN_ER_OVERFLOW;
-    csn_from_int(&lv, l < 0 ? -l : l);
-    csn_copy(r, &lv);
+    if (gcd_err(a) || gcd_err(b)) return CSN_ER_DOMAIN;
+    /* LCM >= 0 by convention: the old long-math mapped a NEGATIVE
+     * product to "overflow" (LCM(-4,6) errored instead of 12 - the
+     * user's report, 2026-11-16) */
+    csn_abs(&aa, a);
+    csn_abs(&bb, b);
+    err = bcd_gcd(&g, &aa, &bb);
+    if (err != CSN_OK) return err;
+    err = csn_div(&l, &aa, &g);         /* |a|/g * |b|: exact, the
+                                          * intermediate < 10^24 */
+    if (err == CSN_OK) err = csn_mul(&l, &l, &bb);
+    if (err != CSN_OK) return err;
+    if (l.exp10 > 12) return CSN_ER_OVERFLOW;   /* the 12-digit cap */
+    csn_copy(r, &l);
     return CSN_OK;
 }
 
@@ -1801,6 +1840,17 @@ int csn_trunc(Csn *r, const Csn *x, const Csn *d)
     int dd, err;
     if (!dec_arg(d, &dd)) return CSN_ER_DOMAIN;
     if (dd == 0) { trunc_int(r, x); return CSN_OK; }
+    /* the IDENTITY shortcut (the user's report, 2026-11-16): when the
+     * value's lowest significant digit sits at a place >= |dd|, the
+     * operation cannot change it - ROUND(1E+999,1) overflowed the
+     * scale-up though the answer is the value itself.  For any
+     * representable value near the exponent ceiling the 40-digit
+     * mantissa guarantees this (a true fraction at that magnitude is
+     * unrepresentable). */
+    if (x->exp10 - x->ndig >= (dd < 0 ? -dd : dd) && x->ndig > 0) {
+        csn_copy(r, x);
+        return CSN_OK;
+    }
     err = csn_scale10(&scaled, x, dd);
     if (err != CSN_OK) return err;
     trunc_int(&scaled, &scaled);
@@ -1825,6 +1875,11 @@ int csn_round(Csn *r, const Csn *x, const Csn *d)
         trunc_int(&acc, &acc);
         if (x->sign) csn_neg(&acc, &acc);
         csn_copy(r, &acc);
+        return CSN_OK;
+    }
+    /* the IDENTITY shortcut (see csn_trunc) */
+    if (x->exp10 - x->ndig >= (dd < 0 ? -dd : dd) && x->ndig > 0) {
+        csn_copy(r, x);
         return CSN_OK;
     }
     /* scale up, round |scaled| to the nearest integer, scale back */

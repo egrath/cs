@@ -2171,6 +2171,54 @@ static void run_tests(void)
             { printf("FAIL factf guard copy\n"); fails++; }
         else printf("ok   the oversized factf copies as an error\n");
         cs_clear_all();
+        /* ==== the numerical-engine fixes (the user's report,
+         * 2026-11-16) ==== */
+        /* POW: the negative base with a large integer exponent */
+        ckc("pow neg big", "(-2)**100", "+1.2676506002282E+31");
+        ckc("pow neg odd", "(-2)**101", "-2.5353012004564E+31");
+        ckc("pow -1 odd", "(-1)**999", "-1.0000000000000E+1");
+        ckc("pow -1 even", "(-1)**1000", "+1.0000000000000E+1");
+        ckc("pow neg 40", "(-3)**40", "+1.2157665459056E+20");
+        cke("pow neg frac", "(-2)**0.5", -1);
+        /* LCM: the signs and the BCD euclid */
+        ckc("LCM -4,6", "LCM(-4,6)", "+1.2000000000000E+2");
+        ckc("LCM -4,-6", "LCM(-4,-6)", "+1.2000000000000E+2");
+        ckc("LCM 4,6", "LCM(4,6)", "+1.2000000000000E+2");
+        ckc("GCD -4,6", "GCD(-4,6)", "+2.0000000000000E+1");
+        ckc("GCD 0,x", "GCD(0,6)", "+6.0000000000000E+1");
+        cke("LCM over cap", "LCM(999999999999,2)", -1);
+        /* ROUND/TRUNC: the identity shortcut */
+        ckc("ROUND huge", "ROUND(9.9E+998,1)", "+9.9000000000000E+999");
+        ckc("TRUNC huge", "TRUNC(9.9E+998,1)", "+9.9000000000000E+999");
+        ckc("ROUND tens", "ROUND(1234,-1)", "+1.2300000000000E+4");
+        ckc("ROUND 125", "ROUND(125,-1)", "+1.3000000000000E+3");
+        ckc("TRUNC tens", "TRUNC(1239,-1)", "+1.2300000000000E+4");
+        /* EVEN/ODD: the last-digit parity, any magnitude */
+        ckc("EVEN 1E500", "EVEN(1E+500)", "+1.0000000000000E+1");
+        ckc("ODD 1E500", "ODD(1E+500)", "0");
+        ckc("ODD 7", "ODD(7)", "+1.0000000000000E+1");
+        ckc("EVEN -4", "EVEN(-4)", "+1.0000000000000E+1");
+        ckc("EVEN 10", "EVEN(10)", "+1.0000000000000E+1");
+        /* csn_parse: the malformed and oversized exponents */
+        cke("parse 1E+", "+1E+", 8);
+        cke("parse 1E", "+1E", 7);
+        cke("parse 1E-", "+1E-", 8);
+        ckc("parse 1E0", "+1E0", "+1.0000000000000E+1");
+        cke("parse huge exp", "+1E+99999", -1);
+        cke("parse 23-digit exp", "+1E99999999999999999999999", -1);
+        /* the TWO-PASS CORR/REGR: the offset line stays exact */
+        setv(0, 0, "1000001"); setv(0, 1, "1000002");
+        setv(0, 2, "1000003"); setv(0, 3, "1000004");
+        setv(1, 0, "2000003"); setv(1, 1, "2000005");
+        setv(1, 2, "2000007"); setv(1, 3, "2000009");
+        ckc("CORR offset line", "CORR(A1>A4,B1>B4)",
+            "+1.0000000000000E+1");
+        ckc("RSQ offset line", "RSQ(A1>A4,B1>B4)",
+            "+1.0000000000000E+1");
+        ckc("REGR offset meany", "REGR(A1>A4,B1)",
+            "+2.0000060000000E+7");
+        ckc("SLOPE() offset", "SLOPE()", "+2.0000000000000E+1");
+        cs_clear_all();
         /* ==== CONV: the unit conversion (batch D) ==== */
         ckc("CONV cm m", "CONV(100,\"cm\",\"m\")", "+1.0000000000000E+1");
         ckc("CONV inch mm", "CONV(1,\"inch\",\"mm\")",

@@ -1042,6 +1042,56 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE NUMERICAL-ENGINE FIXES (the user's reports, 2026-11-16,
+  branch "eng-numfix")**:
+  - POW: the integer exponent path rewritten as BINARY SQUARING on
+    the BCD bits of |b| - the old k > 64 branch REJECTED a negative
+    base outright ((-2)**100 errored though 2^100 is representable)
+    and the exp/ln fallback lost the exactness.  Now: exact for any
+    representable integer power (the pty shows the full 31-digit
+    2^100), the sign by the parity of the exponent, a negative
+    exponent divides 1, the squarings overflow naturally.  VERIFIED
+    against 60-digit decimal arithmetic.
+  - LCM/GCD: pure BCD euclid (bcd_gcd) - the old long-math mapped a
+    NEGATIVE product to overflow (LCM(-4,6) errored instead of 12)
+    and overflowed a 32-bit long on the inputs the 12-digit cap
+    admits.  LCM >= 0 by convention (the absolute values), the cap
+    applies to the result, GCD(0,x) = |x|.  long_gcd deleted.
+  - ROUND/TRUNC: the IDENTITY shortcut - when the value's lowest
+    significant digit sits at a place >= |dd| the operation cannot
+    change it (ROUND(9.9E+998,1) overflowed the scale-up though the
+    answer is the value; any representable value near the ceiling
+    has last-place >= exp10-40 >= |dd| since a true fraction at that
+    magnitude is unrepresentable).  NOTE: 1E+999 itself is OUT OF
+    RANGE (the engine's max < 10^999) - the pin uses 9.9E+998.
+  - EVEN/ODD: the parity is the parity of the LAST DIGIT - no native
+    conversion, exact for any magnitude.  THE MANTISSA TRAP: the
+    stored digits omit trailing zeros (1E+500 is one digit!) - the
+    value's true last digit is 0 when exp10 > ndig.  EVEN(1E+500) =
+    1 pinned.
+  - csn_parse: a MALFORMED exponent (E with no digits: 1E+/1E/1E-)
+    is CSN_ER_SYNTAX (the eval codes 8/7/8); the accumulator is
+    BOUNDED (latched past CSN_EMAX+4, the digits still consumed) -
+    the UBSan signed-overflow at num.c:372 is gone (ZERO runtime
+    errors under -fsanitize=undefined) and a huge exponent is
+    rejected as CSN_ER_OVERFLOW instead of accepting a wrapped
+    exponent.  1E0/1E00/1E-0 stay valid.
+  - THE LONG AUDIT: csn_int_val checks the digit count BEFORE the
+    conversion (9 digits fit every long; the old 15-digit cap
+    overflowed a 32-bit long on the DOS targets); csn_to_long_val
+    replaces atol with a checked digit loop (acc > (LONG_MAX-d)/10
+    -> saturate; the callers bound their values); long_gcd and
+    csn_lcm's long multiplication are GONE (pure BCD).
+  - CORR/RSQ/REGR: the TWO-PASS CENTERED form (the means first, then
+    the deviations) - the raw n*sxx-sx^2 form cancels catastrophically
+    for large offsets with small variations.  REGR: slope = Sxy/Sxx,
+    icept = my - slope*mx; CORR: r = Sxy/sqrt(Sxx*Syy).  The offset-
+    line pins are EXACT (r = 1, slope = 2 through values near 1e6).
+  PINS: 32.  --test 886 ok; the idle gate EXACT.  MY PIN SLIPS: the
+  canon exponents again (LCM 12 = E+2, 130 = E+3), 1E+999 is out of
+  range (9.9E+998 pinned), the REGR pin expected the slope where the
+  function returns meany.
+
 - **THE REGRESSION STATE FIXES (the user's reports, 2026-11-16,
   branch "bugfix-alloc")**: (1) THE STALE SNAPSHOT: cs_reg_reset()
   existed but nothing called it - a valid REGR, then a clear, then

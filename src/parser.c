@@ -4,6 +4,7 @@
  * anywhere, matching the original CalcStar engine. */
 #include <stdlib.h>
 #include <stdio.h>
+#include <limits.h>
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
@@ -381,13 +382,26 @@ static int csn_integer_part(const Csn *v, Csn *out)
     return 1;
 }
 
-/* the integer as a plain long (coordinates are small) */
+/* the integer as a plain long, WITHOUT atol: a checked digit loop
+ * (the portability audit, 2026-11-16 - atol cannot reject a BCD
+ * value wider than the host long, and a 32-bit long holds only 10
+ * digits; the callers either bound the value first or treat a
+ * failed fit as their error) */
 static long csn_to_long_val(const Csn *v)
 {
     char fb[80];
+    long acc = 0;
+    int i, neg = 0;
     csn_fmt_fixed(v, 0, fb, (int) sizeof(fb));
     if (!fb[0]) return 0;
-    return atol(fb);
+    if (fb[0] == '-') { neg = 1; i = 1; } else i = 0;
+    for (; fb[i]; i++) {
+        int d = fb[i] - '0';
+        if (fb[i] < '0' || fb[i] > '9') break;
+        if (acc > (LONG_MAX - d) / 10) return neg ? LONG_MIN : LONG_MAX;
+        acc = acc * 10 + d;
+    }
+    return neg ? -acc : acc;
 }
 
 static Val parse_condexpr(P *ps);   /* forward */
@@ -537,34 +551,56 @@ static int pair_walk(int c1, int r1, int d1, int e1, int sw, int sh,
     return 0;
 }
 
-/* the CORR/RSQ accumulator: sums through one aligned walk */
-struct corr_acc {
-    Csn sx, sy, sxx, syy, sxy;
+/* the CORR/RSQ accumulators (the TWO-PASS CENTERED form, the user's
+ * report 2026-11-16: the raw n*sxx - sx^2 form cancels catastrophically
+ * when the values have large offsets but small variations; the means
+ * come first, then the centered deviations).  Pass 1: the means. */
+struct corr_mean {
+    Csn sx, sy;
     long n;
 };
 
-static int corr_visit(void *ctx, const Csn *x, const Csn *y)
+static int corr_mean_visit(void *ctx, const Csn *x, const Csn *y)
 {
-    struct corr_acc *ca = (struct corr_acc *) ctx;
-    Csn t;
+    struct corr_mean *cm = (struct corr_mean *) ctx;
     int err;
-    err = csn_add(&ca->sx, &ca->sx, x);
+    err = csn_add(&cm->sx, &cm->sx, x);
     if (err) return 1;
-    err = csn_add(&ca->sy, &ca->sy, y);
+    err = csn_add(&cm->sy, &cm->sy, y);
     if (err) return 1;
-    err = csn_mul(&t, x, x);
+    cm->n++;
+    return 0;
+}
+
+/* pass 2: the centered deviations from the means */
+struct corr_cen {
+    Csn mx, my;
+    Csn sxy, sxx, syy;
+    long n;
+};
+
+static int corr_cen_visit(void *ctx, const Csn *x, const Csn *y)
+{
+    struct corr_cen *cc = (struct corr_cen *) ctx;
+    Csn dx, dy, t;
+    int err;
+    err = csn_sub(&dx, x, &cc->mx);
     if (err) return 1;
-    err = csn_add(&ca->sxx, &ca->sxx, &t);
+    err = csn_sub(&dy, y, &cc->my);
     if (err) return 1;
-    err = csn_mul(&t, y, y);
+    err = csn_mul(&t, &dx, &dx);
     if (err) return 1;
-    err = csn_add(&ca->syy, &ca->syy, &t);
+    err = csn_add(&cc->sxx, &cc->sxx, &t);
     if (err) return 1;
-    err = csn_mul(&t, x, y);
+    err = csn_mul(&t, &dy, &dy);
     if (err) return 1;
-    err = csn_add(&ca->sxy, &ca->sxy, &t);
+    err = csn_add(&cc->syy, &cc->syy, &t);
     if (err) return 1;
-    ca->n++;
+    err = csn_mul(&t, &dx, &dy);
+    if (err) return 1;
+    err = csn_add(&cc->sxy, &cc->sxy, &t);
+    if (err) return 1;
+    cc->n++;
     return 0;
 }
 
@@ -1612,11 +1648,14 @@ static Val parse_primary(P *ps)
             if (f == FN_EVEN || f == FN_ODD) {
                 /* EVEN(x)/ODD(x): 1 if the integer x is even/odd,
                  * 0 otherwise (user request 2026-11-15).  A
-                 * fractional or oversized argument is Error 0 (the
-                 * same csn_integer_part contract CHR uses) */
+                 * fractional argument is Error 0 (the CHR contract).
+                 * The PARITY is the parity of the LAST DIGIT - no
+                 * native conversion at all, exact for any integer
+                 * magnitude (the portability audit: the old path
+                 * converted through long, wrong on 32-bit hosts) */
                 Val a = parse_numarg(ps);
                 Csn t;
-                int cc;
+                int last;
                 if (!a.good) return a;
                 skip_ws(&ps->p);
                 if (*ps->p != ')') { val_err(&v, 3); val_free(&a); return v; }
@@ -1624,11 +1663,14 @@ static Val parse_primary(P *ps)
                 if (!csn_integer_part(&a.num, &t)) {
                     val_free(&a); val_err(&v, 0); return v;
                 }
-                cc = (int) csn_to_long_val(&t);
+                last = (t.exp10 > t.ndig)
+                           ? 0      /* the value ends in mantissa
+                                     * zeros (1E+500: even!) */
+                           : ((t.ndig > 0) ? t.nd[t.ndig - 1] : 0);
                 val_free(&a);
                 csn_from_int(&v.num,
-                             f == FN_EVEN ? (long) (cc % 2 == 0)
-                                          : (long) (cc % 2 != 0));
+                             f == FN_EVEN ? (long) (last % 2 == 0)
+                                          : (long) (last % 2 != 0));
                 v.good = 1;
                 return v;
             }
@@ -2090,11 +2132,11 @@ static Val parse_primary(P *ps)
                 {
                     int vertical = (c1 == c2);
                     int alen = vertical ? (r2 - r1 + 1) : (c2 - c1 + 1);
-                    Csn sx, sy, sxx, sxy, ncs, sxslope;
+                    Csn sx, sy, mx, my, sxx, sxy, ncs;
                     int i, n = 0, err;
                     csn_zero(&sx); csn_zero(&sy);
                     csn_zero(&sxx); csn_zero(&sxy);
-                    csn_zero(&ncs); csn_zero(&sxslope);
+                    csn_zero(&ncs);
                     for (i = 0; i < alen; i++) {
                         int cc = vertical ? c1 : c1 + i;
                         int rr = vertical ? r1 + i : r1;
@@ -2102,58 +2144,55 @@ static Val parse_primary(P *ps)
                         int dr = vertical ? r3 + i : r3;
                         Cell *x = cs_getcell(cc, rr);
                         Cell *y = cs_getcell(dc, dr);
-                        Csn px;
                         if (!x || !y || x->type != CE_NUM || x->iserr ||
                             y->type != CE_NUM || y->iserr) { val_err(&v, 9); return v; }
-                        /* EVERY observation feeds the running sums -
-                         * the old REGR_MAX 512-cap truncated the
-                         * regression silently (the user's report,
-                         * 2026-11-16); the dead gInd/gDep arrays it
-                         * served are gone */
+                        /* EVERY observation feeds the sums - the old
+                         * REGR_MAX 512-cap truncated the regression
+                         * silently (the user's report, 2026-11-16) */
                         n++;
                         err = csn_add(&sx, &sx, &x->val); if (err) { val_err(&v, 255); return v; }
                         err = csn_add(&sy, &sy, &y->val); if (err) { val_err(&v, 255); return v; }
-                        err = csn_mul(&px, &x->val, &x->val);
-                        if (err) { val_err(&v, 255); return v; }
-                        err = csn_add(&sxx, &sxx, &px); if (err) { val_err(&v, 255); return v; }
-                        err = csn_mul(&px, &x->val, &y->val);
-                        if (err) { val_err(&v, 255); return v; }
-                        err = csn_add(&sxy, &sxy, &px); if (err) { val_err(&v, 255); return v; }
                     }
                     if (n == 0) { val_err(&v, 255); return v; }
                     csn_from_int(&ncs, n);
-                    csn_mul(&sxslope, &ncs, &sxx);
-                    err = csn_mul(&v.num, &sx, &sx);    /* sx * sx */
-                    if (err) { val_err(&v, 255); return v; }
-                    err = csn_sub(&sxslope, &sxslope, &v.num);  /* denom = n*sxx - sx^2 */
-                    if (err) { val_err(&v, 255); return v; }
-                    if (csn_is_zero(&sxslope)) { val_err(&v, 9); return v; }
-                    /* slope = (n*sxy - sx*sy) / denom */
-                    {
-                        Csn numr, t;
-                        err = csn_mul(&numr, &ncs, &sxy);
+                    if (csn_div(&mx, &sx, &ncs) ||
+                        csn_div(&my, &sy, &ncs)) { val_err(&v, 255); return v; }
+                    /* pass 2: the centered deviations */
+                    csn_zero(&sxx); csn_zero(&sxy);
+                    for (i = 0; i < alen; i++) {
+                        int cc = vertical ? c1 : c1 + i;
+                        int rr = vertical ? r1 + i : r1;
+                        int dc = vertical ? c3 : c3 + i;
+                        int dr = vertical ? r3 + i : r3;
+                        Cell *x = cs_getcell(cc, rr);
+                        Cell *y = cs_getcell(dc, dr);
+                        Csn dx, dy, px;
+                        if (!x || !y || x->type != CE_NUM || x->iserr ||
+                            y->type != CE_NUM || y->iserr) { val_err(&v, 9); return v; }
+                        err = csn_sub(&dx, &x->val, &mx);
                         if (err) { val_err(&v, 255); return v; }
-                        err = csn_mul(&t, &sx, &sy);
+                        err = csn_sub(&dy, &y->val, &my);
                         if (err) { val_err(&v, 255); return v; }
-                        err = csn_sub(&numr, &numr, &t);
+                        err = csn_mul(&px, &dx, &dx);
                         if (err) { val_err(&v, 255); return v; }
-                        err = csn_div(&g_reg_slope, &numr, &sxslope);
+                        err = csn_add(&sxx, &sxx, &px); if (err) { val_err(&v, 255); return v; }
+                        err = csn_mul(&px, &dx, &dy);
                         if (err) { val_err(&v, 255); return v; }
-                        /* icept = (sy - slope*sx) / n */
-                        err = csn_mul(&t, &g_reg_slope, &sx);
-                        if (err) { val_err(&v, 255); return v; }
-                        err = csn_sub(&t, &sy, &t);
-                        if (err) { val_err(&v, 255); return v; }
-                        err = csn_div(&g_reg_icept, &t, &ncs);
-                        if (err) { val_err(&v, 255); return v; }
-                        /* meany = sy / n */
-                        err = csn_div(&g_reg_meany, &sy, &ncs);
-                        if (err) { val_err(&v, 255); return v; }
-                        g_reg_ok = 1;
-                        val_free(&v);
-                        csn_copy(&v.num, &g_reg_meany); v.good = 1;
-                        return v;
+                        err = csn_add(&sxy, &sxy, &px); if (err) { val_err(&v, 255); return v; }
                     }
+                    /* slope = Sxy / Sxx; icept = my - slope*mx */
+                    if (csn_is_zero(&sxx)) { val_err(&v, 9); return v; }
+                    err = csn_div(&g_reg_slope, &sxy, &sxx);
+                    if (err) { val_err(&v, 255); return v; }
+                    err = csn_mul(&v.num, &g_reg_slope, &mx);
+                    if (err) { val_err(&v, 255); return v; }
+                    err = csn_sub(&g_reg_icept, &my, &v.num);
+                    if (err) { val_err(&v, 255); return v; }
+                    csn_copy(&g_reg_meany, &my);
+                    g_reg_ok = 1;
+                    val_free(&v);
+                    csn_copy(&v.num, &g_reg_meany); v.good = 1;
+                    return v;
                 }
             }
             /* SQRT LOG LN ABS EXP first */
@@ -2640,46 +2679,49 @@ static Val parse_primary(P *ps)
              * Zero variance on either side or fewer than 2 pairs is
              * an error.  RSQ = r*r, computed as num^2/denom. */
             if (f == FN_CORR || f == FN_RSQ) {
-                struct corr_acc ca;
+                struct corr_mean cm;
+                struct corr_cen cc;
                 int c1, r1, d1, e1, sw, sh, werr, wr;
-                Csn ncs, numr, dx, dy, dd, t;
+                Csn ncs, dd, t;
                 int err;
-                memset(&ca, 0, sizeof(ca));
-                csn_zero(&ca.sx); csn_zero(&ca.sy);
-                csn_zero(&ca.sxx); csn_zero(&ca.syy);
-                csn_zero(&ca.sxy);
+                memset(&cm, 0, sizeof(cm));
+                csn_zero(&cm.sx); csn_zero(&cm.sy);
                 wr = pair_parse(ps, 0, &t, &werr,
                                 &c1, &r1, &d1, &e1, &sw, &sh);
                 if (wr != 0) {
                     if (werr >= 0) { val_err(&v, werr); return v; }
                     val_err(&v, 0); return v;
                 }
+                /* pass 1: the means */
                 if (pair_walk(c1, r1, d1, e1, sw, sh, 1, &werr,
-                              &ca, corr_visit)) {
+                              &cm, corr_mean_visit)) {
                     val_err(&v, 0); return v;
                 }
                 val_free(&v);
                 csn_zero(&v.num);
-                if (ca.n < 2) { val_err(&v, 0); return v; }
-                csn_from_int(&ncs, ca.n);
-                err = csn_mul(&numr, &ncs, &ca.sxy);
-                if (!err) err = csn_mul(&t, &ca.sx, &ca.sy);
-                if (!err) err = csn_sub(&numr, &numr, &t);
-                if (!err) err = csn_mul(&dx, &ncs, &ca.sxx);
-                if (!err) { err = csn_mul(&t, &ca.sx, &ca.sx);
-                            if (!err) err = csn_sub(&dx, &dx, &t); }
-                if (!err) err = csn_mul(&dy, &ncs, &ca.syy);
-                if (!err) { err = csn_mul(&t, &ca.sy, &ca.sy);
-                            if (!err) err = csn_sub(&dy, &dy, &t); }
-                if (!err) err = csn_mul(&dd, &dx, &dy);
+                if (cm.n < 2) { val_err(&v, 0); return v; }
+                csn_from_int(&ncs, cm.n);
+                memset(&cc, 0, sizeof(cc));
+                csn_zero(&cc.sxy); csn_zero(&cc.sxx); csn_zero(&cc.syy);
+                if (csn_div(&cc.mx, &cm.sx, &ncs) ||
+                    csn_div(&cc.my, &cm.sy, &ncs)) {
+                    val_err(&v, 0); return v;
+                }
+                /* pass 2: the centered deviations */
+                if (pair_walk(c1, r1, d1, e1, sw, sh, 1, &werr,
+                              &cc, corr_cen_visit)) {
+                    val_err(&v, 0); return v;
+                }
+                /* r = Sxy / sqrt(Sxx * Syy) - no cancellation */
+                err = csn_mul(&dd, &cc.sxx, &cc.syy);
                 if (err) { val_err(&v, 0); return v; }
                 if (csn_is_zero(&dd)) { val_err(&v, 0); return v; }
                 if (f == FN_RSQ) {
-                    err = csn_mul(&t, &numr, &numr);
+                    err = csn_mul(&t, &cc.sxy, &cc.sxy);
                     if (!err) err = csn_div(&v.num, &t, &dd);
                 } else {
                     err = csn_sqrt(&t, &dd);
-                    if (!err) err = csn_div(&v.num, &numr, &t);
+                    if (!err) err = csn_div(&v.num, &cc.sxy, &t);
                 }
                 if (err) { val_err(&v, 0); return v; }
                 v.good = 1;
