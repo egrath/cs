@@ -1248,6 +1248,8 @@ column/row headers move up and the whole layout still fits 24 lines.
 | arrows      | same movement (cursor keys on terminals that send them) |
 | `^Z`       | column A, next row                                |
 | RETURN     | commit entry, cursor stays (move right when idle) |
+| DEL        | delete the current entry (like `;D E`; the ASCII DEL
+              key keeps its backspace role while editing) |
 | TAB        | Goto  (`Goto> coord`)                             |
 | `;`        | command menu (see below)                          |
 
@@ -1362,14 +1364,21 @@ records (count of):
   ncont 2 bytes + bytes  contents as typed
   numeric only:
       BCD value: sign byte, exp10 2 bytes (LE, signed),
-                 ndig byte, 22 digit bytes (0..9, most significant
-                 first - the on-disk record is pinned to the
-                 original's 22 digits)
+                 ndig byte, ndig digit bytes (0..9, most significant
+                 first - the FULL mantissa is stored, up to the
+                 engine's 40 digits; old 22-digit files load
+                 unchanged, the loader reads the variable count)
       nstr  2 bytes + bytes  string result (formula returning text)
   nrep  2 bytes + bytes  repeat pattern (just 'W')
 ```
 
 Older magics ("CSD1", "CSD2", "CSD3") are refused with `READ ERROR`.
+
+**Loading at a different origin**: a formula loaded into another
+location behaves like a copy there — its relative references shift
+by the load offset (frozen `!` references and `!…!` value holders
+stay as typed), so `+A1*2` stored at one corner and loaded at
+another re-points to the shifted data.
 
 **Loader hardening (2026-11-15)**: a file is validated completely
 BEFORE the current sheet is touched - a malformed, truncated or

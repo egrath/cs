@@ -68,6 +68,15 @@
   output (TEST / the two plain rows / the trailer); the idle gate
   EXACT.
 
+## BATCH (branch "finalfix" -> merged to master): the final batch merged (2026-11-16):
+- USER approved; merged fast-forward to master (5cfedcc), pushed, the
+  branch deleted (local + origin).  Post-merge gates: --test 899 ok,
+  build.count 264, the idle gate EXACT.  README updated (the
+  full-precision record layout, the DEL key in the Keys table, the
+  load-origin adjust in the file-format section).  THE REVIEW ROUNDS
+  ARE COMPLETE: 24 findings across 5 review batches + the memory/
+  numerical/safety/engine batches - all on master with 899 pins.
+
 ## BATCH (branch "finalfix"): the final batch (2026-11-16):
 - USER: the load-origin refs, the full-precision CSD, the dynamic
   error queue, -lm, the DEL key, the GCC-14 warnings.
