@@ -48,6 +48,25 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "printfix"): the print fix (2026-11-16):
+- USER: the 2x2 sheet printed with a title showed the first row
+  DUPLICATED as an indented "heading" line.
+- DIAGNOSIS: the fix=1 default applied the fix-ordinates behavior to
+  the A1 corner (the prompt is skipped for A1, so the implicit
+  answer should be NO) - the heading line rendered row r1's cells,
+  and every data line carried the 6-space ordinate margin.
+- DONE: fix = 0 default + the explicit noord = (c1==0 && r1==0): the
+  A1 print emits NO ordinates line and an empty label margin.  The
+  fix=1 semantics for the non-A1 corners untouched.
+- THE PTY DEBUGGING NOTE: the commit keeps the cursor (the naive
+  typing replaced A1); the arrow escapes leaked into entries; the
+  title loop breaks on an EMPTY first title (the  before the TEST
+  landed it in the sheet) - all script bugs.  The flow verified:
+  the fix prompt appears for the non-A1 corners.
+- VERIFIED: --test 895 ok; the pty shows the user's EXACT expected
+  output (TEST / the two plain rows / the trailer); the idle gate
+  EXACT.
+
 ## BATCH (branch "safetyfix"): the memory-safety batch (2026-11-16):
 - USER: print_render's unbounded strres; csn_fmt_sci/cs_fmt_num's
   buffer sizes; cs_msg's vsprintf (the ~253-char dependency list

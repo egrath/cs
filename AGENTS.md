@@ -1042,6 +1042,28 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE PRINT FIX (the user's report, 2026-11-16, branch
+  "printfix")**: with the top-left corner at A1 the print applied the
+  FIX-ORDINATES behavior (the old `fix = 1` default; the prompt is
+  skipped when A1 is chosen, so the implicit answer never arrived) -
+  the first data row duplicated as a "heading" line, every data line
+  indented by the ordinate margin, and the fix=0 branch would even
+  have printed the column letters.  FIX: fix = 0 by default + the
+  explicit noord = (c1 == 0 && r1 == 0) flag: the A1 print emits NO
+  ordinates line at all and an EMPTY row-label margin ("the array
+  prints as shown").  The fix=1 semantics for the non-A1 corners
+  (the headings from the range's first row, the row labels from the
+  column to the left) are untouched.  THE PTY PROOF: the user's
+  exact repro (A1=aaa B1=bbb A2=ccc B2=ddd, the title TEST) now
+  produces exactly TEST / the two plain rows / -** End of report.
+  THE PTY DEBUGGING NOTE (two hours): the data-entry commit KEEPS
+  the cursor, so the naive aaa\r bbb\r typing REPLACED A1; the
+  arrow-key escape sequences leaked into typed entries; and the
+  print dialog's title loop breaks on an EMPTY first title (the \r
+  before the TEST text landed it in the sheet) - all script bugs,
+  the app was right.  THE FLOW VERIFIED: the fix=1 prompt appears
+  for the non-A1 corners (B2:C3 smoke-tested).
+
 - **THE MEMORY-SAFETY BATCH (the user's report, 2026-11-16, branch
   "safetyfix")**:
   - print_render: the STRING-RESULT length is bounded to the width -

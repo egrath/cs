@@ -122,7 +122,7 @@ void cs_print_cmd(void)
     char dest[64], tl[40], br[40], tmp[40];
     char path[64];
     int c1, r1, c2, r2;
-    int form, stopp, pw, fix, ntitle = 0;
+    int form, stopp, pw, fix, noord, ntitle = 0;
     char titles[5][62];
     FILE *f = NULL;
     int console, delimited;
@@ -274,9 +274,14 @@ gotcol:
                                           * report: the heading
                                           * assembly buffer is 256) */
     /* manual 14-13: the prompt appears when A1 was NOT chosen as the
-     * top left corner; otherwise the array prints as shown */
-    fix = 1;
-    if (c1 != 0 || r1 != 0) {
+     * top left corner; otherwise the array prints as shown.  With A1
+     * the answer is implicitly NO (the user's report, 2026-11-16:
+     * the old fix = 1 default applied the fix-ordinates behavior to
+     * the A1 case - the first data row duplicated as a "heading"
+     * line, every data line indented by the ordinate margin) */
+    fix = 0;
+    noord = (c1 == 0 && r1 == 0);
+    if (!noord) {
         fix = cs_prompt_yn("Fix ordinates (y,n)?");
         cs_draw();
         if (fix < 0) goto fail;
@@ -356,8 +361,9 @@ gotcol:
                         else fprintf(f, "%s\n", titles[t]);
                         lines++;
                     }
-                    /* ordinates: column headings */
-                    if (console || f) {
+                    /* ordinates: column headings; the A1 corner
+                     * prints NONE (the array prints as shown) */
+                    if ((console || f) && !noord) {
                         char line[256];
                         int n = 0;
                         if (fix) {
@@ -421,7 +427,10 @@ gotcol:
             } else if (console) {
                 char lab[16], rend[CS_MAX_W + 2];
                 int cc;
-                if (fix) {
+                if (noord) {
+                    lab[0] = '\0';         /* the A1 corner: no
+                                              * ordinate margin */
+                } else if (fix) {
                     Cell *h = cs_getcell(c1 - 1, row);
                     if (c1 > 0 && h && h->type != CE_EMPTY) {
                         lab[0] = '\0';
@@ -438,7 +447,10 @@ gotcol:
             } else {
                 char lab[16], rend[CS_MAX_W + 2];
                 int cc;
-                if (fix) {
+                if (noord) {
+                    lab[0] = '\0';         /* the A1 corner: no
+                                              * ordinate margin */
+                } else if (fix) {
                     Cell *h = cs_getcell(c1 - 1, row);
                     if (c1 > 0 && h && h->type != CE_EMPTY) {
                         lab[0] = '\0';
