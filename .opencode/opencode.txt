@@ -1950,3 +1950,23 @@ PREVIOUS BATCH (5 items, verified):
 - Gates green: --test, idle MATCH, gcc-14 zero warnings, t4b (sort/
   save/print/auto/quit-cancel) IDENTICAL vs master with render3.
   Harness for 4b in flight.
+
+## THE UIDRAW MERGE (2026-11-16)
+- The "uidraw" branch merged to master (fast-forward c5c8dbb ->
+  837317b) and deleted locally + remotely. Phases: 1 = clear() removed
+  + line-blanking discipline (2842B/4-erases -> 1259B/1, the flicker
+  gone); 2 = the four paint components; 3+4 = the dirty-flag engine
+  (cs_touch/cs_paint, CS_D_* flags in cs.h) + the mutator conversions
+  (the no-dirty-flags contract: cs_paint with clean flags never wipes
+  the message row); 5 = the fine-grained cursor (4 char writes per
+  move, mark-gap tracking in draw_rows); 6 = the static menu by
+  construction (the hot paths never mark CS_D_MENU); 7 = the
+  measurement table in AGENTS.md; 4b = the command repaints narrowed
+  + crepaint unconditional (no guaranteed drain for deferred dialog
+  paints under a pasted burst).
+- Post-merge gates on master: make clean+make zero warnings, --test
+  all pass, the idle gate MATCH. The renderer lives at /tmp/render3.py
+  (full CSI); the harness scripts at /tmp/fcrun.py + /tmp/frameseg3.py
+  (16 checkpoints, ~35 min, background); the reading pty driver at
+  /tmp/cpudrv3.py. The master-worktree comparison builds live at
+  /tmp/cs_master and /tmp/cs_p34 (worktrees, removed at the merge).
