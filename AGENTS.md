@@ -1042,6 +1042,56 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE MEMORY BATCH (the user's report, 2026-11-16, branch
+  "memfix2")**:
+  - (A) THE REGRESSION ARRAYS: already gone (the regression-state
+    batch deleted gInd/gDep/REGR_MAX - the reviewer's finding
+    predated it).
+  - (B) SPLINE allocates by COUNT: a counting pass (the same
+    pair-walk) precedes the EXACT allocation - a two-point spline's
+    transient dropped from ~47 KB to a few hundred bytes; the 512
+    bound stays (the documented shared limit).  The old flat
+    SPLINE_MAX arrays cost ~47 KB for ANY spline.
+  - (C) THE SNAPSHOT IS SPARSE: clone_snap holds only the POPULATED
+    cells with their relative coordinates ({rc, rr, Cell}, the
+    strings strdup'd), binary-searched by position - the old dense
+    rectangle cost 3.6 MB at 255x127.  Signals: n = -1 (the alloc
+    failure) vs n = 0 (a WHOLLY BLANK source - the copy then clears
+    the overlapping targets).  THE FILL NEEDS NO SNAPSHOT AT ALL:
+    its writes never touch the source block (nearest-to-source
+    ordering) - fill_one reads the live sources and clone_cells/
+    free_clones are gone.  THE CLONE LEAK: the unwind frees the
+    CURRENT entry's already-duplicated strings (the fields are
+    NULLed before the assignment, so a non-NULL field is ours) - the
+    reviewer's find.
+  - (D) EMPTY SLOTS: cs_release_if_empty(col,rw) (cells.c) drops a
+    slot that carries NOTHING (not CE_EMPTY content, no
+    formf/factf/prec/notation) - the PREFERRED option of the two
+    the reviewer offered (no second counter).  Applied at the two
+    stranding sites: cs_commit_entry (a ?-calculator entry allocated
+    then returned - the pool drained while entriesUsed looked fine,
+    the user's repro) and exec_set_stmt's failure returns.  PIN: the
+    ?-commit leaves cs_getcell NULL and entriesUsed 0; the failed
+    SETs (the arg-count/type errors) likewise.
+  - (E) THE RESERVE-FIRST RELINK: cs_relink_cell returns int and
+    ensures the destination index's capacity BEFORE any mutation -
+    the old order removed the source, released the target, THEN
+    grew, so a failed realloc DESTROYED the source mid-shift.  The
+    callers guard the -1 (the shifts stop with MEMORY IS TOO LOW -
+    a partial shift, flagged; the swap frees its strdup temps and
+    aborts; the swap is capacity-neutral so the failure is
+    unreachable in practice).  THE COPY BUDGET PRE-CHECK: the net
+    growth (the populated sources - the populated destinations) is
+    checked UPFRONT - an over-budget copy refuses instead of dying
+    halfway (the pinned 3997+2-seed refusal; the loader's
+    clear-then-fail was already fixed by the two-pass validation).
+  PINS: 6 (the calculator slot, the failed SET slots, the
+  overlapping blank copy, the budget refusal, the existing
+  spline/fill/shift pins all green).  --test 892 ok.  MY PIN BUGS:
+  the 3999-cell seed overflowed the 255-row sheet (16 columns), the
+  CS_BUDGET 4000 left no room for the copy's sources (3997+2), and
+  a duplicated pin block with a broken string literal.
+
 - **THE NUMERICAL-ENGINE FIXES (the user's reports, 2026-11-16,
   branch "eng-numfix")**:
   - POW: the integer exponent path rewritten as BINARY SQUARING on

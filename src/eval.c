@@ -378,6 +378,11 @@ int cs_commit_entry(int col, int rw, const char *entry)
     cs_eval_ctx_row = rw;
     r = cs_commit_core(col, rw, entry);
     cs_eval_ctx_on = so; cs_eval_ctx_col = sc2; cs_eval_ctx_row = sr2;
+    /* the slot CLEANUP (the user's memory report, 2026-11-16): the
+     * core allocates the cell FIRST, so a ?-calculator entry (an
+     * evaluation without a store) stranded an empty POOL SLOT - the
+     * pool drained while entriesUsed looked fine */
+    cs_release_if_empty(col, rw);
     return r;
 }
 

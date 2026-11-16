@@ -48,6 +48,27 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "memfix2"): the memory batch (2026-11-16):
+- USER: (A) the regression arrays (already gone); (B) SPLINE's flat
+  SPLINE_MAX allocation; (C) the dense clone snapshot (3.6 MB) + the
+  clone-leak; (D) empty slots draining the pool (the ?-calculator
+  commit, failed SETs); (E) cs_relink_cell's realloc destroying the
+  source.
+- DONE: (B) the counting pass -> the exact allocation; (C) the
+  sparse snapshot ({rc,rr,Cell}, binary search, the n=-1/n=0
+  signals) + the fill's snapshot REMOVED entirely (its writes never
+  touch the source block) + the clone-leak fix (the current entry's
+  strdup'd fields freed); (D) cs_release_if_empty at the commit and
+  the SET failure exits (the preferred option - no second counter);
+  (E) the reserve-first relink returning int + the guarded callers
+  (the shifts stop with MEMORY IS TOO LOW; the swap aborts) + the
+  copy's net-growth budget pre-check.
+- MY PIN BUGS: the seed overflowed the 255-row sheet, the budget
+  seed left no room for the sources (3997+2), a duplicated broken
+  pin block.
+- VERIFIED: --test 892 ok; the pty shows the ?-commit leaving no
+  slot (Room for 4000 entries); the idle gate EXACT.
+
 ## BATCH (branch "eng-numfix"): the numerical-engine fixes (2026-11-16):
 - USER: POW (negative bases fail for integer exponents > 64), LCM
   (opposite signs error), ROUND/TRUNC (overflow on representable

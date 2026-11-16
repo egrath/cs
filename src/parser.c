@@ -664,14 +664,28 @@ static int diff_visit(void *ctx, const Csn *x, const Csn *y)
 struct spline_tab {
     Csn *xs, *ys;
     long n;
+    int cap;
 };
 
 static int spline_visit(void *ctx, const Csn *x, const Csn *y)
 {
     struct spline_tab *st = (struct spline_tab *) ctx;
-    if (st->n >= SPLINE_MAX) return 1;
+    if (st->n >= st->cap) return 1;
     csn_copy(&st->xs[st->n], x);
     csn_copy(&st->ys[st->n], y);
+    st->n++;
+    return 0;
+}
+
+/* the COUNTING pass (the user's memory report, 2026-11-16): the
+ * arrays were allocated at SPLINE_MAX regardless of the point count
+ * (a two-point spline cost ~47 KB transient); the count comes first
+ * and the allocation is exact */
+static int spline_count_visit(void *ctx, const Csn *x, const Csn *y)
+{
+    struct spline_tab *st = (struct spline_tab *) ctx;
+    (void) x; (void) y;
+    if (st->n >= SPLINE_MAX) return 1;
     st->n++;
     return 0;
 }
@@ -2543,11 +2557,23 @@ static Val parse_primary(P *ps)
                     if (werr >= 0) { val_err(&v, werr); return v; }
                     val_err(&v, 0); return v;
                 }
-                st.xs = (Csn *) malloc((size_t) SPLINE_MAX *
-                                       sizeof(Csn));
-                st.ys = (Csn *) malloc((size_t) SPLINE_MAX *
-                                       sizeof(Csn));
-                if (!st.xs || !st.ys) {
+                /* the counting pass, then the EXACT allocation
+                 * (the user's memory report, 2026-11-16) */
+                st.cap = 0;
+                st.n = 0;
+                if (pair_walk(c1, r1, d1, e1, sw, sh, 0, &werr,
+                              &st, spline_count_visit)) {
+                    val_err(&v, 0); return v;
+                }
+                st.cap = (int) st.n;
+                st.n = 0;
+                st.xs = st.n || st.cap
+                    ? (Csn *) malloc((size_t) st.cap * sizeof(Csn))
+                    : NULL;
+                st.ys = st.cap
+                    ? (Csn *) malloc((size_t) st.cap * sizeof(Csn))
+                    : NULL;
+                if (st.cap && (!st.xs || !st.ys)) {
                     free(st.xs); free(st.ys);
                     val_err(&v, 0); return v;
                 }
@@ -3469,7 +3495,11 @@ static void exec_set_stmt(const char *args, int *err)
     cell = cs_alloc_cell(tgt.ref.col, tgt.ref.row);
     if (!cell) { cs_msg("MEMORY IS TOO LOW"); val_free(&tgt); *err = 0; return; }
     skip_ws(&sub.p);
-    if (*sub.p != ',') { val_free(&tgt); *err = 7; return; }
+    if (*sub.p != ',') {
+        val_free(&tgt); *err = 7;
+        cs_release_if_empty(tgt.ref.col, tgt.ref.row);
+        return;
+    }
     sub.p++;
 
     /* the value: fully evaluated BEFORE the target is modified */
@@ -3477,13 +3507,17 @@ static void exec_set_stmt(const char *args, int *err)
     if (!v.good) {
         *err = v.err;                   /* 0 = the value-range class */
         val_free(&v);
+        cs_release_if_empty(tgt.ref.col, tgt.ref.row);
         return;
     }
     while (*sub.p == ' ') sub.p++;
-    if (*sub.p) { val_free(&v); val_free(&tgt); *err = 7; return; }
+    if (*sub.p) { val_free(&v); val_free(&tgt); *err = 7;
+        cs_release_if_empty(tgt.ref.col, tgt.ref.row); return; }
     e = val_deref(&v);                  /* option 3: a value derefs */
-    if (e >= 0) { val_free(&v); val_free(&tgt); *err = e; return; }
-    if (v.type == VT_RANGE) { val_free(&v); val_free(&tgt); *err = 6; return; }
+    if (e >= 0) { val_free(&v); val_free(&tgt); *err = e;
+        cs_release_if_empty(tgt.ref.col, tgt.ref.row); return; }
+    if (v.type == VT_RANGE) { val_free(&v); val_free(&tgt); *err = 6;
+        cs_release_if_empty(tgt.ref.col, tgt.ref.row); return; }
 
     /* the entry-pool budget was checked by cs_alloc_cell (NULL =>
      * MEMORY IS TOO LOW at the target resolution) */

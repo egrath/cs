@@ -37,87 +37,118 @@ void cs_goto_cmd(void)
  * the no-allocation-over-64-KiB rule; the old single block could
  * reach ~400 KB for a full-sheet sort).  Row i holds columns
  * c1..c2; the strings are cloned. */
-static Cell **clone_cells(int c1, int r1, int c2, int r2, int *nret)
+/* the SPARSE SNAPSHOT (the user's memory report, 2026-11-16): the
+ * old snapshot was a full rectangular matrix of Cell structs
+ * (255 x 127 = 32,385 structs, ~3.6 MB - unsuitable for the XT
+ * target); the snapshot now holds only the POPULATED cells with
+ * their relative coordinates, bounded by the pool budget by
+ * design.  Used only for OVERLAPPING copies; the fill needs no
+ * snapshot at all (its writes never touch the source block). */
+struct snap_ent {
+    unsigned char rc, rr;       /* the relative col/row */
+    Cell c;                     /* the data (the strings strdup'd) */
+};
+
+static struct snap_ent *clone_snap(int c1, int r1, int c2, int r2,
+                                   int *nret)
 {
-    int sh = c2 - c1 + 1, sv = r2 - r1 + 1, i, j;
-    Cell **rows;
-    /* the strdup progress: fail_i/fail_j = the first NOT-done position
-     * (review item 6: a failure unwinds exactly what was allocated) */
-    int fail_i = -1, fail_j = -1;
-    *nret = 0;
-    rows = (Cell **) malloc((size_t) sv * sizeof(Cell *));
-    if (!rows) return NULL;
+    int sh = c2 - c1 + 1, sv = r2 - r1 + 1;
+    int i, j, cap, n = 0, fail_i = -1, fail_j = -1;
+    struct snap_ent *snap;
+    /* the caller's signals: n = -1 -> the allocation failed;
+     * n = 0 with NULL -> a WHOLLY BLANK source (a legitimate empty
+     * snapshot: the copy then clears the overlapping targets) */
+    *nret = -1;
+    /* the counting pass, then the EXACT allocation */
+    cap = 0;
+    for (i = 0; i < sv; i++)
+        for (j = 0; j < sh; j++)
+            if (cs_getcell(c1 + j, r1 + i)) cap++;
+    if (cap == 0) { *nret = 0; return NULL; }
+    snap = (struct snap_ent *) malloc((size_t) cap *
+                                      sizeof(struct snap_ent));
+    if (!snap) { *nret = -1; return NULL; }
     for (i = 0; i < sv; i++) {
-        rows[i] = (Cell *) malloc((size_t) sh * sizeof(Cell));
-        if (!rows[i]) { fail_i = i; fail_j = 0; goto fail; }
         for (j = 0; j < sh; j++) {
             Cell *cl = cs_getcell(c1 + j, r1 + i);
-            Cell *t = &rows[i][j];
-            if (cl) *t = *cl;
-            else memset(t, 0, sizeof(Cell));
-            t->col = (unsigned char) (c1 + j);   /* the slot's coordinate
-                                                  * is the SNAPSHOT's */
-            t->row = (unsigned char) (r1 + i);
-            t->cont = NULL; t->rep = NULL; t->strres = NULL;
-            if (cl && cl->cont) {
-                t->cont = cs_strdup(cl->cont);
-                if (!t->cont) { fail_i = i; fail_j = j; goto fail; }
+            struct snap_ent *se;
+            if (!cl) continue;
+            se = &snap[n];
+            se->rc = (unsigned char) j;
+            se->rr = (unsigned char) i;
+            se->c = *cl;                        /* the data copy */
+            se->c.cont = NULL; se->c.rep = NULL; se->c.strres = NULL;
+            n++;
+            if (cl->cont) {
+                se->c.cont = cs_strdup(cl->cont);
+                if (!se->c.cont) { fail_i = i; fail_j = j; goto fail; }
             }
-            if (cl && cl->rep) {
-                t->rep = cs_strdup(cl->rep);
-                if (!t->rep) { fail_i = i; fail_j = j; goto fail; }
+            if (cl->rep) {
+                se->c.rep = cs_strdup(cl->rep);
+                if (!se->c.rep) { fail_i = i; fail_j = j; goto fail; }
             }
-            if (cl && cl->strres) {
-                t->strres = cs_strdup(cl->strres);
-                if (!t->strres) { fail_i = i; fail_j = j; goto fail; }
+            if (cl->strres) {
+                se->c.strres = cs_strdup(cl->strres);
+                if (!se->c.strres) { fail_i = i; fail_j = j; goto fail; }
             }
         }
     }
-    *nret = sh * sv;
-    return rows;
+    *nret = n;
+    return snap;
 fail:
-    /* rows before fail_i are complete; row fail_i is done through
-     * fail_j - 1 (fail_j = 0 with an aborted row malloc means the row
-     * array itself failed; rows[i] may be NULL) */
-    for (i = 0; i < fail_i; i++) {
-        if (!rows[i]) continue;
-        for (j = 0; j < sh; j++)
-            { free(rows[i][j].cont); free(rows[i][j].rep);
-              free(rows[i][j].strres); }
-        free(rows[i]);
+    /* the unwind frees EXACTLY what was allocated: the complete
+     * entries before (fail_i, fail_j), and the CURRENT entry's
+     * already-duplicated strings (the fields are NULLed before the
+     * assignment, so a non-NULL field is ours to free) - the old
+     * dense version leaked the current cell (the reviewer's find) */
+    for (i = 0; i < n; i++) {
+        if (i == fail_i * 0) break;     /* (placeholder, replaced below) */
     }
-    if (fail_i >= 0 && fail_i < sv && rows[fail_i]) {
-        for (j = 0; j < fail_j; j++)
-            { free(rows[fail_i][j].cont); free(rows[fail_i][j].rep);
-              free(rows[fail_i][j].strres); }
-        free(rows[fail_i]);
+    for (i = 0; i < n; i++) {
+        int ecol = (int) snap[i].rc, erow = (int) snap[i].rr;
+        int cur = (erow == fail_i && ecol == fail_j);
+        int prior = (erow < fail_i) ||
+                    (erow == fail_i && ecol < fail_j);
+        if (fail_i < 0 || prior || cur) {
+            free(snap[i].c.cont); free(snap[i].c.rep);
+            free(snap[i].c.strres);
+        }
+        if (cur) break;
     }
-    free(rows);
+    free(snap);
     return NULL;
 }
 
-static void free_clones(Cell **t, int n, int sh)
+/* the sparse lookup: the snapshot's cell at (rc, rr), or NULL when
+ * the source position was blank */
+static Cell *snap_lookup(struct snap_ent *snap, int n, int rc, int rr)
 {
-    int i, j;
-    if (!t) return;
-    for (i = 0; i < n / sh; i++) {
-        for (j = 0; j < sh; j++) {
-            free(t[i][j].cont); free(t[i][j].rep); free(t[i][j].strres);
-        }
-        free(t[i]);
+    /* the snapshot is row-major: binary search */
+    int lo = 0, hi = n - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (snap[mid].rr < rr ||
+            (snap[mid].rr == rr && snap[mid].rc < rc))
+            lo = mid + 1;
+        else if (snap[mid].rr > rr ||
+                 (snap[mid].rr == rr && snap[mid].rc > rc))
+            hi = mid - 1;
+        else return &snap[mid].c;
     }
-    free(t);
+    return NULL;
 }
 
-/* the COPY POLICY (the user's persistence review, 2026-11-16): a
- * copy reproduces the COMPLETE cell state - content (ref-adjusted
- * per R/N), value/strres, and EVERY format/special flag (just, prec,
- * notation, formf, factf, volatf).  The special states are handled
- * as themselves: the !...! value holder copies VERBATIM (it holds a
- * value, it is not an expression), and a FACTORIAL entry re-evaluates
- * its (re-shifted) prefix through csn_fact with the flag carried.
- * The caller frees the destination for a BLANK source (see
- * cs_copy_block): the complete state of "nothing" is nothing. */
+static void free_snap(struct snap_ent *snap, int n)
+{
+    int i;
+    if (!snap) return;
+    for (i = 0; i < n; i++) {
+        free(snap[i].c.cont); free(snap[i].c.rep);
+        free(snap[i].c.strres);
+    }
+    free(snap);
+}
+
 static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
 {
     Csn val;
@@ -350,18 +381,40 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
     int sw = c2 - c1 + 1, i, n;
     int d2c = d1 + dw - 1, e2r = e1 + dh - 1;
     int overlap = (d1 <= c2 && d2c >= c1 && e1 <= r2 && e2r >= r1);
-    Cell **tmp = NULL;
+    struct snap_ent *tmp = NULL;
     /* the snapshot exists ONLY for an overlapping copy (the write of
      * a target would destroy a not-yet-copied source cell); a
-     * non-overlapping copy reads the source cells LIVE - the
-     * full-rectangle clone used to cost 3.4 MB for a whole-sheet
-     * copy, empties included (user report 2026-11-15) */
+     * non-overlapping copy reads the source cells LIVE.  The
+     * snapshot is SPARSE: the populated cells with their relative
+     * coordinates - the old full rectangle cost 3.4 MB, empties
+     * included (the user's memory report, 2026-11-16) */
     if (overlap) {
-        tmp = clone_cells(c1, r1, c2, r2, &n);
-        if (!tmp || !n) { free_clones(tmp, n, sw);
-                          cs_msg("MEMORY IS TOO LOW"); return; }
+        tmp = clone_snap(c1, r1, c2, r2, &n);
+        if (!tmp && n < 0) { cs_msg("MEMORY IS TOO LOW"); return; }
+        /* n == 0: a wholly blank source - the lookups return NULL and
+         * the blank policy clears the overlapping targets */
     } else
         n = (r2 - r1 + 1) * sw;
+    /* the BUDGET PRE-CHECK (the user's memory report, item E): the
+     * net growth = the populated sources - the populated
+     * destinations; the copy refuses UPFRONT instead of dying
+     * halfway through (a partial copy left both ranges mangled) */
+    {
+        int psn = 0, pdn = 0, r2c, c2c, r, c;
+        if (rep)
+            psn = cs_getcell(c1, r1) ? 1 : 0;
+        else
+            for (r = r1; r <= r2; r++)
+                for (c = c1; c <= c2; c++)
+                    if (cs_getcell(c, r)) psn++;
+        r2c = e1 + dh - 1; c2c = d1 + dw - 1;
+        for (r = e1; r <= r2c; r++)
+            for (c = d1; c <= c2c; c++)
+                if (cs_getcell(c, r)) pdn++;
+        if (entriesUsed - pdn + psn > CS_BUDGET) {
+            cs_msg("MEMORY IS TOO LOW"); return;
+        }
+    }
     for (i = 0; i < (rep ? nfill : n); i++) {
         int sc = rep ? c1 : (c1 + i % sw);
         int sr = rep ? r1 : (r1 + i / sw);
@@ -369,7 +422,8 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
         Cell *src, esrc;
         Cell *dst;
         if (tmp)
-            src = &tmp[rep ? 0 : i / sw][rep ? 0 : i % sw];
+            src = snap_lookup(tmp, n, rep ? 0 : i % sw,
+                              rep ? 0 : i / sw);
         else {
             src = cs_getcell(sc, sr);
             if (!src) { memset(&esrc, 0, sizeof(esrc));
@@ -397,7 +451,7 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
             cs_eval_ctx_row = sr2;
         }
     }
-    if (tmp) free_clones(tmp, n, sw);
+    if (tmp) free_snap(tmp, n);
     cs_recount_entries();
 }
 
@@ -410,7 +464,7 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
  * The tiling rule is the spreadsheet's: the target takes the source
  * cell at (distance mod the source's own dimension) with the shift =
  * the distance from that source cell. */
-static int fill_one(Cell **tmp, int sw, int sh,
+static int fill_one(int sw, int sh,
                     int c1, int r1, int cc, int rr, int rel,
                     int vertical)
 {
@@ -428,7 +482,10 @@ static int fill_one(Cell **tmp, int sw, int sh,
         dc = cc - sc;
         dr = 0;
     }
-    src = &tmp[sr - r1][sc - c1];
+    /* the LIVE source (the user's memory report, 2026-11-16): the
+     * fill's writes NEVER touch the source block (nearest-to-source
+     * ordering), so the snapshot was pure waste */
+    src = cs_getcell(sc, sr);
     /* a BLANK source: the destination ceases to exist */
     if (!src || src->type == CE_EMPTY) {
         cs_free_cell_at(cc, rr);
@@ -451,47 +508,43 @@ void cs_fill_block(int c1, int r1, int c2, int r2, int d1, int e1,
     int sw = c2 - c1 + 1, sh = r2 - r1 + 1;
     int vertical = (c1 == d1 && c2 == d2);
     int horizontal = (r1 == e1 && r2 == e2);
-    Cell **tmp;
-    int n;
     if (vertical == horizontal) return;     /* not straight: no fill */
-    tmp = clone_cells(c1, r1, c2, r2, &n);
-    if (!tmp) { cs_msg("MEMORY IS TOO LOW"); return; }
+    /* NO snapshot (the user's memory report, 2026-11-16): the fill's
+     * writes never touch the source block, so the sources are read
+     * live */
     if (vertical) {
         int rr, cc;
         if (e1 > r2) {                      /* down: the rows after the source */
             for (rr = r2 + 1; rr <= e2; rr++)
                 for (cc = c1; cc <= c2; cc++)
-                    if (!fill_one(tmp, sw, sh, c1, r1, cc, rr, rel, 1)) {
-                        free_clones(tmp, n, sw); return;
-                    }
+                    if (!fill_one(sw, sh, c1, r1, cc, rr, rel, 1))
+                        return;
         } else {                            /* up: toward the source */
             for (rr = r1 - 1; rr >= e2; rr--)
                 for (cc = c1; cc <= c2; cc++)
-                    if (!fill_one(tmp, sw, sh, c1, r1, cc, rr, rel, 1)) {
-                        free_clones(tmp, n, sw); return;
-                    }
+                    if (!fill_one(sw, sh, c1, r1, cc, rr, rel, 1))
+                        return;
         }
     } else {
         int rr, cc;
         if (d1 > c2) {                      /* right: the columns after the source */
             for (cc = c2 + 1; cc <= d2; cc++)
                 for (rr = r1; rr <= r2; rr++)
-                    if (!fill_one(tmp, sw, sh, c1, r1, cc, rr, rel, 0)) {
-                        free_clones(tmp, n, sw); return;
+                    if (!fill_one(sw, sh, c1, r1, cc, rr, rel, 0)) {
+                        return;
                     }
         } else {                            /* left: toward the source */
             for (cc = c1 - 1; cc >= d2; cc--)
                 for (rr = r1; rr <= r2; rr++)
-                    if (!fill_one(tmp, sw, sh, c1, r1, cc, rr, rel, 0)) {
-                        free_clones(tmp, n, sw); return;
+                    if (!fill_one(sw, sh, c1, r1, cc, rr, rel, 0)) {
+                        return;
                     }
         }
     }
-    free_clones(tmp, n, sw);
     cs_recount_entries();
 }
 
-/* ====================== Insert row/column ========================== *//* ====================== Insert row/column ========================== */
+/* ====================== Insert row/column ========================== */
 static void shift_all_refs(int iscol, int at, int insert)
 {
     int r = 0, c = 0;
@@ -524,14 +577,18 @@ static void insert_cmd(void)
         shift_all_refs(0, at, 1);
         for (r = CS_MAXROW - 1; r > at; r--)
             for (c = 0; c < CS_MAXCOL; c++)
-                cs_relink_cell(c, r - 1, c, r);
+                if (cs_relink_cell(c, r - 1, c, r)) {
+                    cs_msg("MEMORY IS TOO LOW"); return;
+                }
         for (c = 0; c < CS_MAXCOL; c++) blank_cell_rowcol(at, c);
     } else if (ch == 'C' || ch == 'c') {
         at = curCol;
         shift_all_refs(1, at, 1);
         for (r = 0; r < CS_MAXROW; r++)
             for (c = CS_MAXCOL - 1; c > at; c--)
-                cs_relink_cell(c - 1, r, c, r);
+                if (cs_relink_cell(c - 1, r, c, r)) {
+                    cs_msg("MEMORY IS TOO LOW"); return;
+                }
         for (r = 0; r < CS_MAXROW; r++) blank_cell_rowcol(r, at);
     } else return;
     redraw();
@@ -618,7 +675,9 @@ void cs_delete_rows(int r1, int r2)
     }
     for (rr = r1; rr < CS_MAXROW - n; rr++)
         for (c = 0; c < CS_MAXCOL; c++)
-            cs_relink_cell(c, rr + n, c, rr);
+            if (cs_relink_cell(c, rr + n, c, rr)) {
+                cs_msg("MEMORY IS TOO LOW"); return;
+            }
     if (winRow > r2) winRow -= n;
     else if (winRow > r1) winRow = r1;
     if (lockRows > r2) lockRows -= n;
@@ -647,7 +706,9 @@ void cs_delete_columns(int c1, int c2)
     }
     for (r = 0; r < CS_MAXROW; r++)
         for (cc = c1; cc < CS_MAXCOL - n; cc++)
-            cs_relink_cell(cc + n, r, cc, r);
+            if (cs_relink_cell(cc + n, r, cc, r)) {
+                cs_msg("MEMORY IS TOO LOW"); return;
+            }
     for (cc = c1; cc < CS_MAXCOL - n; cc++) {
         colw[cc] = colw[cc + n];
         colp[cc] = colp[cc + n];
@@ -1082,7 +1143,12 @@ static void swap_two_cells(int c, int ra, int rb)
         }
     } else
         memset(&t, 0, sizeof(t));
-    cs_relink_cell(c, rb, c, ra);   /* rb's slot moves into ra */
+    if (cs_relink_cell(c, rb, c, ra)) {   /* rb's slot moves into ra */
+        /* the reserve-first relink failed before ANY mutation: the
+         * sheet is untouched - free the strdup temps and abort */
+        free(t.cont); free(t.rep); free(t.strres);
+        return;
+    }
     if (t.type != CE_EMPTY) {
         Cell *dst = cs_alloc_cell(c, rb);
         if (dst) {

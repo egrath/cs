@@ -2206,6 +2206,53 @@ static void run_tests(void)
         ckc("parse 1E0", "+1E0", "+1.0000000000000E+1");
         cke("parse huge exp", "+1E+99999", -1);
         cke("parse 23-digit exp", "+1E99999999999999999999999", -1);
+        /* the memory batch (the user's report, 2026-11-16) */
+        /* D: a ?-calculator commit strands NO pool slot */
+        cs_clear_all();
+        cs_commit_entry(0, 0, "1+2?");
+        if (cs_getcell(0, 0) != NULL || entriesUsed != 0)
+            { printf("FAIL calc slot (%d)\n", entriesUsed); fails++; }
+        else printf("ok   the calculator entry leaves no slot\n");
+        /* a failed SET strands no slot (the arg-count and type errors
+         * release the target) */
+        cs_commit_entry(0, 0, "5");                    /* A1 */
+        cs_commit_entry(1, 0, "+(1):SET(REF(2,3));0:0");
+        if (cs_getcell(2, 2) != NULL)
+            { printf("FAIL set slot arg\n"); fails++; }
+        else printf("ok   the failed SET leaves no slot (args)\n");
+        cs_commit_entry(1, 0, "+(1):SET(REF(2,3),A1>B2);0:0");
+        if (cs_getcell(2, 2) != NULL)
+            { printf("FAIL set slot type\n"); fails++; }
+        else printf("ok   the failed SET leaves no slot (type)\n");
+        cs_clear_all();
+        /* C: an OVERLAPPING copy of a partially blank range */
+        setv(0, 0, "5");                               /* A1 = 5 */
+        cs_copy_block(0, 0, 1, 0, 1, 0, 2, 1, 0, 2, 0);
+        if (tread(1, 0)->type != CE_NUM || tread(1, 0)->val.nd[0] != 5)
+            { printf("FAIL overlap blank copy\n"); fails++; }
+        else printf("ok   the overlapping copy shifts A1 into B1\n");
+        if (cs_getcell(2, 0) != NULL)
+            { printf("FAIL overlap blank cleared\n"); fails++; }
+        else printf("ok   the blank source cleared its target\n");
+        cs_clear_all();
+        /* E: the copy budget pre-check refuses UPFRONT */
+        {
+            int i;
+            /* 3999 cells spread across 16 columns (the sheet is 255
+             * rows deep) */
+            for (i = 0; i < 3997; i++)
+                setv(i % 16, i / 16, "1");
+            cs_commit_entry(16, 0, "7");               /* Q1 */
+            cs_commit_entry(17, 0, "8");               /* R1 */
+            if (entriesUsed != 3999)
+                { printf("FAIL seed count (%d)\n", entriesUsed); fails++; }
+            cs_copy_block(16, 0, 17, 0, 18, 0, 2, 1, 0, 2, 0);
+            if (cs_getcell(18, 0) != NULL)
+                { printf("FAIL budget pre-check\n"); fails++; }
+            else printf("ok   the over-budget copy is refused upfront\n");
+        }
+        cs_clear_all();
+
         /* the TWO-PASS CORR/REGR: the offset line stays exact */
         setv(0, 0, "1000001"); setv(0, 1, "1000002");
         setv(0, 2, "1000003"); setv(0, 3, "1000004");

@@ -187,6 +187,25 @@ Cell *cs_alloc_cell(int col, int rw)
     return c;
 }
 
+/* release a slot that carries NOTHING (the user's memory report,
+ * 2026-11-16, item D): an allocation that outlived its purpose - a
+ * ?-calculator entry, a failed SET - still consumed a POOL SLOT
+ * while entriesUsed (which counts only populated cells) looked
+ * fine, so the pool could drain with few visible cells.  The
+ * flag-holding states (formf, factf, a per-cell prec/notation)
+ * deliberately survive - they are never released here. */
+void cs_release_if_empty(int col, int rw)
+{
+    Cell *c = cs_getcell(col, rw);
+    if (!c) return;
+    if (c->type != CE_EMPTY) return;
+    if (c->cont || c->rep || c->strres) return;
+    if (c->formf || c->factf) return;
+    if (c->prec != -1 || c->notation != 0) return;
+    if (c->iserr) return;
+    cs_free_cell_at(col, rw);
+}
+
 void cs_free_cell_at(int col, int rw)
 {
     CsRow *rp;
@@ -213,7 +232,13 @@ void cs_free_cell_at(int col, int rw)
  * (row/column insert and delete shifts).  An occupied target is
  * released first - the dense struct-assignment overwrote it and
  * leaked its strings.  An absent source does nothing. */
-void cs_relink_cell(int fc, int fr, int tc, int tr)
+/* the RESERVE-FIRST relink (the user's memory report, 2026-11-16,
+ * item E): the destination index's capacity is ensured BEFORE any
+ * mutation - the old order removed the source, released the target,
+ * THEN grew the destination index, so a failed realloc DESTROYED the
+ * source cell mid-insert/delete/sort.  Returns 0 on success (or a
+ * no-op), -1 when the reservation fails and NOTHING was touched. */
+int cs_relink_cell(int fc, int fr, int tc, int tr)
 {
     CsRow *sp = &cs_rows[fr], *dp = &cs_rows[tr];
     Cell *c;
@@ -221,9 +246,22 @@ void cs_relink_cell(int fc, int fr, int tc, int tr)
     int i;
     if (fc < 0 || fc >= CS_MAXCOL || fr < 0 || fr >= CS_MAXROW ||
         tc < 0 || tc >= CS_MAXCOL || tr < 0 || tr >= CS_MAXROW)
-        return;
-    if (fc == tc && fr == tr) return;   /* a degenerate move: no-op */
+        return 0;
+    if (fc == tc && fr == tr) return 0; /* a degenerate move: no-op */
     i = cs_row_find(sp, fc);
+    {
+        /* the reservation: the destination needs room for one entry
+         * when the source is present (the release of an occupied
+         * target gives one back, so the worst case is +1) */
+        if (i < sp->n && sp->e[i].col == fc && dp->n == dp->cap) {
+            int nc = dp->cap ? dp->cap * 2 : 4;
+            CsIdxEnt *ne = (CsIdxEnt *) realloc(dp->e,
+                            (size_t) nc * sizeof(CsIdxEnt));
+            if (!ne) return -1;         /* NOTHING was touched */
+            dp->e = ne;
+            dp->cap = (unsigned char) nc;
+        }
+    }
     if (i >= sp->n || sp->e[i].col != fc) {
         /* an ABSENT source moves "nothing" into the target: the dense
          * struct assignment overwrote occupied targets with empty
@@ -236,7 +274,7 @@ void cs_relink_cell(int fc, int fr, int tc, int tr)
             if (j < dp->n && dp->e[j].col == tc)
                 cs_free_cell_at(tc, tr);
         }
-        return;
+        return 0;
     }
     ref = sp->e[i].ref;
     memmove(&sp->e[i], &sp->e[i + 1],
@@ -254,20 +292,8 @@ void cs_relink_cell(int fc, int fr, int tc, int tr)
         int nc = dp->cap ? dp->cap * 2 : 4;
         CsIdxEnt *ne = (CsIdxEnt *) realloc(dp->e,
                         (size_t) nc * sizeof(CsIdxEnt));
-        if (!ne) {                  /* the slot is lost from the index:
-                                     * keep it consistent (freelist) -
-                                     * the strings die FIRST (the next
-                                     * pool_take memsets the slot, which
-                                     * would leak them) */
-            if (c->cont) { free(c->cont); c->cont = NULL; }
-            if (c->rep) { free(c->rep); c->rep = NULL; }
-            if (c->strres) { free(c->strres); c->strres = NULL; }
-            c->cont = (char *) cs_freelist;
-            cs_freelist = c;
-            if (c->type != CE_EMPTY) entriesUsed--;
-            c->type = CE_EMPTY;
-            return;
-        }
+        if (!ne) return -1;         /* unreachable after the reservation
+                                     * (defensive: nothing mutated yet) */
         dp->e = ne;
         dp->cap = (unsigned char) nc;
     }
@@ -277,6 +303,7 @@ void cs_relink_cell(int fc, int fr, int tc, int tr)
     dp->e[i].col = (unsigned char) tc;
     dp->e[i].ref = ref;
     dp->n++;
+    return 0;
 }
 
 /* the ordered scan: the first populated cell at or after (*col,*rw).
