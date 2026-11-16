@@ -48,6 +48,13 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "memfix2" -> merged to master): the memory batch merged (2026-11-16):
+- USER approved; merged fast-forward to master (54e03b4), pushed,
+  the branch deleted (local + origin).  NOTE: the merge carried the
+  eng-numfix commit too (the fast-forward spanned both branches'
+  histories).  Post-merge gates: --test 892 ok, build.count 234,
+  the idle gate EXACT.
+
 ## BATCH (branch "memfix2"): the memory batch (2026-11-16):
 - USER: (A) the regression arrays (already gone); (B) SPLINE's flat
   SPLINE_MAX allocation; (C) the dense clone snapshot (3.6 MB) + the
