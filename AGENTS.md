@@ -1042,6 +1042,39 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE SORT FIXES (the user's persistence review, 2026-11-16,
+  branch "bugfix-alloc")**: (1) THE COMPARATOR'S INCONSISTENCY: the
+  three key classes (numeric, text, formula-string) made text vs
+  strres return +1 in BOTH directions - an inconsistent comparator
+  (the user's repro: text "B" above a formula yielding "A" sorted
+  wrong; worse, qsort's whole output is undefined once such a pair
+  is compared).  FIX: ONE string class - ordinary text (cont) and a
+  formula's string result (strres) compare through the SAME strcmp
+  byte order; numbers first, empty keys last (unchanged).
+  (2) THE RANGE REMAP POLICY: cs_sort_refs remapped the two
+  endpoints of a range INDEPENDENTLY - a rearranged block could turn
+  A1>A2 into A3>A1 (normalized A1>A3, silently including cells that
+  were never referenced).  THE POLICY (deliberate, documented):
+  coord>coord pairs in the block remap as a UNIT - the image of the
+  row interval under the permutation: the image of the WHOLE block
+  is the block itself (the extent is invariant - SUM(A1>A3) over a
+  sorted block keeps covering the same data), a CONTIGUOUS partial
+  image emits the normalized rectangle over [imn..imx], and a
+  SCATTERED image cannot be represented: the range stays AS TYPED
+  (flagged - the bounding box would silently over-include; the
+  multi-area rewrite would corrupt REGR).  A top-level comparison
+  shares the text shape and is treated the same way (a text-level
+  scan cannot tell a range from a comparison - flagged limitation).
+  THE EMISSION BUG I INTRODUCED AND FIXED: the endpoints' OWN
+  images need not span the image set (the whole-block case:
+  perm(A1)=3, perm(A3)=2 emitted rows 2..3 instead of 1..3!) - the
+  rectangle is emitted over the image interval's min/max.  MY PIN
+  BUG: tread(col,row) - the mixed-sort pins read B1/A3 instead of
+  A2/A3 (the code was right all along).  PINS: the user's repro
+  (asc + desc), the three-way ranking, the whole-block invariance,
+  the contiguous partial image, the scattered leave-as-typed, the
+  single-row remap.  --test 829 ok.
+
 - **THE COPY POLICY (the user's persistence review, 2026-11-16,
   branch "bugfix-alloc")**: a copy reproduces the COMPLETE cell
   state.  (1) THE BLANK-SOURCE FIX: copy_one's final branch turned

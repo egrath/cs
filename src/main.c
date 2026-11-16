@@ -1943,6 +1943,65 @@ static void run_tests(void)
             else printf("ok   the form flag carries with the copy\n");
         }
         cs_clear_all();
+        /* the SORT comparator (the user's report, 2026-11-16): text
+         * and a formula's string result are ONE string class */
+        cs_commit_entry(0, 0, "B");              /* A1 text "B" */
+        cs_commit_entry(0, 1, "+CHR(65)");       /* A2 -> "A" */
+        cs_sort_range(0, 0, 0, 1, 0, 0);         /* ascending */
+        if (!(tread(0, 0)->strres && !strcmp(tread(0, 0)->strres, "A") &&
+              tread(0, 1)->type == CE_TEXT &&
+              tread(0, 1)->cont && !strcmp(tread(0, 1)->cont, "B")))
+            { printf("FAIL mixed sort asc\n"); fails++; }
+        else printf("ok   the text/strres mixed sort ascends\n");
+        cs_commit_entry(0, 0, "B");
+        cs_commit_entry(0, 1, "+CHR(65)");
+        cs_sort_range(0, 0, 0, 1, 0, 1);         /* descending */
+        if (!(tread(0, 0)->type == CE_TEXT &&
+              !strcmp(tread(0, 0)->cont, "B") &&
+              tread(0, 1)->strres && !strcmp(tread(0, 1)->strres, "A")))
+            { printf("FAIL mixed sort desc\n"); fails++; }
+        else printf("ok   the text/strres mixed sort descends\n");
+        /* numbers first, then the strings in byte order */
+        setv(0, 0, "5");
+        cs_commit_entry(0, 1, "b");
+        cs_commit_entry(0, 2, "+CHR(97)");       /* "a" */
+        cs_sort_range(0, 0, 0, 2, 0, 0);
+        if (tread(0, 0)->type != CE_NUM ||
+            !(tread(0, 1)->strres && !strcmp(tread(0, 1)->strres, "a")) ||
+            !(tread(0, 2)->type == CE_TEXT &&
+              !strcmp(tread(0, 2)->cont, "b")))
+            { printf("FAIL three-way sort\n"); fails++; }
+        else printf("ok   numbers first, then the strings in order\n");
+        cs_clear_all();
+        /* the RANGE REMAP POLICY: the image of the row interval */
+        setv(0, 0, "3"); setv(0, 1, "1"); setv(0, 2, "2");
+        cs_commit_entry(1, 0, "+SUM(A1>A3)");    /* the whole block */
+        cs_commit_entry(1, 1, "+SUM(A2>A3)");    /* contiguous image */
+        cs_commit_entry(1, 2, "+SUM(A1>A2)");    /* scattered image */
+        cs_commit_entry(1, 3, "+A2*10");         /* the single row */
+        cs_sort_range(0, 0, 0, 2, 0, 0);         /* keys 3,1,2 asc */
+        /* [3,1,2] asc -> perm: A1->A3, A2->A1, A3->A2 */
+        if (!tread(1, 0)->cont || strcmp(tread(1, 0)->cont, "+SUM(A1>A3)"))
+            { printf("FAIL whole-block range (%s)\n",
+                     tread(1, 0)->cont ? tread(1, 0)->cont : "(null)");
+              fails++; }
+        else printf("ok   the whole-block range is invariant\n");
+        if (!tread(1, 1)->cont || strcmp(tread(1, 1)->cont, "+SUM(A1>A2)"))
+            { printf("FAIL contiguous remap (%s)\n",
+                     tread(1, 1)->cont ? tread(1, 1)->cont : "(null)");
+              fails++; }
+        else printf("ok   the contiguous partial image remaps\n");
+        if (!tread(1, 2)->cont || strcmp(tread(1, 2)->cont, "+SUM(A1>A2)"))
+            { printf("FAIL scattered remap (%s)\n",
+                     tread(1, 2)->cont ? tread(1, 2)->cont : "(null)");
+              fails++; }
+        else printf("ok   the scattered image stays as typed\n");
+        if (!tread(1, 3)->cont || strcmp(tread(1, 3)->cont, "+A1*10"))
+            { printf("FAIL single-row remap (%s)\n",
+                     tread(1, 3)->cont ? tread(1, 3)->cont : "(null)");
+              fails++; }
+        else printf("ok   the single-row remap still works\n");
+        cs_clear_all();
         /* ==== CONV: the unit conversion (batch D) ==== */
         ckc("CONV cm m", "CONV(100,\"cm\",\"m\")", "+1.0000000000000E+1");
         ckc("CONV inch mm", "CONV(1,\"inch\",\"mm\")",

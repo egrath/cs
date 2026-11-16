@@ -48,6 +48,24 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "bugfix-alloc", follow-up 2): the sort fixes (2026-11-16):
+- USER: (1) the comparator returned +1 both ways for text vs a
+  formula's string result (an inconsistent comparator); (2) the
+  range reference remap mapped the endpoints independently (A1>A2
+  could become A3>A1 -> normalized A1>A3, over-including).
+- DONE: the comparator has ONE string class (cont and strres
+  compare through the same strcmp; numbers first); the range remap
+  policy: coord>coord pairs in the block remap as a unit - the
+  image of the row interval; the whole block maps to itself, a
+  contiguous partial image emits the normalized rectangle, a
+  scattered image stays AS TYPED (flagged; the top-level-comparison
+  ambiguity documented).  THE EMISSION BUG I introduced and fixed:
+  emit the image interval's min/max, not the endpoints' own images.
+- MY PIN BUG: tread(col,row) - the mixed-sort pins read the WRONG
+  CELLS (B1/A3 instead of A2/A3); the sort was right all along.
+- VERIFIED: --test 829 ok; the pty sort shows the formula moved to
+  row 1 (the contents line); the idle gate EXACT.
+
 ## BATCH (branch "bugfix-alloc", follow-up): the copy policy (2026-11-16):
 - USER: (1) copying blank cells created CE_ALLOC destinations (the
   budget consumed, the sparse structure diverged); (2) copy_one

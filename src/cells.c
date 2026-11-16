@@ -426,14 +426,95 @@ char *cs_sort_refs(const char *s, int c1, int r1, int c2, int r2,
                     *p == '*' || *p == '/' || *p == '%' || *p == '\0' ||
                     *p == '<' || *p == '=' || *p == '&') {
                     char tmp[8], tmp2[4];
-                    int i, cc, rr, ok, bang;
+                    int i, cc, rr, ok, bang, newr;
                     for (i = 0; st + i < p; i++) tmp[i] = (char) ((st[i] >= 'a' && st[i] <= 'z') ? st[i] - 32 : st[i]);
                     tmp[i] = '\0';
                     ok = cs_parse_coord(tmp, &cc, &rr);
                     bang = *p == '!';
                     if (ok && !bang &&
                         cc >= c1 && cc <= c2 && rr >= r1 && rr <= r2) {
-                        int newr = perm[rr - r1];
+                        /* the RANGE PAIR (the deliberate policy,
+                         * 2026-11-16): coord>coord with both in the
+                         * block remaps as a UNIT - the image of the
+                         * row interval under the permutation.  The
+                         * image of the WHOLE block is the block
+                         * itself (the extent is invariant), a
+                         * contiguous partial image emits the
+                         * normalized rectangle, and a SCATTERED
+                         * image cannot be represented: the range
+                         * stays as typed (flagged - silently
+                         * widening to the bounding box would
+                         * over-include cells).  A top-level
+                         * comparison shares this text shape and is
+                         * treated the same way (a text-level scan
+                         * cannot tell them apart). */
+                        if (*p == '>') {
+                            const char *q2 = p + 1;
+                            const char *st2;
+                            int nl2 = 0, cc2, rr2, ok2;
+                            while (*q2 == ' ') q2++;
+                            st2 = q2;
+                            while ((*q2 >= 'A' && *q2 <= 'Z') ||
+                                   (*q2 >= 'a' && *q2 <= 'z')) {
+                                q2++; nl2++;
+                            }
+                            if (nl2 >= 1 && nl2 <= 2 &&
+                                *q2 >= '0' && *q2 <= '9') {
+                                while (*q2 >= '0' && *q2 <= '9') q2++;
+                                if (!isalnum((unsigned char) *q2)) {
+                                    char tmp3[8];
+                                    int k3;
+                                    for (k3 = 0; st2 + k3 < q2; k3++)
+                                        tmp3[k3] = (char)
+                                            ((st2[k3] >= 'a' && st2[k3] <= 'z')
+                                             ? st2[k3] - 32 : st2[k3]);
+                                    tmp3[k3] = '\0';
+                                    ok2 = cs_parse_coord(tmp3, &cc2, &rr2);
+                                    if (ok2 && cc2 >= c1 && cc2 <= c2 &&
+                                        rr2 >= r1 && rr2 <= r2) {
+                                        int lo = (rr < rr2) ? rr : rr2;
+                                        int hi = (rr < rr2) ? rr2 : rr;
+                                        int imn = perm[lo - r1];
+                                        int imx = imn;
+                                        int r3;
+                                        for (r3 = lo + 1; r3 <= hi; r3++) {
+                                            if (perm[r3 - r1] < imn)
+                                                imn = perm[r3 - r1];
+                                            if (perm[r3 - r1] > imx)
+                                                imx = perm[r3 - r1];
+                                        }
+                                        if (imx - imn + 1 ==
+                                            hi - lo + 1) {
+                                            /* contiguous: the image
+                                             * rectangle over [imn..imx]
+                                             * - the ENDPOINTS' own
+                                             * images need not span the
+                                             * image set (the whole-
+                                             * block case: perm(A1)=3,
+                                             * perm(A3)=2 would emit
+                                             * rows 2..3!) - the parse
+                                             * normalizes both axes */
+                                            cs_col_name(cc, tmp2);
+                                            o += sprintf(o, "%s%d",
+                                                         tmp2, imn + 1);
+                                            *o++ = '>';
+                                            cs_col_name(cc2, tmp2);
+                                            o += sprintf(o, "%s%d",
+                                                         tmp2, imx + 1);
+                                            changed = 1;
+                                            p = q2;
+                                            continue;
+                                        }
+                                        /* scattered: verbatim */
+                                        memcpy(o, st, (size_t) (q2 - st));
+                                        o += q2 - st;
+                                        p = q2;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                        newr = perm[rr - r1];
                         cs_col_name(cc, tmp2);
                         o += sprintf(o, "%s%d", tmp2, newr + 1);
                         changed = 1;

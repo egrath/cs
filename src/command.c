@@ -1069,11 +1069,15 @@ static void swap_two_cells(int c, int ra, int rb)
         }
     } else
         memset(&t, 0, sizeof(t));
+    fprintf(stderr, "DBG swap c=%d ra=%d rb=%d a=%d t=%d\n",
+            c, ra, rb, a ? (int) a->type : -1, (int) t.type);
     cs_relink_cell(c, rb, c, ra);   /* rb's slot moves into ra */
     if (t.type != CE_EMPTY) {
         Cell *dst = cs_alloc_cell(c, rb);
         if (dst) {
             *dst = t;
+            fprintf(stderr, "DBG swap landed dst=%p ttype=%d\n",
+                    (void *) dst, (int) dst->type);
             dst->col = (unsigned char) c;
             dst->row = (unsigned char) rb;
             if (dst->type != CE_EMPTY) entriesUsed++;
@@ -1119,21 +1123,28 @@ void cs_sort_range(int c1, int r1, int c2, int r2, int keycol, int desc)
         else if (kc->strres && !kc->iserr) nonempty[ne++] = i;
         else empties[ne0++] = i;
     }
-    /* stable insertion sort on the key */
+    /* stable insertion sort on the key.  ONE string class: ordinary
+     * text and a formula's string result compare through the SAME
+     * byte order - the old three-class version returned +1 in BOTH
+     * directions across the text/strres boundary (an inconsistent
+     * comparator, the user's 2026-11-16 report) */
     for (i = 1; i < ne; i++) {
         int t = nonempty[i];
         kc = cs_getcell(keycol, r1 + t);
         for (j = i - 1; j >= 0; j--) {
             Cell *k2 = cs_getcell(keycol, r1 + nonempty[j]);
             int cv;
-            if (kc->type == CE_NUM && !kc->strres &&
-                k2->type == CE_NUM && !k2->strres)
-                cv = csn_cmp(&kc->val, &k2->val);
-            else if (kc->type == CE_TEXT && k2->type == CE_TEXT)
-                cv = strcmp(kc->cont, k2->cont);
-            else if (kc->strres && k2->strres)
-                cv = strcmp(kc->strres, k2->strres);
-            else cv = (kc->type == CE_NUM && !kc->strres) ? -1 : 1;
+            int c1s = !(kc->type == CE_NUM && !kc->iserr && !kc->strres);
+            int c2s = !(k2->type == CE_NUM && !k2->iserr && !k2->strres);
+            if (c1s != c2s) cv = c1s ? 1 : -1;   /* numbers first */
+            else if (!c1s) cv = csn_cmp(&kc->val, &k2->val);
+            else {
+                const char *sa = (kc->type == CE_TEXT) ? kc->cont
+                                                       : kc->strres;
+                const char *sb = (k2->type == CE_TEXT) ? k2->cont
+                                                       : k2->strres;
+                cv = strcmp(sa, sb);
+            }
             if (desc ? cv <= 0 : cv >= 0) break;
             nonempty[j + 1] = nonempty[j];
         }
