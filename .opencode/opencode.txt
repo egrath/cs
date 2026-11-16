@@ -48,6 +48,24 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "bugfix-alloc", follow-up): the copy policy (2026-11-16):
+- USER: (1) copying blank cells created CE_ALLOC destinations (the
+  budget consumed, the sparse structure diverged); (2) copy_one
+  dropped notation/formf/factf - copying "5!" produced an ERROR
+  cell (the content evaluated as an ordinary formula).  The policy
+  (agreed): a copy reproduces the COMPLETE cell state; a blank
+  source frees the destination.
+- DONE: copy_one rewritten (the value holder verbatim; the factf
+  source re-evaluates the re-shifted prefix through csn_fact with
+  the flag carried; the full flag set in all three type branches);
+  the callers (cs_copy_block's loop, fill_one) check the source
+  first - a blank source frees the destination (cs_free_cell_at)
+  and only a real CE_ALLOC copies as CE_ALLOC.
+- MY PIN SLIPS: the first blank-copy pins copied populated sources
+  (A1=5 over B1=9) - the pins needed an empty SOURCE cell.
+- VERIFIED: --test 822 ok; the pty shows the copied factorial as
+  120.00 (no error cells); the idle gate EXACT.
+
 ## BATCH (branch "bugfix-alloc"): the persistence bugs (2026-11-16):
 - USER: (1) the alloc-empty cell broke the save/load round trip (the
   loader accepted only types 2/3; the save writes type 1); (2) the

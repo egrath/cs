@@ -109,13 +109,75 @@ static void free_clones(Cell **t, int n, int sh)
     free(t);
 }
 
+/* the COPY POLICY (the user's persistence review, 2026-11-16): a
+ * copy reproduces the COMPLETE cell state - content (ref-adjusted
+ * per R/N), value/strres, and EVERY format/special flag (just, prec,
+ * notation, formf, factf, volatf).  The special states are handled
+ * as themselves: the !...! value holder copies VERBATIM (it holds a
+ * value, it is not an expression), and a FACTORIAL entry re-evaluates
+ * its (re-shifted) prefix through csn_fact with the flag carried.
+ * The caller frees the destination for a BLANK source (see
+ * cs_copy_block): the complete state of "nothing" is nothing. */
 static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
 {
+    Csn val;
+    char *str = NULL;
+    char *use;
+    int err;
     if (src->type == CE_NUM && src->cont) {
-        Csn val;
-        char *str = NULL;
-        char *use;
-        int err;
+        if (cs_is_inputf(src)) {
+            /* the !...! value holder: verbatim - evaluating it as an
+             * expression was the old bug (an error cell) */
+            char *use = cs_strdup(src->cont);
+            if (!use) return;
+            cs_free_cell(dst);
+            dst->type = CE_NUM;
+            dst->just = src->just;
+            dst->volatf = src->volatf;
+            dst->cont = use;
+            csn_copy(&dst->val, &src->val);  /* the stored value */
+            dst->iserr = src->iserr;
+            dst->prec = src->prec;
+            dst->notation = src->notation;
+            dst->formf = src->formf;
+            dst->factf = 0;
+            dst->strres = NULL;
+            return;
+        }
+        if (src->factf) {
+            /* the factorial entry: the prefix (with re-shifted
+             * references) re-evaluates, FACT of it, the flag carries
+             * - the old code evaluated "5!" as an ordinary formula
+             * and produced an error cell */
+            char pfx[CS_EDITMAX + 1];
+            size_t ul;
+            Csn val, srcval, zero;
+            char *use = rel ? cs_adjust_refs(src->cont, dc, dr)
+                            : cs_strdup(src->cont);
+            int e, fe;
+            if (!use) return;
+            ul = strlen(use);
+            if (ul == 0 || use[ul - 1] != '!') { free(use); return; }
+            memcpy(pfx, use, ul - 1);
+            pfx[ul - 1] = '\0';
+            e = cs_eval_fact_source(pfx, &srcval);
+            fe = 0;
+            if (!e) fe = csn_fact(&val, &srcval);
+            cs_free_cell(dst);
+            dst->type = CE_NUM;
+            dst->just = src->just;
+            dst->volatf = src->volatf;
+            dst->cont = use;
+            csn_zero(&zero);
+            csn_copy(&dst->val, (e || fe) ? &zero : &val);
+            dst->iserr = (e || fe) ? 1 : 0;
+            dst->prec = src->prec;
+            dst->notation = src->notation;
+            dst->formf = src->formf;
+            dst->factf = 1;
+            dst->strres = NULL;
+            return;
+        }
         if (rel && !cs_is_inputf(src))
             use = cs_adjust_refs(src->cont, dc, dr);
         else
@@ -131,6 +193,9 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
         csn_copy(&dst->val, &val);       /* zeroed by eval on error */
         dst->iserr = err ? 1 : 0;
         dst->prec = src->prec;
+        dst->notation = src->notation;
+        dst->formf = src->formf;
+        dst->factf = 0;
         dst->strres = str;
     } else if (src->type == CE_TEXT) {
         /* the allocate-first discipline (review item 6): a failed
@@ -149,12 +214,26 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
         dst->volatf = src->volatf;
         dst->cont = nc;
         dst->rep = nr;
+        dst->prec = src->prec;
+        dst->notation = src->notation;
+        dst->formf = src->formf;
+        dst->factf = 0;
         csn_zero(&dst->val); dst->iserr = 0;
+        dst->strres = NULL;
     } else {
+        /* the ALLOCATED-EMPTY state (a real form-mode flag): the
+         * complete flag set carries, no content */
         cs_free_cell(dst);
         dst->type = CE_ALLOC;
+        dst->just = src->just;
         dst->volatf = 0;
         dst->cont = NULL;
+        dst->prec = src->prec;
+        dst->notation = src->notation;
+        dst->formf = src->formf;
+        dst->factf = 0;
+        csn_zero(&dst->val); dst->iserr = 0;
+        dst->strres = NULL;
     }
 }
 
@@ -275,8 +354,7 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
         int sr = rep ? r1 : (r1 + i / sw);
         int dc = d1 + i % dw, dr = e1 + i / dw;
         Cell *src, esrc;
-        Cell *dst = cs_alloc_cell(dc, dr);
-        if (!dst) { cs_msg("MEMORY IS TOO LOW"); break; }
+        Cell *dst;
         if (tmp)
             src = &tmp[rep ? 0 : i / sw][rep ? 0 : i % sw];
         else {
@@ -284,6 +362,15 @@ void cs_copy_block(int c1, int r1, int c2, int r2, int d1, int e1,
             if (!src) { memset(&esrc, 0, sizeof(esrc));
                         src = &esrc; }
         }
+        /* a BLANK source: the destination ceases to exist - the
+         * complete state of "nothing" is nothing (the sparse
+         * structure mirrors the source; no budget consumed) */
+        if (!src || src->type == CE_EMPTY) {
+            cs_free_cell_at(dc, dr);
+            continue;
+        }
+        dst = cs_alloc_cell(dc, dr);
+        if (!dst) { cs_msg("MEMORY IS TOO LOW"); break; }
         {
             /* the DESTINATION is the evaluation context (ROW()/COL()):
              * the dc/dr of copy_one are the relative SHIFT deltas */
@@ -317,8 +404,6 @@ static int fill_one(Cell **tmp, int sw, int sh,
     int sr, sc, dc, dr;
     Cell *dst, *src;
     int so, sc2, sr2;
-    dst = cs_alloc_cell(cc, rr);
-    if (!dst) { cs_msg("MEMORY IS TOO LOW"); return 0; }
     if (vertical) {
         sr = r1 + (((rr - r1) % sh) + sh) % sh;   /* the tiled row */
         sc = cc;
@@ -331,6 +416,13 @@ static int fill_one(Cell **tmp, int sw, int sh,
         dr = 0;
     }
     src = &tmp[sr - r1][sc - c1];
+    /* a BLANK source: the destination ceases to exist */
+    if (!src || src->type == CE_EMPTY) {
+        cs_free_cell_at(cc, rr);
+        return 1;
+    }
+    dst = cs_alloc_cell(cc, rr);
+    if (!dst) { cs_msg("MEMORY IS TOO LOW"); return 0; }
     so = cs_eval_ctx_on; sc2 = cs_eval_ctx_col; sr2 = cs_eval_ctx_row;
     cs_eval_ctx_on = 1;
     cs_eval_ctx_col = cc;

@@ -1871,6 +1871,78 @@ static void run_tests(void)
         } else { printf("FAIL alloc save\n"); fails++; }
         remove("t_alloc.csd");
         cs_clear_all();
+        /* the COPY POLICY (the user's persistence review, 2026-11-16):
+         * a copy reproduces the complete cell state; a BLANK source
+         * frees the destination (the sparse structure mirrors) */
+        {
+            Csn v;
+            int used;
+            csn_parse("120", &v);
+            /* 1. an absent source over a POPULATED destination: the
+             * destination ceases to exist (A1 = 5, B1 = 9, C1 never
+             * populated -> copy C1 over B1) */
+            setv(0, 0, "5");                /* A1 */
+            setv(1, 0, "9");                /* B1 */
+            used = entriesUsed;
+            cs_copy_block(2, 0, 2, 0, 1, 0, 1, 1, 0, 1, 0);
+            if (cs_getcell(1, 0) != NULL)
+                { printf("FAIL blank copy populated\n"); fails++; }
+            else printf("ok   copying a blank frees the destination\n");
+            if (entriesUsed != used - 1)
+                { printf("FAIL blank copy budget (%d)\n", entriesUsed);
+                  fails++; }
+            else printf("ok   the blank copy returns the budget\n");
+            /* 2. an absent source over an EMPTY destination: nothing
+             * allocated (C1 absent -> D1) */
+            used = entriesUsed;
+            cs_copy_block(2, 0, 2, 0, 3, 0, 1, 1, 0, 1, 0);
+            if (cs_getcell(3, 0) != NULL || entriesUsed != used)
+                { printf("FAIL blank copy empty\n"); fails++; }
+            else printf("ok   copying a blank onto empty allocates nothing\n");
+            /* 3. an ALLOCATED-EMPTY source: the state carries */
+            {
+                Cell *ac = cs_alloc_cell(0, 0);
+                ac->type = CE_ALLOC;
+                ac->formf = 1;
+                ac->prec = -1;
+            }
+            cs_copy_block(0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0);
+            if (tread(1, 0)->type != CE_ALLOC || !tread(1, 0)->formf)
+                { printf("FAIL alloc copy\n"); fails++; }
+            else printf("ok   the allocated-empty state copies\n");
+            /* 4. the FACTORIAL ENTRY: the flag and the value carry */
+            cs_clear_all();
+            cs_commit_entry(0, 0, "5!");            /* A1 = 120 */
+            cs_copy_block(0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0);
+            if (tread(1, 0)->factf != 1 ||
+                tread(1, 0)->type != CE_NUM || tread(1, 0)->iserr ||
+                csn_cmp(&tread(1, 0)->val, &v) != 0 ||
+                !tread(1, 0)->cont || strcmp(tread(1, 0)->cont, "5!"))
+                { printf("FAIL factf copy\n"); fails++; }
+            else printf("ok   the factorial entry copies with FACT(5) = 120\n");
+            /* 5. the notation and formf flags carry */
+            cs_clear_all();
+            {
+                Cell *nc = cs_alloc_cell(0, 0);
+                Csn vv;
+                csn_parse("7", &vv);
+                cs_set_num(nc, "7", &vv, 0, NULL);
+                nc->notation = 2;                   /* (dec) */
+            }
+            cs_commit_entry(1, 0, "text");          /* B1 formf via? no */
+            {
+                Cell *fc = cs_alloc_cell(1, 0);
+                fc->formf = 1;                      /* B1 = a form cell */
+            }
+            cs_copy_block(0, 0, 1, 0, 3, 0, 2, 1, 0, 2, 0);
+            if (tread(3, 0)->notation != 2)
+                { printf("FAIL notation copy\n"); fails++; }
+            else printf("ok   the notation carries with the copy\n");
+            if (tread(4, 0)->formf != 1)
+                { printf("FAIL formf copy\n"); fails++; }
+            else printf("ok   the form flag carries with the copy\n");
+        }
+        cs_clear_all();
         /* ==== CONV: the unit conversion (batch D) ==== */
         ckc("CONV cm m", "CONV(100,\"cm\",\"m\")", "+1.0000000000000E+1");
         ckc("CONV inch mm", "CONV(1,\"inch\",\"mm\")",

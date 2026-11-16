@@ -1042,6 +1042,35 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE COPY POLICY (the user's persistence review, 2026-11-16,
+  branch "bugfix-alloc")**: a copy reproduces the COMPLETE cell
+  state.  (1) THE BLANK-SOURCE FIX: copy_one's final branch turned
+  EVERY blank source (absent, empty, AND allocated-empty) into a
+  CE_ALLOC destination - copying mostly-empty ranges consumed the
+  cell budget and the sparse structure diverged.  NOW: the callers
+  (cs_copy_block's loop, fill_one) check the source FIRST - a blank
+  source FREES the destination (cs_free_cell_at, the complete state
+  of "nothing" is nothing, the sparse structure mirrors the source,
+  the budget returns) and only a REAL CE_ALLOC source copies as
+  CE_ALLOC (the form-mode state is legitimate to reproduce).
+  (2) THE FLAG CARRY: notation, formf and factf were not copied.
+  THE FACTORIAL BUG (the user's repro): copying "5!" evaluated the
+  content as an ORDINARY formula (entry syntax, not expression
+  grammar) -> an error cell; NOW the factf source re-evaluates its
+  (ref-shifted) prefix through cs_eval_fact_source + csn_fact and
+  carries the flag ("A5!" copied down re-shifts to "A6!" and
+  recomputes).  THE VALUE HOLDER (!...!): copies VERBATIM (content,
+  stored value, flags) - evaluating it as an expression was the same
+  bug class.  The CE_NUM/CE_TEXT/CE_ALLOC branches now carry the
+  full flag set (just/prec/notation/formf/factf/volatf).  PINS: the
+  blank over a populated destination frees it (+ the budget
+  returns), the blank over an empty destination allocates nothing,
+  the alloc state copies, "5!" copies with FACT(5) = 120 and the
+  flag, the notation and formf carry.  MY PIN SLIPS: the first
+  blank-copy pins copied POPULATED sources (A1=5 over B1=9) - the
+  pins needed an empty SOURCE cell.  --test 822 ok; the pty shows
+  the copied factorial as 120.00 (no error cells).
+
 - **THE PERSISTENCE BUGS (the user's reports, 2026-11-16, branch
   "bugfix-alloc")**: (1) THE ALLOC-EMPTY CELL BROKE THE ROUND TRIP:
   the save writes every non-CE_EMPTY cell (type 1 = CE_ALLOC), but
