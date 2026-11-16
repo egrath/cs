@@ -1873,3 +1873,31 @@ PREVIOUS BATCH (5 items, verified):
   (send {\x18} sends LITERAL text); ^B = \x02.
 - Gates green: --test all pass, idle MATCH, gcc-14 zero warnings,
   stress walk ok. Next: phase 2 component split.
+
+## uidraw phases 3+4 (2026-11-16)
+- Dirty-flag engine + mutator conversions. cs_touch/cs_touch_all/cs_paint
+  (flags CS_D_MENU/HEADER/GRID/STATUS/CURSOR in cs.h); cs_draw = touch
+  all + paint; the main loop's drain flush + a post-switch flush paint
+  what was marked (a paste paints once, on drain).
+- CONTRACT: cs_paint with clean flags does NOT wipe the message row -
+  direct cs_msg messages (Bad coord, ?-answer, sticky error) survive
+  until the next interaction, matching the old no-redraw paths. A path
+  that paints a message must NOT mark STATUS on that path; ordering-
+  sensitive sites use touch_flush (main.c) / crepaint (command.c):
+  mark + paint-or-defer BEFORE the message paints.
+- Converted: cursor steps (cs_touch_move, scroll-aware), all entry paths
+  (CURSOR|STATUS), commit (?touch_flush GRID|STATUS|MENU before the
+  sticky error), ?, @, DEL, ^ toggle, ^B = GRID|STATUS (showForm changes
+  the cell render - the draft table's MENU was wrong), recalc driver
+  (GRID per changed pass), goto/lock/edge/order/format + the 15
+  cs_prompt_*-repaint pairs (crepaint STATUS). The rest of command.c
+  still redraw() = touch all (phase 4b can narrow).
+- CS_D_CURSOR paints via paint_grid for now; phase 5 makes it
+  fine-grained (paint_cell_at + mark-gap spaces).
+- GATES: --test, idle MATCH, gcc-14 zero warnings, extra-path pty
+  comparison (?, ^, backspace, DEL, @, ^Z, ;O) IDENTICAL vs master.
+- GOTCHA x2: never `make` while a frame-identity run is in flight - the
+  harness spawns the tree's binary per checkpoint; a rebuild mid-run
+  invalidates the later checkpoints (killed + restarted the run twice).
+- Harness runtime: ~35 min for all 15 checkpoints (the delete-row and
+  help segments are slow); run in background.

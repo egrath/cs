@@ -554,6 +554,29 @@ static void cs_msg_text(const char *s, chtype attr);
  * historical order; the dirty-flag phase hangs its flags on exactly
  * these functions. */
 
+/* the dirty flags live in cs.h (the phase-4 mutators in other files
+ * mark through cs_touch) */
+static unsigned cs_dirty;
+
+void cs_touch(int what)
+{
+    cs_dirty |= (unsigned) what;
+}
+
+void cs_touch_all(void)
+{
+    cs_dirty = CS_D_MENU | CS_D_HEADER | CS_D_GRID | CS_D_STATUS |
+               CS_D_CURSOR;
+}
+
+void cs_touch_move(int owinCol, int owinRow)
+{
+    if (winCol != owinCol || winRow != owinRow)
+        cs_touch(CS_D_HEADER | CS_D_GRID | CS_D_CURSOR | CS_D_STATUS);
+    else
+        cs_touch(CS_D_CURSOR | CS_D_STATUS);
+}
+
 static void paint_menu(void)
 {
     draw_menu();
@@ -587,16 +610,31 @@ static void paint_status(void)
     draw_editline_idle();
 }
 
-void cs_draw(void)
+/* the CURSOR component: phase 4 paints it through the grid renderer;
+ * phase 5 replaces this with the fine-grained two-cell paint */
+static void paint_cursor(void)
 {
-    cs_compute_layout();
-    /* NO clear() (the flicker fix, 2026-11-16): the old full erase +
-     * repaint flashed a blank screen on slow terminals (the Pi test).
-     * The components blank their own lines; nothing here erases. */
-    paint_menu();
-    paint_header();
     paint_grid();
-    paint_status();
+}
+
+/* paint the dirty components, clear the flags.  The common tail
+ * (startup banner repaint, prompt-mode end, cursor placement, refresh)
+ * always runs - the physical cursor must rest in the right place even
+ * when the flags were already clean. */
+void cs_paint(void)
+{
+    if (cs_dirty) {
+        cs_compute_layout();
+        if (cs_dirty & CS_D_MENU) paint_menu();
+        if (cs_dirty & CS_D_HEADER) paint_header();
+        /* a full grid paint covers the marked cells */
+        if (cs_dirty & CS_D_GRID) paint_grid();
+        else if (cs_dirty & CS_D_CURSOR) paint_cursor();
+        if (cs_dirty & CS_D_STATUS) paint_status();
+        cs_dirty = 0;
+    } else {
+        cs_compute_layout();
+    }
     /* the last row is cleared by clear(); messages are transient: they
      * are painted by cs_msg() and vanish as soon as the next key causes
      * any repaint.  The STARTUP banner is the exception: it survives
@@ -605,6 +643,15 @@ void cs_draw(void)
     promptvis = 0;   /* a repaint always ends prompt mode */
     place_cursor();
     refresh();
+}
+
+void cs_draw(void)
+{
+    /* NO clear() (the flicker fix, 2026-11-16): the old full erase +
+     * repaint flashed a blank screen on slow terminals (the Pi test).
+     * The components blank their own lines; nothing here erases. */
+    cs_touch_all();
+    cs_paint();
 }
 
 /* the startup banner (user request 2026-11-14): "CalcStar 1.5, ...

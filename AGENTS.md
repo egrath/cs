@@ -1814,14 +1814,64 @@ master when every phase passes.
   cells). ^B is \x02, not "^B".
 - Phase 1 gates: --test all pass, idle gate MATCH, gcc-14 zero
   warnings, the stress walk (2469 bytes) without crashes.
-- Remaining phases (each its own commit): 2 = component split
-  (draw_menu/draw_headers/draw_rows/draw_status extracted; redraw() =
-  all four, zero behavior change, frame-identity verified); 3 = the
-  dirty-flag engine (cs_touch/cs_touch_all/cs_paint; redraw = touch-all
-  + paint); 4 = mutators mark (cursor move = CURSOR+STATUS; cell change
-  = GRID; etc.); 5 = fine-grained cursor (paint_cell_at primitive; the
-  marks repaint the two marked cells and the gap spaces per cs1.txt);
-  6 = static menu painted once; 7 = final measurement.
+- **Phase 2 (DONE): the paint components extracted, zero behavior
+  change.** `cs_draw` delegates to four component painters in the
+  historical order: `paint_menu` (menu + memwarn — the warning line
+  sits on a menu row), `paint_header`, `paint_grid`, `paint_status`
+  (the message-row wipe + cursor/type/contents/edit lines). All 15
+  frame-identity checkpoints identical; the bench stays 1259 bytes.
+- **Phases 3 + 4 (DONE, one commit — see the note below): the
+  dirty-flag engine + the mutator conversions.**
+  - The machinery: `cs_touch(what)` marks, `cs_paint()` paints the
+    marked components and clears the flags, `cs_touch_all()` marks
+    everything. The flags live in cs.h (`CS_D_MENU / CS_D_HEADER /
+    CS_D_GRID / CS_D_STATUS / CS_D_CURSOR`); the common tail (startup
+    banner repaint, prompt-mode end, `place_cursor`, `refresh`) always
+    runs in cs_paint — the physical cursor rests correctly even when
+    the flags were clean.
+  - `redraw()` = cs_touch_all + (paint now, or defer while keys are
+    queued). The main loop's drain flush calls `cs_paint()`, and the
+    post-switch flush paints what the mutators marked — a paste still
+    paints exactly once, on drain.
+  - **THE NO-DIRTY-FLAGS CONTRACT: a direct cs_msg() message survives
+    a no-touch flush.** cs_paint with clean flags does NOT run
+    paint_status, so the message row is not wiped — "Bad coord", the
+    ?-calculator answer and the sticky error line persist until the
+    next interaction exactly like the old no-redraw paths. Corollary:
+    a path that paints a message directly must NOT mark STATUS on that
+    path (or its own flush wipes the message first); the ordering-
+    sensitive sites use `touch_flush(...)` (main.c) / `crepaint(...)`
+    (command.c) — mark, then paint-or-defer BEFORE the message paints.
+  - The mutator mapping (converted this phase): cursor steps
+    (`cs_touch_move` — scroll-aware: a scroll adds HEADER+GRID, a pure
+    in-window step is CURSOR+STATUS), every entry-engine path (typing,
+    backspace, the ^ toggle, ESC, ';'/'='/'"' in-entry → CURSOR+STATUS),
+    the commit (`touch_flush(GRID|STATUS|MENU)` before the sticky
+    error), the ?-calculator and the @ resolve (`touch_flush`), the DEL
+    key, the ^ cell-type toggle, ^B (`GRID|STATUS` — the code shows
+    showForm changes the CELL RENDER, not the menu: the draft table's
+    "MENU+STATUS" was wrong), the recalc driver (GRID per changed
+    pass — the status rows no longer blank per pass), goto (scroll-
+    aware), lock (HEADER|GRID|STATUS), Edge, Order (STATUS), the
+    extended toggle (touch all — every line moves), Help (touch all —
+    the pages clear() themselves), format (HEADER|GRID|STATUS), and
+    the 15 `cs_prompt_*`-then-repaint pairs (crepaint(STATUS) — they
+    only clear the prompt line).
+  - The remaining command dialogs (copy/delete/insert/save/load/print/
+    sort/quit/what/?) still call redraw() = touch all — the fallback.
+    Phase 4b can narrow them; the hot per-keystroke paths are done.
+  - **CS_D_CURSOR is a COMPONENT, not yet fine-grained**: phase 4's
+    paint_cursor() = paint_grid() (the whole data window). Phase 5
+    replaces it with the two-cell fine-grained paint (paint_cell_at +
+    the mark-gap spaces). The flags are already wired for it.
+  - Phase 3+4 landed as one commit: the phase-3-only verification run
+    (ck 0-2 identical) was interrupted by a rebuild that mixed phase-4
+    edits into the tested binary — the harness gate for the combined
+    state is the authoritative one. LESSON: never `make` while a
+    frame-identity run is in flight; the harness spawns the tree's
+    binary per checkpoint.
+- Remaining phases: 5 = fine-grained cursor; 6 = static menu painted
+  once; 7 = final measurement. Merge to master when all pass.
 
 ## Source map
 

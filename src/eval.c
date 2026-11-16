@@ -305,9 +305,10 @@ void cs_run_recalc_passes(int always_one)
         iterating = 1;
         if (!cs_sheet_changed) break;                 /* stabilized */
         /* the user watches the iteration: repaint the window with the
-         * current values, then put the pass status back (cs_draw
-         * wipes the status rows) */
-        cs_draw();
+         * current values, then put the pass status back (the status
+         * rows are untouched - only the grid changed) */
+        cs_touch(CS_D_GRID);
+        cs_paint();
         cs_msg("Calculating ... (pass %d)", pass);
         ch = cs_getch_nodelay();        /* non-blocking: ERR when idle */
         if (ch == 27) {

@@ -14,10 +14,37 @@ static void redraw(void)
     /* batch repaints while keys are queued: a fast paste otherwise
      * overflows the tty buffer and DROPS bytes (the app cannot keep up
      * with a full-screen redraw per key).  The loop's top paints as
-     * soon as the queue drains, so the idle screen stays fresh. */
+     * soon as the queue drains, so the idle screen stays fresh.
+     * Phase 3: mark everything, paint only on drain - the loop's
+     * flush paints what was marked. */
+    cs_touch_all();
     if (cs_input_pending()) { paint_pending = 1; return; }
     paint_pending = 0;
-    cs_draw();
+    cs_paint();
+}
+
+/* phase 4: mark targeted components and paint now unless keys are
+ * queued (the drain paints what was marked).  Used by the paths whose
+ * internal ordering matters: a direct cs_msg() (the sticky error, the
+ * ?-calculator answer) must land AFTER the component paint, exactly
+ * like the old redraw()-then-message sequence. */
+static void touch_flush(int what)
+{
+    cs_touch(what);
+    if (cs_input_pending()) { paint_pending = 1; return; }
+    cs_paint();
+}
+
+/* one cursor step, scroll-aware: a scroll re-maps the header and every
+ * grid row, a pure in-window step repaints the marked cell(s) and the
+ * status lines only */
+static void move_cursor(int dc, int dr);
+
+static void step_cursor(int dc, int dr)
+{
+    int oc = winCol, orow = winRow;
+    move_cursor(dc, dr);
+    cs_touch_move(oc, orow);
 }
 
 /* ---------------- movement with window scrolling -------------------- */
@@ -121,7 +148,7 @@ static void entry_begin_ref(void)
     g_editstate = EDIT_EDITING;
     strcpy(g_edit, ref);
     g_editlen = (int) strlen(ref);
-    redraw();
+    cs_touch(CS_D_CURSOR | CS_D_STATUS);
 }
 
 static void entry_begin(int ch)
@@ -133,7 +160,7 @@ static void entry_begin(int ch)
     g_edit[0] = (char) ch;
     g_edit[1] = '\0';
     g_editlen = 1;
-    redraw();
+    cs_touch(CS_D_CURSOR | CS_D_STATUS);
 }
 
 static void entry_append(int ch)
@@ -142,7 +169,7 @@ static void entry_append(int ch)
         g_edit[g_editlen++] = (char) ch;
         g_edit[g_editlen] = '\0';
     }
-    redraw();
+    cs_touch(CS_D_CURSOR | CS_D_STATUS);
 }
 
 /* finish a cell reference entered with '@': uses the cursor position
@@ -188,7 +215,7 @@ static void eval_pending(void)
     strcpy(saved, g_edit);
     err = cs_eval_formula(saved, &val, &str);
     edit_clear();               /* "the edit: field is cleared" */
-    redraw();
+    touch_flush(CS_D_CURSOR | CS_D_STATUS);
     if (err) {
         cs_set_errpend(1);      /* single message, no queue */
         cs_sticky_err(err, saved, g_entrycol, g_entryrow);
@@ -214,7 +241,7 @@ static void entry_commit(void)
     Cell *c;
     char saved[CS_EDITMAX + 1];
     int ec;
-    if (g_editlen == 0) { edit_clear(); redraw(); return; }
+    if (g_editlen == 0) { edit_clear(); touch_flush(CS_D_CURSOR | CS_D_STATUS); return; }
     g_edit[g_editlen] = '\0';
     strcpy(saved, g_edit);
     cs_recalc_limit_reset();          /* fresh overrun state per commit */
@@ -227,13 +254,15 @@ static void entry_commit(void)
     errq_i = 0;
     if (c && c->type == CE_NUM && c->iserr) {
         errpend = 1;
-        redraw();                 /* cells first ... */
+        /* cells first ... (the sticky message must land after the
+         * paint, exactly like the old redraw-then-message order) */
+        touch_flush(CS_D_GRID | CS_D_STATUS | CS_D_MENU);
         cs_sticky_err(ec, saved, col, row);   /* "... hit space [cell]" */
         if (cs_recalc_limit_hit())
             cs_msg("Recalculation limit reached");
         return;
     }
-    redraw();
+    touch_flush(CS_D_GRID | CS_D_STATUS | CS_D_MENU);
     if (cs_recalc_limit_hit())
         /* an iterated entry that overran: the message must survive the
          * repaint above (flagged) */
@@ -263,7 +292,7 @@ static void toggle_celltype(void)
         c->iserr = err ? 1 : 0;
         c->just = 'R';           /* numerics are always right justified */
     }
-    redraw();
+    cs_touch(CS_D_GRID | CS_D_STATUS);
 }
 
 void run_session(void)
@@ -297,11 +326,12 @@ void run_session(void)
         int ch;
         if (paint_pending) {
             /* queued keys still waiting: process them WITHOUT the
-             * expensive repaint; paint only when the queue drains */
+             * expensive repaint; paint only when the queue drains.
+             * Phase 3: the flush paints what the mutators marked. */
             ch = cs_getch_nodelay();
             if (ch == ERR) {
                 paint_pending = 0;
-                cs_draw();
+                cs_paint();
                 continue;
             }
         } else
@@ -337,35 +367,35 @@ void run_session(void)
         }
         switch (ch) {
         case 5:                        /* ^E up */
-            move_cursor(0, -1); redraw(); break;
+            step_cursor(0, -1); break;
         case 24:                       /* ^X down */
-            move_cursor(0, 1); redraw(); break;
+            step_cursor(0, 1); break;
         case 19:                       /* ^S left */
-            move_cursor(-1, 0); redraw(); break;
+            step_cursor(-1, 0); break;
         case 4:                        /* ^D right */
-            move_cursor(1, 0); redraw(); break;
+            step_cursor(1, 0); break;
 #ifdef KEY_UP
         case KEY_UP:
-            move_cursor(0, -1); redraw(); break;
+            step_cursor(0, -1); break;
         case KEY_DOWN:
-            move_cursor(0, 1); redraw(); break;
+            step_cursor(0, 1); break;
         case KEY_LEFT:
-            move_cursor(-1, 0); redraw(); break;
+            step_cursor(-1, 0); break;
         case KEY_RIGHT:
-            move_cursor(1, 0); redraw(); break;
+            step_cursor(1, 0); break;
 #endif
         case 26:                       /* ^Z col A next row (L-R mode)
                                           or row A next col (T-B mode) */
             if (dirTB) {
                 curRow = 0;
-                move_cursor(1, 0);
+                step_cursor(1, 0);
                 winRow = 0;
             } else {
                 curCol = 0;
-                move_cursor(0, 1);
+                step_cursor(0, 1);
                 winCol = 0;
             }
-            redraw(); break;
+            break;
         case '\r': case '\n': case KEY_ENTER:
             if (g_editstate == EDIT_EDITING) {
                 /* data has just been typed: the cursor STAYS in the cell;
@@ -376,10 +406,9 @@ void run_session(void)
                 /* manual 14.3 RETURN KEY: right (or down in T-B mode);
                  * at column DW it wraps to the first column of the next
                  * row */
-                if (dirTB) move_cursor(0, 1);
-                else if (curCol >= CS_MAXCOL - 1) { curCol = 0; move_cursor(0, 1); }
-                else move_cursor(1, 0);
-                redraw();
+                if (dirTB) step_cursor(0, 1);
+                else if (curCol >= CS_MAXCOL - 1) { curCol = 0; step_cursor(0, 1); }
+                else step_cursor(1, 0);
             }
             break;
         case '?':
@@ -408,16 +437,16 @@ void run_session(void)
             break;
         case 2:                        /* ^B data toggle */
             showForm = !showForm;
-            redraw(); break;
+            cs_touch(CS_D_GRID | CS_D_STATUS); break;
         case 27:                       /* ESC */
             edit_clear();
             cs_prompt_hide();
-            redraw(); break;
+            cs_touch(CS_D_CURSOR | CS_D_STATUS); break;
         case KEY_BACKSPACE: case 8: case 127:
             if (g_editstate == EDIT_EDITING && g_editlen > 0) {
                 g_edit[--g_editlen] = '\0';
                 if (g_editlen == 0) g_editstate = EDIT_IDLE;
-                redraw();
+                cs_touch(CS_D_CURSOR | CS_D_STATUS);
             }
             break;
 #ifdef KEY_DC
@@ -429,7 +458,7 @@ void run_session(void)
             cs_free_cell_at(curCol, curRow);
             cs_recount_entries();
             cs_mark_sheet_change();
-            redraw();
+            cs_touch(CS_D_GRID | CS_D_STATUS | CS_D_MENU);
             break;
 #endif
         case '"':
@@ -443,9 +472,9 @@ void run_session(void)
             break;
         case 94:                       /* '^' TEXT/NUMERIC DATA TOGLE (manual 6.4) */
             if (g_editstate == EDIT_EDITING) {
-                g_entry_num = !g_entry_num;   /* pending toggle, live on the
-                                                 type line via redraw */
-                redraw();
+                g_entry_num = !g_entry_num;   /* pending toggle, live on
+                                                 the type line */
+                cs_touch(CS_D_CURSOR | CS_D_STATUS);
             } else {
                 toggle_celltype();
             }
@@ -456,7 +485,8 @@ void run_session(void)
                                            repaint NOW - the user sees the
                                            reference the moment it lands */
             if (g_editstate == EDIT_EDITING) {
-                if (at_resolve()) redraw();
+                if (at_resolve())
+                    touch_flush(CS_D_CURSOR | CS_D_STATUS);
             } else
                 entry_begin_ref();
             break;
@@ -476,6 +506,16 @@ void run_session(void)
             }
             break;
         }
+        /* phase 4: the mutators marked their components; paint when
+         * the batch drains (a queued paste paints once, on drain).
+         * Nothing marked: the paint still places the cursor and ends
+         * prompt mode, but no component repaints - a message painted
+         * directly (Bad coord, the ?-calculator) survives until the
+         * next interaction, exactly like the old no-redraw paths. */
+        if (cs_input_pending())
+            paint_pending = 1;
+        else if (!paint_pending)
+            cs_paint();
     }
 }
 

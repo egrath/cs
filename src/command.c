@@ -19,17 +19,27 @@ void cs_command_menu(void);   /* forward: auto entry loop needs it */
 
 static const char *collab(const char *w, int col, const char *rest);
 
+/* phase 4: mark targeted components and paint now unless keys are
+ * queued (the main loop's drain flush paints them then) - the dialogs
+ * run inside their own prompt loops, so they flush themselves */
+static void crepaint(int what)
+{
+    cs_touch(what);
+    if (cs_input_pending()) return;
+    cs_paint();
+}
+
 void cs_goto_cmd(void)
 {
     char buf[32];
-    int c, r, gc2, gr2;
+    int c, r, gc2, gr2, oc = winCol, orow = winRow;
     if (cs_prompt_coord("Goto>", "A1", buf, (int) sizeof(buf), 1) < 0) return;
     if (!cs_coord_text(buf, &c, &r, &gc2, &gr2)) { cs_msg("Bad coord"); return; }
     curCol = c; curRow = r;
     cs_stay_visible();   /* scrolls only when the target is off-window
                             (real CalcStar verified: in-window Goto
                             target leaves the window untouched) */
-    redraw();
+    cs_touch_move(oc, orow);   /* the main loop's flush paints */
 }
 
 /* ============================ helpers ============================== */
@@ -343,7 +353,7 @@ static void copy_cmd(void)
         Cell *s = cs_getcell(c1 + i % sw, r1 + i / sh);
         if (s && s->type == CE_NUM) {
             int ch = cs_prompt_char("R)elative or N)o adjustment");
-            redraw();
+            crepaint(CS_D_STATUS);   /* the prompt line goes away */
             if (ch == 27) return;
             rel = (ch == 'R' || ch == 'r');
             break;
@@ -357,7 +367,7 @@ static void copy_cmd(void)
         int fill = 0;
         for (;;) {
             int ch2 = cs_prompt_char("F)ill or D)estination");
-            redraw();
+            crepaint(CS_D_STATUS);   /* the prompt line goes away */
             if (ch2 == 27) return;
             if (ch2 == 'F' || ch2 == 'f') { fill = 1; break; }
             if (ch2 == 'D' || ch2 == 'd') { fill = 0; break; }
@@ -570,7 +580,7 @@ static void insert_cmd(void)
 {
     int ch, at, r, c;
     ch = cs_prompt_char("Insert: R)ow C)olumn");
-    redraw();
+    crepaint(CS_D_STATUS);   /* the prompt line goes away */
     if (ch == 27) return;
     if (ch == 'R' || ch == 'r') {
         at = curRow;
@@ -851,7 +861,7 @@ static void delete_cmd(void)
     char list[256], dflt[8], inp[80];
     int ch, c1, r1, c2, r2;
     ch = cs_prompt_char("Delete: A)ll R)ow C)olumn F)rom-To E)ntry");
-    redraw();
+    crepaint(CS_D_STATUS);   /* the prompt line goes away */
     if (ch == 27) return;
     if (ch == 'E' || ch == 'e') {
         cs_free_cell_at(curCol, curRow);
@@ -862,7 +872,7 @@ static void delete_cmd(void)
         int hit;
         cs_coord_str(dflt, (int) sizeof(dflt), curCol, curRow);
         if (cs_prompt_range("Delete rows (From>To)", dflt, inp, (int) sizeof(inp)) < 0) return;
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (!del_range_text(inp, 1, &r1, &r2))
             { cs_msg("bad range coord"); return; }
         dep_check_range(0, r1, r2, list, (int) sizeof(list));
@@ -870,14 +880,14 @@ static void delete_cmd(void)
         if (hit)
             { cs_msg("ERROR: would delete ref(s) at %s", list); return; }
         ch = cs_prompt_yn("verify Y/N - ");
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (ch != 1) return;
         cs_delete_rows(r1, r2);
     } else if (ch == 'C' || ch == 'c') {
         int hit;
         cs_col_name(curCol, dflt);
         if (cs_prompt_range("Delete columns (From>To)", dflt, inp, (int) sizeof(inp)) < 0) return;
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (!del_range_text(inp, 0, &c1, &c2))
             { cs_msg("bad range coord"); return; }
         dep_check_range(1, c1, c2, list, (int) sizeof(list));
@@ -885,7 +895,7 @@ static void delete_cmd(void)
         if (hit)
             { cs_msg("ERROR: would delete ref(s) at %s", list); return; }
         ch = cs_prompt_yn("verify Y/N - ");
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (ch != 1) return;
         cs_delete_columns(c1, c2);
     } else if (ch == 'F' || ch == 'f') {
@@ -896,7 +906,7 @@ static void delete_cmd(void)
             strcat(dflt, tmp2);
         }
         if (cs_prompt_coord("Delete (From>To)", dflt, inp, (int) sizeof(inp), 2) < 0) return;
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (!cs_coord_text(inp, &c1, &r1, &c2, &r2)) {
             cs_msg("bad range coord"); return;
         }
@@ -905,12 +915,12 @@ static void delete_cmd(void)
          * verification; the bulk clear asks for verify only (user
          * decision 2026-11) */
         ch = cs_prompt_yn("verify Y/N - ");
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (ch != 1) return;
         cs_clear_range(c1, r1, c2, r2);
     } else if (ch == 'A' || ch == 'a') {
         ch = cs_prompt_yn("verify Y/N - ");
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (ch != 1) return;
         cs_clear_all();
         fname[0] = '\0';
@@ -940,7 +950,7 @@ static void format_cmd(void)
         notn == 1 ? "sci" : notn == 2 ? "dec" : "auto",
         colw[curCol], form ? "set" : "clear");
     ch = cs_prompt_char(label);
-    redraw();
+    crepaint(CS_D_STATUS);   /* the prompt line goes away */
     if (ch == 27) return;
     if (ch == 'N' || ch == 'n') {
         /* the notation cycle (flagged ext 2026-11):
@@ -956,7 +966,7 @@ static void format_cmd(void)
             cur->type = CE_ALLOC;
             cs_recount_entries();
         }
-        redraw();
+        crepaint(CS_D_GRID | CS_D_STATUS);
     } else if (ch == 'W' || ch == 'w') {
         int w;
         if (cs_prompt_str(collab("Column", curCol, "width(3 - 63)"), pw, tmpb, 20) < 0) return;
@@ -1006,7 +1016,7 @@ static void format_cmd(void)
         }
         return;
     } else return;
-    redraw();
+    crepaint(CS_D_HEADER | CS_D_GRID | CS_D_STATUS);
 }
 
 static const char *collab(const char *w, int col, const char *rest)
@@ -1022,7 +1032,7 @@ static const char *collab(const char *w, int col, const char *rest)
 static void recalc_cmd(void)
 {
     int ch = cs_prompt_char("Recalculate - A)ll or E)ntry");
-    redraw();
+    crepaint(CS_D_STATUS);
     if (ch == 27) return;
     cs_recalc_limit_reset();          /* fresh overrun state per run */
     if (ch == 'A' || ch == 'a')
@@ -1102,7 +1112,7 @@ static void what_cmd(void)
 void cs_lock_cmd(void)
 {
     int ch = cs_prompt_char("Lock: R)ow C)ol B)oth");
-    redraw();
+    crepaint(CS_D_STATUS);       /* the prompt line goes away */
     if (ch == 27) return;
     if (ch == 'B' || ch == 'b') {
         if (lockRows || lockCols) { lockRows = 0; lockCols = 0; }
@@ -1112,7 +1122,8 @@ void cs_lock_cmd(void)
     else if (ch == 'C' || ch == 'c')
         lockCols = lockCols ? 0 : curCol + 1;   /* cols A..cursor */
     else return;
-    redraw();
+    /* the lock re-maps the window (the separator labels, the rows) */
+    crepaint(CS_D_HEADER | CS_D_GRID | CS_D_STATUS);
 }
 
 /* ============================== Sort ================================ */
@@ -1277,7 +1288,7 @@ static void sort_cmd(void)
     char buf[80];
     int c1, r1, c2, r2, kc, err, ch, desc;
     if (cs_prompt_coord("Range? ", "", buf, (int) sizeof(buf), 2) < 0) return;
-    redraw();
+    crepaint(CS_D_STATUS);   /* the prompt line goes away */
     if (!cs_coord_text(buf, &c1, &r1, &c2, &r2)) { cs_msg("bad range coord"); return; }
     if (r1 == r2) { cs_msg("bad sort range"); return; }   /* one row: horizontal
                                                            * or 1x1 - nothing
@@ -1287,7 +1298,7 @@ static void sort_cmd(void)
         kc = c1 + 1;              /* a single column: the key is implied */
     } else {
         if (cs_prompt_str("Key (Column)? ", "", buf, (int) sizeof(buf)) < 0) return;
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         err = 0;
         kc = cs_eval_keycol(buf, &err);
         if (err || kc < 1 || kc - 1 < c1 || kc - 1 > c2) {
@@ -1296,7 +1307,7 @@ static void sort_cmd(void)
     }
     for (;;) {
         ch = cs_prompt_char("Order (A/D)? ");
-        redraw();
+        crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (ch == 27) return;
         if (ch == 'A' || ch == 'a') { desc = 0; break; }
         if (ch == 'D' || ch == 'd') { desc = 1; break; }
@@ -1436,25 +1447,27 @@ static void redraw(void) { cs_draw(); }
 void cs_command_menu(void)
 {
     int ch = cs_prompt_char("Command > ");
-    redraw();
+    crepaint(CS_D_STATUS);   /* the prompt line goes away */
     if (ch == 27 || ch == '\n' || ch == '\r') return;
     switch (toupper(ch)) {
     case 'A': auto_cmd(); break;
     case 'C': copy_cmd(); break;
     case 'D': delete_cmd(); break;
-    case 'E': winCol = curCol; winRow = curRow; redraw(); break;
+    case 'E': winCol = curCol; winRow = curRow;
+              crepaint(CS_D_HEADER | CS_D_GRID | CS_D_STATUS); break;
     case 'F': format_cmd(); break;
     case 'G': cs_goto_cmd(); break;
     /* the original: RETURN on the second help page "switches back to
      * the applications main screen" - repaint it at once (the key
      * loop would otherwise leave page 2 up until the next key) */
-    case 'H': cs_help_cmd(); redraw(); break;
+    case 'H': cs_help_cmd(); crepaint(CS_D_MENU | CS_D_HEADER | CS_D_GRID |
+                                     CS_D_STATUS | CS_D_CURSOR); break;
     case '#': sort_cmd(); break;   /* sort (user-ext 2026-11, not in
                                    * the panel or the original help) */
     case 'I': insert_cmd(); break;
     case 'L': cs_load_dialog(0); break;
     case 'M': cs_load_dialog(1); break;
-    case 'O': dirTB = !dirTB; redraw(); break;
+    case 'O': dirTB = !dirTB; crepaint(CS_D_STATUS); break;
     case 'P': cs_print_cmd(); break;
     case 'Q': quit_cmd(); break;
     case 'R': recalc_cmd(); break;
@@ -1465,7 +1478,10 @@ void cs_command_menu(void)
     case '*':
         extended = !extended;
         cs_stay_visible();   /* keep the cursor inside the new row count */
-        redraw();
+        /* every line moves: the menu hides, the window grows, the
+         * status block shifts - repaint everything */
+        crepaint(CS_D_MENU | CS_D_HEADER | CS_D_GRID | CS_D_STATUS |
+                 CS_D_CURSOR);
         break;
     default: break;
     }

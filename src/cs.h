@@ -192,6 +192,23 @@ int    cs_scrw(void);          /* drawing width: full terminal (COLS) */
 int    cs_cell_x(int col);
 int    cs_win_rows(void);
 void   cs_draw(void);
+/* the dirty-flag engine (phase 3, 2026-11-16): mutators mark, the
+ * paint flush (cs_paint) clears.  cs_draw = touch all + paint; the
+ * main loop's deferred flush paints what was marked. */
+#define CS_D_MENU    0x01u   /* the command menu rows (+ memwarn) */
+#define CS_D_HEADER  0x02u   /* the column/row header line */
+#define CS_D_GRID    0x04u   /* the data window rows */
+#define CS_D_STATUS  0x08u   /* cursor/type/contents/edit/message rows */
+#define CS_D_CURSOR  0x10u   /* the marked cell(s) only (phase 5
+                                 refines this to a fine-grained paint;
+                                 for now it repaints the grid rows) */
+void   cs_touch(int what);
+void   cs_touch_all(void);
+void   cs_paint(void);
+/* mark the touch set for a cursor move: a scroll changes the header
+ * line and re-maps every grid row, a pure in-window move repaints only
+ * the marked cell(s) and the status lines */
+void   cs_touch_move(int owinCol, int owinRow);
 void   cs_draw_prompt_text(const char *txt, const char *dots);
 void   cs_msg_plain(const char *fmt, ...);
 int    cs_poll_escape(void);   /* screen.c: non-blocking ESC poll */
