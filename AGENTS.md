@@ -1753,6 +1753,76 @@ Batch workflow (do all steps before reporting done):
 - Precision range is `0 - 24` (user-extended from Appendix C's `0 - 12`,
   flagged 2026-11) even though one chapter says "0 to 10 places".
 
+## THE UI-REDRAW ARCHITECTURE (branch "uidraw", 2026-11-16, in progress)
+
+Goal: maximum interactive performance on slow terminals (the user's
+Raspberry Pi test showed a full-screen flash on every key). Phased
+commits, each with its own verification gate; the whole thing merges to
+master when every phase passes.
+
+- **Phase 1 (DONE): `clear()` removed from `cs_draw()` + explicit
+  blanking.** The flicker root cause was the full `clear()` + repaint in
+  every `cs_draw` — the terminal showed an erase flash, and every repaint
+  re-emitted ~900 bytes. The replacement discipline: **each paint
+  function blanks the lines it owns first, then writes content over the
+  blanks.** ncurses diffs the virtual screen against the physical, so a
+  blank over an unchanged blank emits ZERO bytes — the erase flash is
+  gone and the byte cost is the real change set only (measured: the bench
+  sequence dropped 2842 bytes / 4 clear-frames → **1259 bytes / 1
+  clear-frame**, the remaining clear being ncurses's own startup clear).
+  Ownership map (the blanking call sites):
+  - `draw_menu` blanks lines 0..4 in BOTH modes — the extended toggle
+    (`*`) must wipe the menu text off the screen (draw_menu paints only
+    when `!extended`; the old clear() did the wiping).
+  - `draw_headers` blanks the column/row header lines.
+  - `draw_rows` blanks the WHOLE data window (all `cs_win_rows()` lines)
+    before rendering — the separator gaps between cells, the row-label
+    gap and the lines past the last sheet row are painted by NOTHING
+    else; a scroll or a short sheet used to leave ghost content there
+    (found by the frame-identity harness, see below). The cursor marks
+    (`>` `<`) are erased by the same blank.
+  - `draw_cursorline` blanks line_box, line_cursor AND the layout's
+    spacer row `line_cursor + 1` — that row is owned by NO component
+    ("one blank line between" in cs_compute_layout); help-page text
+    used to ghost there forever after `;H` closed (found by the
+    harness).
+  - `draw_typecont` blanks line_type/line_cont (variable-length type
+    text: "text: right justified" then "numeric" used to ghost "ified").
+  - `draw_editline_idle` blanks line_edit (the idle case paints only
+    "edit: ").
+  - The transient message row is wiped explicitly in `cs_draw` (the
+    pre-existing behavior, kept).
+  - `help.c` still calls `clear()` for its own pages — self-contained,
+    acceptable (the pages are static full-screen views); the 'H' key
+    case repaints the main screen after.
+- **The frame-identity harness (the phase gate)**: /tmp/fcrun.py +
+  /tmp/frameseg3.py — a 15-segment scripted interaction (goto+commit,
+  vertical/horizontal scrolls, far goto + text, format width/precision,
+  lock, extended toggle ×2, ;R A, copy, both help pages, row delete,
+  ESC), run against the NEW binary and the pre-change binary (a
+  worktree build of master, /tmp/cs_master), every cumulative prefix
+  rendered through /tmp/render2.py and the final frames COMPARED — all
+  15 checkpoints IDENTICAL after the fixes above. Captures are slow
+  (~2-3 min); run it in the background.
+- **The harness renderers (learned the hard way)**: render2.py now
+  implements `ESC[J` ED with params (0 = cursor→end, 1 = start→cursor,
+  2 = full) and `ESC[K` EL the same way — the missing `1K` support once
+  made a CORRECT app paint look like a help-text ghost on the edit line
+  (two false alarms). Capture scripts must send control keys with Tcl
+  double quotes + escaping (`send "\x18"`) — `send {\x18}` in braces
+  sends the LITERAL text (a whole stress run typed "\x18" strings into
+  cells). ^B is \x02, not "^B".
+- Phase 1 gates: --test all pass, idle gate MATCH, gcc-14 zero
+  warnings, the stress walk (2469 bytes) without crashes.
+- Remaining phases (each its own commit): 2 = component split
+  (draw_menu/draw_headers/draw_rows/draw_status extracted; redraw() =
+  all four, zero behavior change, frame-identity verified); 3 = the
+  dirty-flag engine (cs_touch/cs_touch_all/cs_paint; redraw = touch-all
+  + paint); 4 = mutators mark (cursor move = CURSOR+STATUS; cell change
+  = GRID; etc.); 5 = fine-grained cursor (paint_cell_at primitive; the
+  marks repaint the two marked cells and the gap spaces per cs1.txt);
+  6 = static menu painted once; 7 = final measurement.
+
 ## Source map
 
 | file | responsibility |

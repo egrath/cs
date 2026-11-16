@@ -243,6 +243,27 @@ static int row_line(int row)
     return (y - line_rows < cs_win_rows()) ? y : -1;
 }
 
+/* blank one screen line across the full width (the clear()-removal
+ * support, 2026-11-16): clear() used to erase the whole screen before
+ * every repaint; the paints now blank the lines they own first and
+ * write the content over them.  ncurses diffs the virtual screen
+ * against the physical, so blanks over unchanged blanks emit ZERO
+ * bytes - the erase flash is gone and the byte cost is the real
+ * change set only. */
+static void blank_line(int y)
+{
+    char wipe[128];
+    int w = cs_scrw(), x = 0, k;
+    if (y < 0 || y >= LINES) return;
+    for (k = 0; k < (int) sizeof(wipe); k++) wipe[k] = ' ';
+    while (x < w) {
+        int n = w - x;
+        if (n > (int) sizeof(wipe)) n = (int) sizeof(wipe);
+        cputn(y, x, wipe, n);
+        x += n;
+    }
+}
+
 /* top menu: five lines, verbatim from the CalcStar screen mask */
 static const char *menu5[] = {
     " -Cursor Movement- |        -Commands-  ; followed by             | -Misc-",
@@ -255,6 +276,10 @@ static const char *menu5[] = {
 static void draw_menu(void)
 {
     int i;
+    /* blank in both modes: toggling to extended must wipe the menu
+     * text off the screen (the old clear() did it) */
+    for (i = 0; i < 5; i++)
+        blank_line(i);
     if (extended) return;
     for (i = 0; i < 5; i++)
         cputn(i, 0, menu5[i], cs_scrw());
@@ -265,6 +290,8 @@ static void draw_headers(void)
     char nambuf[4];
     int c, x;
     int fc = winCol >= lockCols ? winCol : lockCols;
+    blank_line(line_colhdr);
+    blank_line(line_rowhdr);
     cput(line_colhdr, 0, "Col>");
     cputn(line_rowhdr, 0, "Row+", 4);
     dashline(line_rowhdr, 4);
@@ -283,6 +310,12 @@ static void draw_rows(void)
 {
     int i;
     int w = cs_scrw();
+    /* blank the WHOLE data window first: the separator gaps, the
+     * row-label gap and the lines past the last sheet row were only
+     * ever wiped by the old clear(); a scroll or a short sheet left
+     * ghost content there (frame-identity test, 2026-11-16) */
+    for (i = 0; i < cs_win_rows(); i++)
+        blank_line(line_rows + i);
     for (i = 0; i < cs_win_rows(); i++) {
         int row, y, c;
         if (i < lockRows) row = i;
@@ -350,6 +383,11 @@ static void draw_cursorline(void)
     char cb[8], curcb[8];
     int w = cs_scrw();
 
+    blank_line(line_box);
+    blank_line(line_cursor);
+    blank_line(line_cursor + 1);   /* the layout's spacer row: unowned by
+                                      any other component; the help pages
+                                      used to ghost here without clear() */
     /* bottom border of the data window */
     cputn(line_box, 0, "   +", 4);
     dashline(line_box, 4);
@@ -395,6 +433,8 @@ static void draw_typecont(void)
 {
     Cell *c = cs_getcell(curCol, curRow);
 
+    blank_line(line_type);
+    blank_line(line_cont);
     cputn(line_type, 0, "current||", 9);
     cputn(line_cont, 0, "data   ||", 9);
     /* type: during an entry the LIVE interpretation wins over the
@@ -448,6 +488,7 @@ static void draw_typecont(void)
 static void draw_editline_idle(void)
 {
     int vis, off;
+    blank_line(line_edit);
     cput(line_edit, 16, "edit: ");
     if (g_editstate != EDIT_EDITING || g_editlen <= 0) return;
     /* horizontal scroll: the caret is always at the buffer end, so the
@@ -510,7 +551,18 @@ static void cs_msg_text(const char *s, chtype attr);
 void cs_draw(void)
 {
     cs_compute_layout();
-    clear();
+    /* NO clear() (the flicker fix, 2026-11-16): the old full erase +
+     * repaint flashed a blank screen on slow terminals (the Pi test).
+     * The paints cover every position by overwriting; the one thing
+     * clear() did that the repaints do not is wiping the transient
+     * message row (row 24) - done explicitly below. */
+    {
+        char wipe[256];
+        int w = cs_scrw(), k;
+        if (w > (int) sizeof(wipe)) w = (int) sizeof(wipe);
+        for (k = 0; k < w; k++) wipe[k] = ' ';
+        cputn(LINES - 1, 0, wipe, w);
+    }
     draw_menu();
     draw_headers();
     draw_memwarn();

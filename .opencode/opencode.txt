@@ -1854,3 +1854,22 @@ PREVIOUS BATCH (5 items, verified):
 - /tmp/rsz.exp  resize-up mid-run; /tmp/rsz2.exp (mid-entry + prompt resize sequence);
   /tmp/load.exp (save+relaunch CLI load), /tmp/big{,2,3}.exp (row/col scroll + toggles),
   /tmp/wide.exp (132x40), /tmp/step.exp (idle cs1 capture) — all working.
+
+## uidraw phase 1 (2026-11-16)
+- clear() removed from cs_draw(); every paint function blanks the lines
+  it owns first (blank_line helper), ncurses diffs make unchanged blanks
+  free. Measured: bench 2842B/4 clear-frames -> 1259B/1 (startup's own).
+- Unowned-row trap: line_cursor+1 spacer painted by NOBODY - blank it in
+  draw_cursorline (help text ghosted there). draw_menu blanks in BOTH
+  extended modes (extended wipe); draw_rows blanks the whole data window
+  (scroll ghosts in gaps). Mark tracking REMOVED again from draw_rows -
+  the blank repaint erases the marks; the fine-grained phase (5) brings
+  it back where it belongs.
+- Frame-identity gate: /tmp/fcrun.py + /tmp/frameseg3.py (15 segments,
+  cumulative prefixes, both binaries in parallel, final-frame diff vs a
+  master worktree build at /tmp/cs_master) - all 15 IDENTICAL.
+- Harness fixes: render2.py ED/EL params (0=cursor->end, 1=start->cursor,
+  2=full); expect sends need Tcl double-quote escaping for control bytes
+  (send {\x18} sends LITERAL text); ^B = \x02.
+- Gates green: --test all pass, idle MATCH, gcc-14 zero warnings,
+  stress walk ok. Next: phase 2 component split.
