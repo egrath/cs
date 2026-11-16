@@ -348,11 +348,25 @@ clock on first use (both ISO C89; `time_t` enters through its
 decimal digit string, never a fixed-width integer — the width is
 implementation-defined).  `SEED(x)` sets the state and returns the
 value, so `SEED(42)-SEED(42)+RAND(1,6)` is a deterministic,
-pinnable draw.  Entries calling any of the three are
-**volatile-flagged** at commit (the flag is persisted in the CSD
-file): the recalculation loop's stability sensor ignores their
-changes, so a sheet with `+RAND(1,6)` still settles under `;R A`
-and redraws the values every pass.
+pinnable draw.
+
+Entries calling any of the three are **volatile-flagged** at commit
+(the flag is persisted in the CSD file), and a volatile cell
+**RETAINS its value once set**:
+
+```text
++RAND(1,6) committed      draws (the defining moment)
+;R A / RECALC()           retains - not even re-evaluated
+RETURN on the SAME entry  retains (re-affirming, not re-rolling)
+RETURN on a CHANGED entry draws (a new definition)
+;R E on the cell          redraws (the explicit re-roll)
+RECALC(cell) statement    redraws that cell, then settles
+```
+
+Dependents keep their stored values until their own recalculation;
+`;R A` after a redraw re-evaluates them against the new value while
+still skipping the volatile cell itself.  Re-committing an identical
+volatile entry whose current state is an ERROR retries the draw.
 
 ### ROOT: the expression-based root finder
 

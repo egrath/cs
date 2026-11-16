@@ -861,7 +861,11 @@ static void recalc_cmd(void)
         cs_recalc_all();
     else if (ch == 'E' || ch == 'e') {
         cs_nerrlist = 0;              /* single-cell run: fresh queue */
+        /* the explicit re-roll: a volatile cell under the cursor
+         * redraws (the one draw-on context beside RECALC(cell)) */
+        cs_volatile_draw_set(1);
         cs_recalc_entry(curCol, curRow);
+        cs_volatile_draw_set(0);
     }
     else return;
     redraw();

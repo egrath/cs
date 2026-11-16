@@ -24,10 +24,11 @@ typedef struct {
     CellType type;
     unsigned char col, row;  /* the cell's own coordinate (the sparse
                               * store: frees and the sort need it) */
-    unsigned char volatf;    /* the entry draws a fresh value every
-                              * evaluation (RAND/RANDF/SEED - flagged
-                              * at commit): the recalculation loop's
-                              * stability sensor ignores its changes */
+    unsigned char volatf;    /* the entry calls RAND/RANDF/SEED
+                              * (flagged at commit): the cell RETAINS
+                              * its value once set - the whole-sheet
+                              * passes skip it; ;R E and RECALC(cell)
+                              * redraw it explicitly */
     unsigned short ref;      /* the slot's own 1-based pool ref: the
                               * chunk ownership is BY FIELD, not by
                               * pointer arithmetic (ISO C makes
@@ -142,6 +143,7 @@ extern int cs_eval_ctx_on;     /* the evaluation context: a stored
 extern int cs_eval_ctx_col, cs_eval_ctx_row;
 void   cs_recalc_all(void);
 void   cs_run_recalc_passes(int always_one); /* side-effect driver */
+void   cs_volatile_draw_set(int on); /* the explicit re-roll bracket */
 void   cs_mark_sheet_change(void);  /* eval.c: a stored value changed */
 extern int cs_recalc_requested;     /* RECALC() seen during evaluation */
 int    cs_recalc_limit_hit(void);   /* 1 = the last driver run overran */

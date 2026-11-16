@@ -1042,6 +1042,33 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE VOLATILE SEMANTICS CHANGE (the user's call, 2026-11-16,
+  branch "eng-batch-g")**: a random cell RETAINS its value once set
+  - the whole-sheet drivers (;R A, RECALC(), the settle passes) SKIP
+  the cell entirely (no redraw, not even re-evaluated); only the
+  EXPLICIT re-roll paths redraw: ;R E (the cs_volatile_draw_set
+  bracket around cs_recalc_entry in recalc_cmd) and RECALC(cell)
+  (exec_recalc_stmt records a ONE-SHOT target: cs_recalc_target_* +
+  cs_recalc_target_on, consumed by the cell's first visit in the
+  settling passes).  The commit path draws naturally (it evaluates
+  the entry text directly - not through cs_recalc_entry_p), so no
+  bracket there.  THE SAME-TEXT GUARD: cs_commit_core returns
+  without storing when the new entry text equals c->cont and the
+  cell is volatile and NOT in an error state - re-affirming
+  retains, redefining draws, an error state retries (the user's
+  model: "retype +RAND(0,5) retains; change to +RAND(0,6)
+  recalculates").  THE SENSOR SUPPRESSION is now defense-in-depth
+  (the skip makes the volatile cell unable to destabilize the
+  loop); kept.  Consequences documented: dependents stay stale
+  until their own recalculation (;R A re-evaluates them against the
+  new value while skipping the volatile cell).  THE PTY PROOF: the
+  A1 value sequence across the flows = commit draw, two ;R A runs
+  UNCHANGED, then ;R E -> a new value, ;R E -> another new value.
+  PINS: +5 (the retain across ;R A twice - csn_cmp exact; the
+  same-text recommit retains; the changed entry redraws in range;
+  the ;R E triple-roll not-all-equal (statistical < 1e-12,
+  flagged); the RECALC(cell) re-roll + no overrun).  --test 810 ok.
+
 - **ENGINEERING BATCH G (user request 2026-11-15, branch
   "eng-batch-g")**: ISPRIME + the random family.  ISPRIME: the
   12-base deterministic Miller-Rabin (2..37, Sorenson-Webster -

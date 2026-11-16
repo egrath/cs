@@ -3357,6 +3357,8 @@ static Val parse_cmp(P *ps)
 /* the side-effect state (eval.c): RECALC()/RECALC(cell) request that
  * the calling context iterates whole-sheet passes */
 extern int cs_recalc_requested;
+extern int cs_recalc_target_on;
+extern unsigned char cs_recalc_target_col, cs_recalc_target_row;
 
 /* poll for an ESC keystroke (screen.c, non-blocking); 1 = ESC seen */
 extern int cs_poll_escape(void);
@@ -3488,9 +3490,10 @@ static void exec_set_stmt(const char *args, int *err)
     cs_recount_entries();
 }
 
-/* execute RECALC() / RECALC(cell): both mark the recalculation request
- * (the whole-sheet passes re-evaluate every cell, so the requested
- * cell is included - flagged deviation from the letter of the spec) */
+/* execute RECALC() / RECALC(cell): both mark the recalculation
+ * request; WITH an argument the cell is the one-shot VOLATILE target
+ * - its first visit in the settling passes redraws it (the explicit
+ * re-roll), everything else retains */
 static void exec_recalc_stmt(const char *args, int *err)
 {
     const char *w;
@@ -3511,6 +3514,9 @@ static void exec_recalc_stmt(const char *args, int *err)
         }
         /* the argument is a single Reference */
         if (a.type != VT_REF) { val_free(&a); *err = 6; return; }
+        cs_recalc_target_col = (unsigned char) a.ref.col;
+        cs_recalc_target_row = (unsigned char) a.ref.row;
+        cs_recalc_target_on = 1;
         val_free(&a);
     }
     cs_recalc_requested = 1;

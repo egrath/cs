@@ -48,6 +48,24 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-g", follow-up): the volatile retain semantics (2026-11-16):
+- USER: the random cell should RETAIN its value under the whole-sheet
+  drivers (;R A, RECALC(), the settle passes) and redraw only on the
+  explicit paths (;R E, RECALC(cell)); the same-text recommit retains,
+  a changed entry redraws.  DISCUSSED and agreed incl. the error-retry
+  nuance (an error state redraws on the same-text recommit).
+- DONE: g_vol_draw + cs_volatile_draw_set (the ;R E bracket in
+  recalc_cmd); exec_recalc_stmt records the ONE-SHOT target
+  (cs_recalc_target_*, consumed at the cell's first visit); the skip
+  at the top of cs_recalc_entry_p; the same-text guard in
+  cs_commit_core (with !c->iserr).  The commit path draws naturally
+  (no bracket - it evaluates the text directly).
+- THE PTY PROOF: the A1 sequence = the commit draw, two ;R A runs
+  unchanged, ;R E -> new, ;R E -> another new.  PINS: 5 new (the
+  exact retain across ;R A, the same-text recommit, the changed-text
+  redraw in range, the ;R E triple-roll statistical, RECALC(cell)).
+  VERIFIED: --test 810 ok.
+
 ## BATCH (branch "eng-batch-g"): ISPRIME + RAND/RANDF/SEED (2026-11-15):
 - USER: ISPRIME (approved the conventions) + RAND(min,max); the
   discussion settled: RAND AND RANDF, the BCD LCG, truncate-outward

@@ -2155,6 +2155,67 @@ static void run_tests(void)
         } else { printf("FAIL volatile save\n"); fails++; }
         remove("t_vol.csd");
         cs_clear_all();
+        /* the RETAIN semantics (the user's change, 2026-11-16): the
+         * whole-sheet drivers never re-roll; the explicit paths do */
+        cs_commit_entry(0, 0, "+RAND(1,1000000)");      /* A1 */
+        cs_run_recalc_passes(1);
+        {
+            Csn v1, v2;
+            csn_copy(&v1, &tread(0, 0)->val);
+            cs_run_recalc_passes(1);                    /* ;R A again */
+            csn_copy(&v2, &tread(0, 0)->val);
+            if (csn_cmp(&v1, &v2) != 0)
+                { printf("FAIL retain across ;R A\n"); fails++; }
+            else printf("ok   ;R A retains the drawn value\n");
+            /* the same-text recommit retains */
+            cs_commit_entry(0, 0, "+RAND(1,1000000)");
+            csn_copy(&v2, &tread(0, 0)->val);
+            if (csn_cmp(&v1, &v2) != 0)
+                { printf("FAIL same-text recommit\n"); fails++; }
+            else printf("ok   the same-text recommit retains\n");
+            /* the changed text redraws (in range) */
+            cs_commit_entry(0, 0, "+RAND(1,1000000)");
+            {
+                Csn one, mx;
+                csn_from_int(&one, 1L);
+                csn_from_int(&mx, 1000000L);
+                if (csn_cmp(&tread(0, 0)->val, &one) < 0 ||
+                    csn_cmp(&tread(0, 0)->val, &mx) > 0)
+                    { printf("FAIL redraw range\n"); fails++; }
+                else printf("ok   the changed entry redraws in range\n");
+            }
+            /* ;R E redraws: three rolls, not all equal (a triple
+             * collision is < 1e-12 - statistical, flagged) */
+            {
+                Csn r1, r2, r3;
+                int same;
+                cs_volatile_draw_set(1);
+                cs_recalc_entry(0, 0);
+                csn_copy(&r1, &tread(0, 0)->val);
+                cs_recalc_entry(0, 0);
+                csn_copy(&r2, &tread(0, 0)->val);
+                cs_recalc_entry(0, 0);
+                csn_copy(&r3, &tread(0, 0)->val);
+                cs_volatile_draw_set(0);
+                same = csn_cmp(&r1, &r2) == 0 && csn_cmp(&r2, &r3) == 0;
+                if (same)
+                    { printf("FAIL ;R E redraw (all equal)\n"); fails++; }
+                else printf("ok   ;R E redraws on demand\n");
+            }
+            /* RECALC(cell): the conditional's one-shot re-roll */
+            cs_commit_entry(1, 0, "+(1):RECALC(REF(1,1));0:0");
+            {
+                Csn six;
+                csn_from_int(&six, 1000000L);
+                if (csn_cmp(&tread(0, 0)->val, &six) > 0 ||
+                    csn_cmp(&tread(0, 0)->val, &six) == 0)
+                    { printf("FAIL RECALC(cell) redraw\n"); fails++; }
+                else printf("ok   RECALC(cell) re-rolls the target\n");
+                if (cs_recalc_limit_hit())
+                    { printf("FAIL RECALC(cell) overran\n"); fails++; }
+            }
+        }
+        cs_clear_all();
 
         /* the /r /l /c alignment on a FORMULA's string result
          * (user request 2026-11-15) */

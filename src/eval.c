@@ -87,6 +87,22 @@ static int factf_recompute(int col, int rw, Cell *c)
     return 0;
 }
 
+/* the VOLATILE draw context (batch G follow-up, 2026-11-16): a
+ * random cell RETAINS its value once set - the whole-sheet drivers
+ * (;R A, RECALC(), the settle passes) skip it entirely; only the
+ * EXPLICIT re-roll paths redraw it: ;R E (the bracket below) and
+ * RECALC(cell) (the one-shot target consumed by its first visit). */
+static int g_vol_draw = 0;
+
+void cs_volatile_draw_set(int on)
+{
+    g_vol_draw = on;
+}
+
+int cs_recalc_target_on = 0;            /* RECALC(cell): one-shot */
+unsigned char cs_recalc_target_col = 0;
+unsigned char cs_recalc_target_row = 0;
+
 int cs_recalc_entry_p(Cell *c)
 {
     int col = c->col, rw = c->row;
@@ -95,6 +111,18 @@ int cs_recalc_entry_p(Cell *c)
     int err, changed;
     if (!c || c->type != CE_NUM || !c->cont) return 0;
     if (cs_is_inputf(c)) return 0;      /* the value holder: not a formula */
+    {
+        int draw = g_vol_draw;
+        if (!draw && cs_recalc_target_on &&
+            col == (int) cs_recalc_target_col &&
+            rw == (int) cs_recalc_target_row) {
+            draw = 1;
+            cs_recalc_target_on = 0;    /* the explicit re-roll spent */
+        }
+        /* the volatile cell RETAINS its value in the whole-sheet
+         * passes - the explicit re-roll paths redraw it */
+        if (c->volatf && !draw) return 0;
+    }
     if (c->factf) return factf_recompute(col, rw, c);
     csn_copy(&old, &c->val);
     oldstr = c->strres;                 /* kept for the change check */
@@ -338,6 +366,12 @@ static int cs_commit_core(int col, int rw, const char *entry)
     n = (int) strlen(buf);
     c = cs_alloc_cell(col, rw);
     if (!c) { cs_msg("MEMORY IS TOO LOW"); return 0; }
+    /* the same volatile entry re-committed: the value is RETAINED
+     * (defining the formula draws, re-affirming it does not) - an
+     * error state retries (an error is not "a value set") */
+    if (c->volatf && c->cont && !c->iserr &&
+        strcmp(buf, c->cont) == 0)
+        return 0;
 
     /* the FACTORIAL ENTRY (user-ext 2026-11-13): "5!", "A5!",
      * "REF(2,5)!" - the content keeps the entry verbatim, the window
