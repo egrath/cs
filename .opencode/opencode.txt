@@ -48,6 +48,15 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "bugfix-alloc" -> merged to master): the bugfix batch merged (2026-11-16):
+- USER approved; merged fast-forward to master (9bbe942), pushed,
+  the branch deleted (local + origin).  THE BATCH: 8 review fixes in
+  9 commits - the alloc round trip, the password probe offset, the
+  copy policy, the sort comparator + the range remap, dep '&', the
+  REF policy, the three factorial fixes, the regression state.
+  Post-merge gates: --test 854 ok, build.count 203, the idle gate
+  EXACT.
+
 ## BATCH (branch "bugfix-alloc", follow-up 5): the regression state (2026-11-16):
 - USER: (1) the regression snapshot survived cs_clear_all/loads/
   failed REGR attempts (SLOPE() served stale results); (2) the 512
