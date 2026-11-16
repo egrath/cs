@@ -28,17 +28,32 @@ void cs_mark_sheet_change(void)
 /* error-cell queue: filled by the last Recalculate, in the same order
  * the recalculation ran; main.c replays the "?n?" cells one after
  * another (sticky "Error ... hit space [coord]", confirmed with Space) */
-struct CsErrRec cs_errlist[256];
+struct CsErrRec *cs_errlist = NULL;
 int cs_nerrlist = 0;
+static int cs_errcap = 0;
 
+/* the DYNAMIC error queue (the user's report, 2026-11-16): the fixed
+ * 256-entry queue silently dropped further errors; the queue lives
+ * for one driver run and is freed at the start of the next */
 static void errq_add(int col, int rw, int code)
 {
-    if (cs_nerrlist < (int) (sizeof(cs_errlist) / sizeof(cs_errlist[0]))) {
-        cs_errlist[cs_nerrlist].col = col;
-        cs_errlist[cs_nerrlist].row = rw;
-        cs_errlist[cs_nerrlist].code = code;
-        cs_nerrlist++;
+    if (cs_nerrlist == cs_errcap) {
+        int nc = cs_errcap ? cs_errcap * 2 : 64;
+        struct CsErrRec *ne = (struct CsErrRec *)
+            realloc(cs_errlist, (size_t) nc * sizeof(struct CsErrRec));
+        if (!ne) return;                /* the queue is best-effort */
+        cs_errlist = ne;
+        cs_errcap = nc;
     }
+    cs_errlist[cs_nerrlist].col = col;
+    cs_errlist[cs_nerrlist].row = rw;
+    cs_errlist[cs_nerrlist].code = code;
+    cs_nerrlist++;
+}
+
+void errq_reset(void)
+{
+    cs_nerrlist = 0;                    /* the memory stays for reuse */
 }
 
 /* paint the sticky evaluation-error message: the original shows the
@@ -49,9 +64,8 @@ static void errq_add(int col, int rw, int code)
  * message survives the repaint. */
 void cs_sticky_err(int code, const char *expr, int col, int rw)
 {
-    char cn[4], coord[10];
-    cs_col_name(col, cn);
-    sprintf(coord, "%s%d", cn, rw + 1);
+    char coord[10];
+    cs_coord_str(coord, (int) sizeof(coord), col, rw);
     expr = expr ? expr : "";
     if (code <= 0)
         cs_msg("Value range ERROR 0-> %s? hit space [%s]", expr, coord);
@@ -224,7 +238,7 @@ static void recalc_pass(void)
     int n = 0, i;
     int c = 0, r = 0;
     Cell *cl;
-    cs_nerrlist = 0;                    /* fresh queue per recalculation */
+    errq_reset();                       /* fresh queue per recalculation */
     while ((cl = cs_next_cell(&c, &r)) != NULL) {
         if (n < CS_BUDGET) {
             cs_passlist[n].col = cl->col;

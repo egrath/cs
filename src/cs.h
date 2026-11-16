@@ -120,6 +120,7 @@ extern int  g_entryrow, g_entrycol; /* 'current' location of pending entry */
 char  *cs_strdup(const char *s);
 int    cs_name_to_col(const char *s);
 void   cs_col_name(int col, char *buf);
+void   cs_coord_str(char *buf, int bufn, int col, int row);
 int    cs_parse_coord(const char *s, int *col, int *row);
 int    cs_parse_range(const char *s, int *c1, int *r1, int *c2, int *r2);
 int    cs_coord_text(const char *s, int *c1, int *r1, int *c2, int *r2);
@@ -155,8 +156,10 @@ extern int cs_recalc_last_passes;   /* passes of the last driver run */
  * main.c replays the sticky "Error ... hit space [coord]" messages one
  * after another, confirmed with Space */
 struct CsErrRec { int col, row, code; };
-extern struct CsErrRec cs_errlist[256];
+extern struct CsErrRec *cs_errlist;   /* the dynamic queue */
 extern int cs_nerrlist;
+void   errq_reset(void);               /* fresh queue */
+void   errq_reset(void);           /* fresh queue */
 void   cs_sticky_err(int code, const char *expr, int col, int rw);
 void   cs_start_msg(const char *text);  /* the startup banner */
 void   cs_msg_str(const char *s);       /* an unbounded string result */

@@ -113,10 +113,8 @@ static void edit_clear(void)
  * stays editable so "+A1+A2" sequences work */
 static void entry_begin_ref(void)
 {
-    char cn[4];
     char ref[10];
-    cs_col_name(curCol, cn);
-    sprintf(ref, "%s%d", cn, curRow + 1);
+    cs_coord_str(ref, (int) sizeof(ref), curCol, curRow);
     g_entryrow = curRow;
     g_entrycol = curCol;
     g_entry_num = 1;
@@ -153,10 +151,8 @@ static void entry_append(int ch)
  * inserts "E3" */
 static int at_resolve(void)
 {
-    char cn[4];
     char ref[10];
-    cs_col_name(curCol, cn);
-    sprintf(ref, "%s%d", cn, curRow + 1);
+    cs_coord_str(ref, (int) sizeof(ref), curCol, curRow);
     if (g_editlen + (int) strlen(ref) >= CS_EDITMAX - 2)
         return 0;
     strcpy(g_edit + g_editlen, ref);
@@ -424,6 +420,18 @@ void run_session(void)
                 redraw();
             }
             break;
+#ifdef KEY_DC
+        case KEY_DC:                   /* the keypad DEL: ";D E" */
+            /* the DEL key: delete the current entry (the user's
+             * request, 2026-11-16): the manual's entry delete, no
+             * dependency check, no reference shifts.  The ASCII DEL
+             * (127) stays backspace above. */
+            cs_free_cell_at(curCol, curRow);
+            cs_recount_entries();
+            cs_mark_sheet_change();
+            redraw();
+            break;
+#endif
         case '"':
             /* '"': text-literal quote.  While entering it is just a
              * character (needed for conditional strings); the pending
@@ -2206,6 +2214,90 @@ static void run_tests(void)
         ckc("parse 1E0", "+1E0", "+1.0000000000000E+1");
         cke("parse huge exp", "+1E+99999", -1);
         cke("parse 23-digit exp", "+1E99999999999999999999999", -1);
+        /* ==== the final batch (the user's report, 2026-11-16) ==== */
+        /* the FULL-PRECISION format: a 30+-digit value round trips */
+        cs_clear_all();
+        {
+            Cell *c = cs_alloc_cell(0, 0);
+            Csn vv;
+            csn_parse("1.2345678901234567890123456789012345678901", &vv);
+            cs_set_num(c, "1.2345678901234567890123456789012345678901",
+                       &vv, 0, NULL);
+        }
+        if (cs_save("t_prec", 0, 0, 2, 2, "")) {
+            cs_clear_all();
+            if (cs_load("t_prec", 0, 0, 0)) {
+                Cell *c = tread(0, 0);
+                char big[64];
+                int i, ok = 1;
+                csn_fmt_fixed(&c->val, 40, big, (int) sizeof(big));
+                /* the fixed-40 print carries the leading 1 + 40 digits
+                 * after the point; compare against the source digits */
+                {
+                    /* the engine keeps 40 digits (the literal has 41):
+                     * the loaded value must equal the PARSED value */
+                    Csn want;
+                    char wbuf[64];
+                    csn_parse("1.2345678901234567890123456789012345678901",
+                              &want);
+                    csn_fmt_fixed(&want, 40, wbuf, (int) sizeof(wbuf));
+                    ok = c->type == CE_NUM;
+                    for (i = 0; ok && i < 42; i++)
+                        if (big[i] != wbuf[i]) ok = 0;
+                }
+                if (!ok) { printf("FAIL precision round trip (%s)\n", big);
+                           fails++; }
+                else printf("ok   the 40-digit value round trips\n");
+            } else { printf("FAIL precision load\n"); fails++; }
+        } else { printf("FAIL precision save\n"); fails++; }
+        remove("t_prec.csd");
+        cs_clear_all();
+        /* the LOAD-AT-ORIGIN reference adjust: the file has A1 = 7
+         * and B2 = +A1*2 (14); loaded at the origin B2 the formula
+         * lands at C3 and its reference shifts (+1,+1): +B1*2 with
+         * B1 = the loaded 7 -> 14 */
+        setv(0, 0, "7");                    /* A1 = 7 */
+        cs_commit_entry(1, 1, "+A1*2");     /* B2 = +A1*2 = 14 */
+        if (cs_save("t_org", 0, 0, 2, 2, "")) {
+            cs_clear_all();
+            if (cs_load("t_org", 1, 1, 0)) {
+                /* the file's B2(+A1*2) lands at C3: the reference
+                 * shifts by (+1,+1) -> +B2*2 (A1 lands at B2, the
+                 * loaded 7 feeds the recalc) */
+                Cell *c = tread(2, 2);
+                if (!c->cont || strcmp(c->cont, "+B2*2"))
+                    { printf("FAIL origin adjust (%s)\n",
+                             c->cont ? c->cont : "(null)"); fails++; }
+                else printf("ok   the loaded formula re-points\n");
+                /* the file's A1(7) lands at B2: B1 = 7 -> the recalc
+                 * gives C3 = 14 */
+                cs_recalc_all();
+                {
+                    Csn want;
+                    char g[48];
+                    csn_from_int(&want, 14L);
+                    csn_canon(&tread(2, 2)->val, g, (int) sizeof(g));
+                    if (tread(2, 2)->iserr || csn_cmp(&tread(2, 2)->val,
+                                                     &want) != 0)
+                        { printf("FAIL origin recalc (%s)\n", g); fails++; }
+                    else printf("ok   the shifted reference recalculates\n");
+                }
+            } else { printf("FAIL origin load\n"); fails++; }
+        } else { printf("FAIL origin save\n"); fails++; }
+        remove("t_org.csd");
+        cs_clear_all();
+        /* the DYNAMIC error queue: 300 error cells all queued */
+        {
+            int i;
+            for (i = 0; i < 300; i++)
+                cs_commit_entry(i % 16, i / 16, "+1/0");
+        }
+        cs_recalc_all();
+        if (cs_nerrlist < 300)
+            { printf("FAIL error queue (%d)\n", cs_nerrlist); fails++; }
+        else printf("ok   300 errors queued (the dynamic queue)\n");
+        cs_clear_all();
+
         /* the memory batch (the user's report, 2026-11-16) */
         /* D: a ?-calculator commit strands NO pool slot */
         cs_clear_all();

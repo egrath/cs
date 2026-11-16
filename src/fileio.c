@@ -30,10 +30,10 @@
  *          [type==3] BCD number of value:
  *               unsigned char sign (0/1),
  *               signed short exp10 (LE, two's complement),
- *               unsigned char ndig (0..CSN_FILE_DIGS),
- *               CSN_FILE_DIGS (=22) digit bytes (0..9, most significant
- *               first; the file format is pinned to the original's 22
- *               digits regardless of the wider CSN_DIGS mantissa),
+ *               unsigned char ndig (0..CSN_DIGS; the variable digit
+ *               count keeps the old 22-digit files loadable),
+ *               ndig digit bytes (0..9, most significant first - the
+ *               full 40-digit mantissa is stored),
  *          unsigned short strreslen + bytes, unsigned short replen + bytes
  *  (Older "CSD1"/"CSD2"/"CSD3" files are refused with READ ERROR.)
  */
@@ -52,16 +52,18 @@ static int rd16(FILE *f)
 
 static void wr_num(FILE *f, const Csn *v)
 {
-    int i;
+    int i, nd;
     fputc(v->sign, f);
     fputc(v->exp10 & 255, f);
     fputc((v->exp10 >> 8) & 255, f);
-    /* the record is CSD3-compatible: exactly CSN_FILE_DIGS digit bytes
-     * regardless of the (wider) internal mantissa; digits beyond are
-     * dropped - typed values rarely carry more than 22 digits */
-    fputc(v->ndig > CSN_FILE_DIGS ? CSN_FILE_DIGS : v->ndig, f);
-    for (i = 0; i < CSN_FILE_DIGS; i++)
-        fputc(i < v->ndig ? v->nd[i] : 0, f);
+    /* the FULL mantissa (the user's report, 2026-11-16): the old
+     * fixed 22-digit record dropped the 40-digit engine's tail -
+     * the record writes exactly ndig digit bytes (the loader reads
+     * the variable count, so old 22-digit files load unchanged) */
+    nd = (v->ndig > CSN_DIGS) ? CSN_DIGS : v->ndig;
+    fputc(nd, f);
+    for (i = 0; i < nd; i++)
+        fputc(v->nd[i], f);
 }
 
 static int rd_num(FILE *f, Csn *v)
@@ -75,14 +77,18 @@ static int rd_num(FILE *f, Csn *v)
     v->sign = (sign != 0) ? 1 : 0;
     v->exp10 = e0 | (e1 << 8);
     if (v->exp10 >= 32768) v->exp10 -= 65536;
-    v->ndig = (nd > CSN_FILE_DIGS) ? CSN_FILE_DIGS : nd;
+    /* the VARIABLE digit count: the old fixed-22 records (nd <= 22)
+     * and the new full-precision records (nd <= CSN_DIGS) both load */
+    v->ndig = (nd > CSN_DIGS) ? CSN_DIGS : nd;
     if (v->ndig < 0) v->ndig = 0;
-    for (i = 0; i < CSN_FILE_DIGS; i++) {
+    for (i = 0; i < v->ndig; i++) {
         d = fgetc(f);
         if (d == EOF) return 0;
-        v->nd[i] = (i < v->ndig && d >= 0 && d <= 9) ? (unsigned char) d : 0;
+        v->nd[i] = (d >= 0 && d <= 9) ? (unsigned char) d : 0;
     }
-    for (; i < CSN_DIGS; i++) v->nd[i] = 0;   /* clear the wider tail */
+    /* the record's remaining digits (a shorter stored count): the
+     * mantissa's stored length is authoritative */
+    for (; i < CSN_DIGS; i++) v->nd[i] = 0;
     if (v->exp10 < -CSN_EMAX || v->exp10 > CSN_EMAX) v->exp10 = 0;
     if (v->ndig == 0) { v->exp10 = 0; v->sign = 0; }
     return 1;
@@ -393,6 +399,17 @@ int cs_load(const char *name, int c0, int r0, int merge)
             cl->cont[len] = '\0';
             if (!rd_num(f, &v)) { cl->type = CE_EMPTY; break; }
             if (cs_is_inputf(cl)) csn_zero(&v);   /* re-evaluated after load */
+            /* the LOAD-AT-ORIGIN reference adjust (the user's report,
+             * 2026-11-16): a formula loaded into a different location
+             * behaves like a copy there - the relative references
+             * shift by the file's offset (the frozen '!' refs stay);
+             * the value holders hold no references */
+            if (!cs_is_inputf(cl) && cl->cont &&
+                (bascc != c0 || basrr != r0)) {
+                char *adj = cs_adjust_refs(cl->cont,
+                                           c0 - bascc, r0 - basrr);
+                if (adj) { free(cl->cont); cl->cont = adj; }
+            }
             cl->type = CE_NUM;
             cl->just = just;
             cl->formf = frm;

@@ -332,6 +332,25 @@ char *cs_strdup(const char *s)
     return p;
 }
 
+/* the coordinate text "B7" composed BOUNDED (the GCC-14 audit,
+ * 2026-11-16: sprintf("%s%d", cn, row + 1) is provably safe for the
+ * sheet's coordinates but GCC cannot see the row's range - the
+ * manual composition silences the warnings and keeps the C89
+ * bounded-copy discipline) */
+void cs_coord_str(char *buf, int bufn, int col, int row)
+{
+    char cn[4];
+    int p = 0, digits[3], nd = 0, i;
+    cs_col_name(col, cn);
+    for (i = 0; cn[i] && p < bufn - 1; i++) buf[p++] = cn[i];
+    row++;                              /* 1-based display */
+    if (row > 999) row = 999;           /* the sheet's hard bound */
+    while (row > 0) { digits[nd++] = row % 10; row /= 10; }
+    if (nd == 0) digits[nd++] = 0;
+    for (i = nd - 1; i >= 0 && p < bufn - 1; i--) buf[p++] = (char) ('0' + digits[i]);
+    buf[p] = '\0';
+}
+
 void cs_col_name(int col, char *buf)
 {
     if (col < 26) {

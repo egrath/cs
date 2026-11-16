@@ -60,12 +60,29 @@
   fix=1 semantics for the non-A1 corners untouched.
 - THE PTY DEBUGGING NOTE: the commit keeps the cursor (the naive
   typing replaced A1); the arrow escapes leaked into entries; the
-  title loop breaks on an EMPTY first title (the  before the TEST
+  title loop breaks on an EMPTY first title (the 
+ before the TEST
   landed it in the sheet) - all script bugs.  The flow verified:
   the fix prompt appears for the non-A1 corners.
 - VERIFIED: --test 895 ok; the pty shows the user's EXACT expected
   output (TEST / the two plain rows / the trailer); the idle gate
   EXACT.
+
+## BATCH (branch "finalfix"): the final batch (2026-11-16):
+- USER: the load-origin refs, the full-precision CSD, the dynamic
+  error queue, -lm, the DEL key, the GCC-14 warnings.
+- DONE: the load adjusts each formula by the file's offset (the
+  copy semantics); the CSD record writes ndig variable digit bytes
+  (the loader reads the variable count - the old files unchanged);
+  the error queue reallocs (64 doubling); -lm gone; KEY_DC = ";D E";
+  cs_coord_str composed at all 8 sprintf sites (zero gcc-14
+  warnings).  THE PIN TRAPS: the self-referencing +B2*2 doubles per
+  pass (1000 = the canon of 100); nd[0]-as-value; the load clears
+  the sheet (the target data must be in the file); the engine's own
+  40-digit parse truncates a 41-digit literal (the pin compares the
+  PARSED value).
+- VERIFIED: --test 899 ok; zero gcc-14 warnings; the pty DEL flow;
+  the idle gate EXACT.
 
 ## BATCH (branch "safetyfix"): the memory-safety batch (2026-11-16):
 - USER: print_render's unbounded strres; csn_fmt_sci/cs_fmt_num's

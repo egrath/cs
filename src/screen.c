@@ -296,7 +296,12 @@ static void draw_rows(void)
         /* row label: "  1|", " 10|"; locked rows marked with '*' */
         {
             char lab[8];
-            sprintf(lab, "%3d%c", row + 1, row < lockRows ? '*' : '|');
+            int r1b = row + 1;
+            lab[0] = (r1b >= 100) ? (char) ('0' + r1b / 100) : ' ';
+            lab[1] = (r1b >= 10) ? (char) ('0' + (r1b / 10) % 10) : ' ';
+            lab[2] = (char) ('0' + r1b % 10);
+            lab[3] = (row < lockRows) ? '*' : '|';
+            lab[4] = '\0';
             cputn(y, 0, lab, 4);
         }
         /* cell contents: no column bars on data rows; a column is
@@ -343,18 +348,15 @@ static void draw_cursorline(void)
 {
     char lbuf[96];
     char cb[8], curcb[8];
-    char cn[4];
     int w = cs_scrw();
 
     /* bottom border of the data window */
     cputn(line_box, 0, "   +", 4);
     dashline(line_box, 4);
 
-    cs_col_name(curCol, cn);
-    sprintf(cb, "%s%d", cn, curRow + 1);
+    cs_coord_str(cb, (int) sizeof(cb), curCol, curRow);
     if (g_editstate == EDIT_EDITING) {
-        cs_col_name(g_entrycol, cn);
-        sprintf(curcb, "%s%d", cn, g_entryrow + 1);
+        cs_coord_str(curcb, (int) sizeof(curcb), g_entrycol, g_entryrow);
     } else
         strcpy(curcb, cb);
     /* filename box + cursor/current + entry direction: the name is
@@ -811,10 +813,8 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
         if (ch == '@') {
             /* insert the current cursor coordinate; the cell cursor
              * stays where it is */
-            char cn[4];
             char coord[10];
-            cs_col_name(curCol, cn);
-            sprintf(coord, "%s%d", cn, curRow + 1);
+            cs_coord_str(coord, (int) sizeof(coord), curCol, curRow);
             if (setmode) { buf[0] = '\0'; n = 0; }
             {
                 int i;

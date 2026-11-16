@@ -1042,6 +1042,45 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE FINAL BATCH (the user's report, 2026-11-16, branch
+  "finalfix")**:
+  - THE LOAD-AT-ORIGIN REFERENCE ADJUST: a formula loaded into a
+    different location behaves like a copy there - pass 2 adjusts
+    each formula's content with cs_adjust_refs by the file's offset
+    (c0-bascc, r0-basrr) once per cell; the frozen '!' refs stay,
+    the value holders are skipped.  PIN: A1=7 + B2=+A1*2 saved,
+    loaded at the origin B2 -> the formula at C3 = +B2*2 (A1 lands
+    at B2) and the recalc gives 14.  THE PIN TRAPS: the self-
+    referencing +B2*2 at B2 DOUBLES each pass (1000 = the canon of
+    100 bit me again); the load CLEARS the sheet so the target data
+    must be part of the file.
+  - THE FULL-PRECISION FORMAT: the CSD record writes exactly ndig
+    digit bytes (up to CSN_DIGS = 40) instead of the fixed 22 - the
+    loader reads the VARIABLE count, so the old 22-digit files load
+    UNCHANGED with the same magic.  The 40-digit engine keeps its
+    mantissa across save/load (the engine's own parse of a 41-digit
+    literal keeps 40, trailing zeros stripped by finish - the pin
+    compares against the PARSED value, not the literal).
+  - THE DYNAMIC ERROR QUEUE: cs_errlist reallocs (64 doubling) -
+    the fixed 256-entry queue silently dropped further errors; the
+    queue lives for one driver run, errq_reset exported for the ;R E
+    path.
+  - -lm REMOVED from LDLIBS (no math.h anywhere by design; the link
+    verified).
+  - THE DEL KEY (KEY_DC) = ";D E": delete the current entry (the
+    manual's entry delete: no dependency check, no shifts); the
+    ASCII DEL (127) stays backspace in the edit fields.  THE PTY
+    VERIFIED: the DEL key empties the cell (Room for 4000 entries).
+  - THE GCC-14 WARNINGS: cs_coord_str(buf,bufn,col,row) (cells.c,
+    exported) composes the coordinate text BOUNDED - all eight
+    sprintf("%s%d", cn, row+1) sites replaced (the sticky error, the
+    row labels, the cursor line x2, the prompt coord, dep_check's
+    buf, the delete defaults x2, the @ refs); the row labels'
+    "%3d%c" composed manually.  gcc-14 -Wall -Wextra -pedantic-errors:
+    ZERO warnings across the whole tree (the user's compiler gate).
+  PINS: +4 (the 40-digit round trip, the origin adjust + recalc, the
+  300-error queue).  --test 899 ok; the idle gate EXACT.
+
 - **THE PRINT FIX (the user's report, 2026-11-16, branch
   "printfix")**: with the top-left corner at A1 the print applied the
   FIX-ORDINATES behavior (the old `fix = 1` default; the prompt is

@@ -1,6 +1,6 @@
 CC      = cc
 CFLAGS  = -std=c89 -pedantic -Wall -Ibuild -Wextra -pedantic-errors
-LDLIBS  = -lcurses -lm
+LDLIBS  = -lcurses
 
 OBJS = build/num.o build/cells.o build/parser.o build/eval.o build/screen.o \
       build/command.o build/help.o build/fileio.o build/print.o \

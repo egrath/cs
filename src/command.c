@@ -637,11 +637,9 @@ static int dep_check(int iscol, int at, char *list, int listmax)
                     s++;
                 }
                 if (hit) {
-                    char cn[4];
                     if (list[0] && (int) strlen(list) + 2 < listmax)
                         strcat(list, ", ");
-                    cs_col_name(c, cn);
-                    sprintf(buf, "%s%d", cn, r + 1);
+                    cs_coord_str(buf, (int) sizeof(buf), c, r);
                     if ((int) strlen(list) + (int) strlen(buf) < listmax - 2)
                         strcat(list, buf);
                     found = 1;
@@ -862,7 +860,7 @@ static void delete_cmd(void)
     }
     if (ch == 'R' || ch == 'r') {
         int hit;
-        sprintf(dflt, "%d", curRow + 1);
+        cs_coord_str(dflt, (int) sizeof(dflt), curCol, curRow);
         if (cs_prompt_range("Delete rows (From>To)", dflt, inp, (int) sizeof(inp)) < 0) return;
         redraw();
         if (!del_range_text(inp, 1, &r1, &r2))
@@ -892,7 +890,11 @@ static void delete_cmd(void)
         cs_delete_columns(c1, c2);
     } else if (ch == 'F' || ch == 'f') {
         cs_col_name(curCol, dflt);
-        sprintf(dflt + strlen(dflt), "%d", curRow + 1);
+        {
+            char tmp2[10];
+            cs_coord_str(tmp2, (int) sizeof(tmp2), curCol, curRow);
+            strcat(dflt, tmp2);
+        }
         if (cs_prompt_coord("Delete (From>To)", dflt, inp, (int) sizeof(inp), 2) < 0) return;
         redraw();
         if (!cs_coord_text(inp, &c1, &r1, &c2, &r2)) {
@@ -1026,7 +1028,7 @@ static void recalc_cmd(void)
     if (ch == 'A' || ch == 'a')
         cs_recalc_all();
     else if (ch == 'E' || ch == 'e') {
-        cs_nerrlist = 0;              /* single-cell run: fresh queue */
+        errq_reset();                 /* single-cell run: fresh queue */
         /* the explicit re-roll: a volatile cell under the cursor
          * redraws (the one draw-on context beside RECALC(cell)) */
         cs_volatile_draw_set(1);
