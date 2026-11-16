@@ -1042,6 +1042,36 @@ Batch workflow (do all steps before reporting done):
   through LG.  The canon gotcha bit again: LOG(100) is +2.0E+1
   (digits 10, exponent 1), NOT 2.0E+2.
 
+- **THE FACTORIAL FIXES (the user's reports, 2026-11-16, branch
+  "bugfix-alloc")**: (1) THE DRY PARSE EXECUTED SIDE EFFECTS:
+  cs_parse_only routed through cs_eval_typed which set ps.dry = 0
+  unconditionally - the factorial entry's "syntax check" RAN the
+  prefix, and a conditional with SET executed TWICE per commit (the
+  check + the evaluation).  FIX: cs_eval_typed gains a dry
+  parameter; cs_parse_only passes 1, the other four callers
+  (cs_eval_formula, cs_eval_fact_source, the COLIDX/eval-range
+  paths) pass 0.  PIN: the counting-SET factorial entry
+  +(1):SET(A1,VAL(A1)+1);0:1! leaves A1 = 1 (one execution), not 2.
+  (2) factf_recompute EVALUATED OUTSIDE THE CONTEXT: the delegation
+  from cs_recalc_entry_p happens before the normal path's bracket
+  and factf_recompute never set one - ROW()! in row 3 recomputed as
+  FACT(cursor row) after the cursor moved (the user's exact repro:
+  6 -> 1).  FIX: factf_recompute brackets the own-cell context
+  (save/set/restore at all four exits).  PIN: ROW()! at A3 stays 6
+  across a cursor move + ;R A.  (3) THE UNPROTECTED PREFIX BUFFER:
+  factf_recompute memcpy'd n-1 bytes into char pfx[CS_EDITMAX+1]
+  with no length check - a LOADED oversized or EMPTY factf entry
+  overflowed the stack (n-1 negative = a huge size_t).  FIXED AT
+  BOTH CONSUMERS (the report missed that my batch-G copy path has
+  the same shape): a factf content shorter than 2 or longer than
+  CS_EDITMAX+1 makes the cell an ERROR (the same treatment as a
+  failing prefix), no truncation that would evaluate the wrong
+  formula.  PINS: the oversized/empty contents -> error cells, the
+  copy of an oversized factf -> an error cell.  MY PIN TYPO: the
+  guard assertion missed a negation (the empty cell's expectation).
+  --test 842 ok; the pty shows ROW()! = 6.00 across the commit and
+  two recalculations with the cursor moved away.
+
 - **THE DEPENDENCY '&' FIX + THE REF POLICY (the user's reports,
   2026-11-16, branch "bugfix-alloc")**: (1) dep_check's delimiter
   list lacked '&' - the string batch added it to the FOUR cells.c

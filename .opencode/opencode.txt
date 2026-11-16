@@ -48,6 +48,24 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "bugfix-alloc", follow-up 4): the factorial fixes (2026-11-16):
+- USER: (1) cs_parse_only EXECUTED side effects (cs_eval_typed set
+  ps.dry = 0 unconditionally) - the factorial syntax check ran the
+  prefix, a SET conditional executed twice per commit; (2)
+  factf_recompute evaluated OUTSIDE the own-cell context (the
+  delegation precedes the normal bracket) - ROW()! recomputed as
+  FACT(cursor row); (3) the factf prefix buffer was unprotected
+  against loaded oversized/empty contents.
+- DONE: cs_eval_typed gained a dry parameter (parse_only = 1, the
+  other four callers = 0); factf_recompute brackets the own-cell
+  context (restore at all four exits); the buffer guard at BOTH
+  consumers (factf_recompute AND my batch-G copy path - the report
+  missed the copy): n < 2 or > CS_EDITMAX+1 -> an error cell.
+- MY PIN BUG: the guard assertion missed a negation.
+- VERIFIED: --test 842 ok; the pty shows ROW()! = 6.00 across the
+  commit and two recalculations with the cursor moved; the idle
+  gate EXACT.
+
 ## BATCH (branch "bugfix-alloc", follow-up 3): dep '&' + the REF policy (2026-11-16):
 - USER: (1) the dependency scanner missed '&' after a reference
   (+A5&" units" slipped the row-5 deletion check); (2) the

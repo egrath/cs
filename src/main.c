@@ -2073,6 +2073,57 @@ static void run_tests(void)
             { printf("FAIL ref deletion vetoed\n"); fails++; }
         else printf("ok   the deletion proceeds beside REF formulas\n");
         cs_clear_all();
+        /* the FACTORIAL FIXES (the user's reports, 2026-11-16) */
+        /* 1. the dry parse: the syntax check must not run the SET */
+        cs_commit_entry(0, 0, "0");                   /* A1 = 0 */
+        cs_commit_entry(1, 0, "+(1):SET(A1,VAL(A1)+1);0:1!");
+        if (tread(0, 0)->type != CE_NUM || tread(0, 0)->val.nd[0] != 1)
+            { printf("FAIL dry double-exec (%d)\n",
+                     tread(0, 0)->val.nd[0]); fails++; }
+        else printf("ok   the parse-only check does not execute\n");
+        if (tread(1, 0)->factf != 1 || tread(1, 0)->iserr ||
+            tread(1, 0)->val.nd[0] != 1)
+            { printf("FAIL dry factf value\n"); fails++; }
+        else printf("ok   the factorial entry is FACT(1) = 1\n");
+        /* 2. the own-cell context survives the cursor */
+        cs_clear_all();
+        cs_commit_entry(0, 2, "ROW()!");              /* A3 = 6 */
+        if (tread(0, 2)->val.nd[0] != 6)
+            { printf("FAIL ROW! commit (%d)\n", tread(0, 2)->val.nd[0]);
+              fails++; }
+        else printf("ok   ROW()! commits as FACT(3) = 6\n");
+        curRow = 0; curCol = 4;                       /* the cursor away */
+        cs_recalc_all();
+        if (tread(0, 2)->val.nd[0] != 6)
+            { printf("FAIL ROW! recalc (%d)\n", tread(0, 2)->val.nd[0]);
+              fails++; }
+        else printf("ok   ROW()! recalculates against its own row\n");
+        /* 3. the buffer guard: oversized and empty factf contents */
+        cs_clear_all();
+        {
+            Cell *bc = cs_alloc_cell(0, 0);
+            char big[320];
+            Csn vv;
+            memset(big, 'x', (size_t) 299);
+            big[299] = '!';
+            big[300] = '\0';
+            csn_zero(&vv);
+            cs_set_num(bc, big, &vv, 0, NULL);
+            bc->factf = 1;
+            bc = cs_alloc_cell(1, 0);
+            cs_set_num(bc, "", &vv, 0, NULL);         /* empty */
+            bc->factf = 1;
+        }
+        cs_recalc_entry(0, 0);
+        cs_recalc_entry(1, 0);
+        if (!tread(0, 0)->iserr || !tread(1, 0)->iserr)
+            { printf("FAIL factf guard\n"); fails++; }
+        else printf("ok   unusable factf contents become error cells\n");
+        cs_copy_block(0, 0, 0, 0, 2, 0, 1, 1, 0, 1, 0);
+        if (!tread(2, 0)->iserr)
+            { printf("FAIL factf guard copy\n"); fails++; }
+        else printf("ok   the oversized factf copies as an error\n");
+        cs_clear_all();
         /* ==== CONV: the unit conversion (batch D) ==== */
         ckc("CONV cm m", "CONV(100,\"cm\",\"m\")", "+1.0000000000000E+1");
         ckc("CONV inch mm", "CONV(1,\"inch\",\"mm\")",

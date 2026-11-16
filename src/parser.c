@@ -3731,8 +3731,11 @@ static Val parse_condexpr(P *ps)
 }
 
 /* the shared evaluation core: parse one expression and return the
- * TYPED value (a Reference or Range stays intact for the caller) */
-static int cs_eval_typed(const char *s, Val *out)
+ * TYPED value (a Reference or Range stays intact for the caller).
+ * dry = 1 parses WITHOUT running side-effect statements (the
+ * syntax-check path - the old unconditional dry = 0 made the
+ * "parse-only" check EXECUTE SETs, the user's 2026-11-16 report) */
+static int cs_eval_typed(const char *s, Val *out, int dry)
 {
     P ps;
     Val v;
@@ -3754,7 +3757,7 @@ static int cs_eval_typed(const char *s, Val *out)
     csn_zero(&out->num);
     ps.p = buf;
     ps.depth = 0;
-    ps.dry = 0;
+    ps.dry = dry;
     v = parse_condexpr(&ps);
     if (!v.good) {
         int e = v.err;
@@ -3774,7 +3777,7 @@ static int cs_eval_typed(const char *s, Val *out)
 int cs_eval_formula(const char *s, Csn *val, char **str)
 {
     Val v;
-    int e = cs_eval_typed(s, &v);
+    int e = cs_eval_typed(s, &v, 0);
     if (e) {
         csn_zero(val);
         return e;
@@ -3803,7 +3806,7 @@ int cs_eval_formula(const char *s, Csn *val, char **str)
 int cs_parse_only(const char *s)
 {
     Val v;
-    int e = cs_eval_typed(s, &v);
+    int e = cs_eval_typed(s, &v, 1);        /* DRY: no side effects */
     val_free(&v);
     return e;
 }
@@ -3819,7 +3822,7 @@ int cs_eval_fact_source(const char *s, Csn *out)
      * number: empty references stay errors here (the user's decision
      * (b), 2026-11-13) */
     cs_empty_strict = 1;
-    e = cs_eval_typed(s, &v);
+    e = cs_eval_typed(s, &v, 0);
     if (e) { cs_empty_strict = 0; csn_zero(out); return e; }
     {
         int d = val_deref(&v);
@@ -3856,7 +3859,7 @@ int cs_eval_keycol(const char *s, int *err)
             return idx;
         }
     }
-    e = cs_eval_typed(s, &v);
+    e = cs_eval_typed(s, &v, 0);
     if (e) { *err = e; return -1; }
     if (v.type == VT_NUM) {
         Csn t;
@@ -3878,7 +3881,7 @@ int cs_eval_keycol(const char *s, int *err)
 int cs_eval_range(const char *s, int *c1, int *r1, int *c2, int *r2)
 {
     Val v;
-    int e = cs_eval_typed(s, &v);
+    int e = cs_eval_typed(s, &v, 0);
     if (e) return e;
     if (v.type == VT_REF) {
         *c1 = *c2 = v.ref.col;

@@ -767,7 +767,18 @@ regular formulas `!` keeps the manual's frozen-reference meaning.
 5!              displays 120, content stays 5!
 A5!             FACT of A5's value; tracks A5 through ;R
 REF(2,5)!       FACT of the referenced cell's value
+ROW()!          FACT of the cell's own row (the prefix evaluates
+                against the CELL's position, like every stored
+                formula - not the cursor)
 ```
+
+Three correctness rules (2026-11-16): the syntax check is **dry** —
+a conditional with `SET` in the prefix is validated without running,
+so a side effect executes exactly once per commit; the prefix
+always evaluates against the **cell's own position** (the
+`ROW()!`/`COL()` context survives recalculations and cursor moves);
+and a factorial content that is too long or empty (only possible
+from a file) is an **error cell** rather than a buffer overrun.
 
 ### Integer and combinatorial functions (user-extended 2026-11-13)
 

@@ -157,7 +157,20 @@ static void copy_one(Cell *dst, const Cell *src, int rel, int dc, int dr)
             int e, fe;
             if (!use) return;
             ul = strlen(use);
-            if (ul == 0 || use[ul - 1] != '!') { free(use); return; }
+            /* the BUFFER GUARD (the user's report, 2026-11-16): a
+             * LOADED factf cell can carry content longer than the
+             * editor types - the memcpy would overflow; an unusable
+             * prefix copies as an error cell */
+            if (ul < 2 || ul > CS_EDITMAX + 1 || use[ul - 1] != '!') {
+                free(use);
+                cs_free_cell(dst);
+                dst->type = CE_NUM;
+                dst->iserr = 1;
+                csn_zero(&dst->val);
+                dst->cont = NULL;
+                dst->factf = 1;
+                return;
+            }
             memcpy(pfx, use, ul - 1);
             pfx[ul - 1] = '\0';
             e = cs_eval_fact_source(pfx, &srcval);

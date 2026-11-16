@@ -67,23 +67,50 @@ static int factf_recompute(int col, int rw, Cell *c)
     char pfx[CS_EDITMAX + 1];
     Csn src, fv;
     int n = (int) strlen(c->cont), e, fe;
-
+    /* the OWN-CELL evaluation context (the user's report, 2026-11-16):
+     * the delegation from cs_recalc_entry_p happens BEFORE the normal
+     * path's bracket, so ROW()/COL() in a factorial prefix fell back
+     * to the CURSOR - ROW()! in row 3 recomputed as FACT(cursor row)
+     * after the cursor moved */
+    int so = cs_eval_ctx_on, sc2 = cs_eval_ctx_col, sr2 = cs_eval_ctx_row;
+    cs_eval_ctx_on = 1;
+    cs_eval_ctx_col = col;
+    cs_eval_ctx_row = rw;
+    /* the BUFFER GUARD (the user's report): the loader permits
+     * contents longer than the editor types - an oversized or EMPTY
+     * factf entry overflowed this memcpy (n - 1 negative = a huge
+     * size_t).  An unusable prefix is an error cell, the same
+     * treatment as a prefix that fails to parse */
+    if (n < 2 || n > CS_EDITMAX + 1) {
+        if (!c->iserr) cs_sheet_changed = 1;
+        c->iserr = 1;
+        csn_zero(&c->val);
+        errq_add(col, rw, 0);
+        cs_eval_ctx_on = so; cs_eval_ctx_col = sc2; cs_eval_ctx_row = sr2;
+        return 0;
+    }
     memcpy(pfx, c->cont, (size_t) n - 1);
     pfx[n - 1] = '\0';
     e = cs_eval_fact_source(pfx, &src);
     fe = 0;
     if (!e) fe = csn_fact(&fv, &src);
-    if (e == KW_ABORT) { cs_eval_aborted = 1; return KW_ABORT; }
+    if (e == KW_ABORT) {
+        cs_eval_aborted = 1;
+        cs_eval_ctx_on = so; cs_eval_ctx_col = sc2; cs_eval_ctx_row = sr2;
+        return KW_ABORT;
+    }
     if (e || fe) {
         if (!c->iserr) cs_sheet_changed = 1;
         c->iserr = 1;
         csn_zero(&c->val);
         errq_add(col, rw, e ? e : 0);
+        cs_eval_ctx_on = so; cs_eval_ctx_col = sc2; cs_eval_ctx_row = sr2;
         return e ? e : 0;
     }
     if (c->iserr || csn_cmp(&fv, &c->val) != 0) cs_sheet_changed = 1;
     csn_copy(&c->val, &fv);
     c->iserr = 0;
+    cs_eval_ctx_on = so; cs_eval_ctx_col = sc2; cs_eval_ctx_row = sr2;
     return 0;
 }
 
