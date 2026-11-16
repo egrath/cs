@@ -548,14 +548,33 @@ static void draw_memwarn(void)
 
 static void cs_msg_text(const char *s, chtype attr);
 
-void cs_draw(void)
+/* ---------------- the paint components (phase 2 split) ----------------
+ * Each component owns a screen region and blanks it before painting
+ * (the clear()-removal discipline).  redraw() = all four, in the
+ * historical order; the dirty-flag phase hangs its flags on exactly
+ * these functions. */
+
+static void paint_menu(void)
 {
-    cs_compute_layout();
-    /* NO clear() (the flicker fix, 2026-11-16): the old full erase +
-     * repaint flashed a blank screen on slow terminals (the Pi test).
-     * The paints cover every position by overwriting; the one thing
-     * clear() did that the repaints do not is wiping the transient
-     * message row (row 24) - done explicitly below. */
+    draw_menu();
+    draw_memwarn();   /* the MEMORY GETTING LOW line sits on a menu row */
+}
+
+static void paint_header(void)
+{
+    draw_headers();
+}
+
+static void paint_grid(void)
+{
+    draw_rows();
+}
+
+static void paint_status(void)
+{
+    /* the message row: transient messages are wiped by every repaint
+     * (the old clear() did it); the STARTUP banner repaint below is
+     * the exception */
     {
         char wipe[256];
         int w = cs_scrw(), k;
@@ -563,13 +582,21 @@ void cs_draw(void)
         for (k = 0; k < w; k++) wipe[k] = ' ';
         cputn(LINES - 1, 0, wipe, w);
     }
-    draw_menu();
-    draw_headers();
-    draw_memwarn();
-    draw_rows();
     draw_cursorline();
     draw_typecont();
     draw_editline_idle();
+}
+
+void cs_draw(void)
+{
+    cs_compute_layout();
+    /* NO clear() (the flicker fix, 2026-11-16): the old full erase +
+     * repaint flashed a blank screen on slow terminals (the Pi test).
+     * The components blank their own lines; nothing here erases. */
+    paint_menu();
+    paint_header();
+    paint_grid();
+    paint_status();
     /* the last row is cleared by clear(); messages are transient: they
      * are painted by cs_msg() and vanish as soon as the next key causes
      * any repaint.  The STARTUP banner is the exception: it survives
