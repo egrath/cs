@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+# bench.exp - the byte-count benchmark: how many terminal bytes does a
+# scripted interaction cost?  The measurement table in AGENTS.md comes
+# from this.  Spawned from the PROJECT ROOT (./build/calcstar).
+set timeout 60
+log_file -noappend /tmp/bench.raw
+spawn ./build/calcstar
+sleep 2
+# 20 cursor-down moves (^X)
+send "\x18\x18\x18\x18\x18\x18\x18\x18\x18\x18"
+send "\x18\x18\x18\x18\x18\x18\x18\x18\x18\x18"
+sleep 2
+# 20 typed keys (an entry)
+send "12345678901234567890"
+sleep 2
+send "\r"
+sleep 2
+# 20 more cursor moves (arrow keys)
+send "\x1b\[B\x1b\[B\x1b\[B\x1b\[B\x1b\[B\x1b\[B\x1b\[B\x1b\[B\x1b\[B\x1b\[B"
+sleep 2
+send "\x1b"
+sleep 1
+expect eof
+exit 0

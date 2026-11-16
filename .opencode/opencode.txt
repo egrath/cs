@@ -1970,3 +1970,20 @@ PREVIOUS BATCH (5 items, verified):
   (16 checkpoints, ~35 min, background); the reading pty driver at
   /tmp/cpudrv3.py. The master-worktree comparison builds live at
   /tmp/cs_master and /tmp/cs_p34 (worktrees, removed at the merge).
+
+## THE DEBUG-TOOL BATTERY IN tests/ (2026-11-16, user request)
+- Moved from /tmp into the tree: tests/pty_render.py (the authoritative
+  full-CSI renderer - render2/render3 RETIRED), tests/frame_harness.py
+  (fcrun+frameseg3 consolidated; refdir via argv, default /tmp/cs_ref;
+  --upto N for a quick subset), tests/pty_driver.py (the READING pty
+  driver - pump() while waiting, the deadlock guard), tests/bench.exp,
+  tests/idle_capture.exp (log path: tests/.scratch/idleA.raw; run from
+  the PROJECT ROOT), tests/idle_gate.py + tests/cs1_reference.txt (the
+  authentic capture now committed), tests/pty_render_selftest.py (the
+  synthetic-CSI gate: ED/EL/DCH/ICH/ECH/tab/bs + the marks-over-field
+  case - it caught the CSI regex missing the @ ICH terminator).
+- /tmp/cmpidle.py retired (idle_gate.py replaces it). Scratch captures
+  go to tests/.scratch/ (gitignored). All verified from the tree: the
+  selftest 0 FAILS, the idle gate MATCH, the harness ck0-1 IDENTICAL vs
+  /tmp/cs_ref (the pre-uidraw reference worktree at c5c8dbb), the bench
+  1259B/1 clear-frame, pty_driver 50 moves clean-exit.

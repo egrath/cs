@@ -1,0 +1,23 @@
+ -Cursor Movement- |        -Commands-  ; followed by             | -Misc-
+  <CR> Right       |A Auto   F Format  M Merge  R Recalc * Extend |@ Curs Pos
+ ^S Left  ^D Right |C Copy   H Help    O Order  S Save   = Lock   |? Evaluate
+ ^E Up    ^X Down  |D Delete I Insert  P Print  W What   ? Space  |^ Data Togl
+ ^Z Col A next row |E Edge   L Load    Q Quit   G or <TAB> Goto   |<ESC>Cancel 
+Col>|A         |B         |C         |D         |E         |F         |
+Row+--------------------------------------------------------------------------
+  1|                                                        
+  2|                       
+  3|           >     33.00<
+  4|
+  5|
+  6|
+  7|
+  8|
+  9|
+ 10|
+   +--------------------------------------------------------------------------
+[          ]  cursor:    B3      current:    B3     L-R
+
+current||       type: numeric
+data   ||   contents: 33.00
+		edit: 

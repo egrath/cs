@@ -1795,20 +1795,32 @@ master when every phase passes.
   - `help.c` still calls `clear()` for its own pages — self-contained,
     acceptable (the pages are static full-screen views); the 'H' key
     case repaints the main screen after.
-- **The frame-identity harness (the phase gate)**: /tmp/fcrun.py +
-  /tmp/frameseg3.py — a 15-segment scripted interaction (goto+commit,
-  vertical/horizontal scrolls, far goto + text, format width/precision,
-  lock, extended toggle ×2, ;R A, copy, both help pages, row delete,
-  ESC), run against the NEW binary and the pre-change binary (a
-  worktree build of master, /tmp/cs_master), every cumulative prefix
-  rendered through /tmp/render2.py and the final frames COMPARED — all
-  15 checkpoints IDENTICAL after the fixes above. Captures are slow
-  (~2-3 min); run it in the background.
-- **The harness renderers (learned the hard way)**: render2.py now
-  implements `ESC[J` ED with params (0 = cursor→end, 1 = start→cursor,
-  2 = full) and `ESC[K` EL the same way — the missing `1K` support once
-  made a CORRECT app paint look like a help-text ghost on the edit line
-  (two false alarms). Capture scripts must send control keys with Tcl
+- **The frame-identity harness (the phase gate)**: `tests/frame_harness.py`
+  (run `python3 tests/frame_harness.py /tmp/cs_ref [--upto N]` from the
+  project root; the reference worktree build defaults to /tmp/cs_ref) —
+  a 15-segment scripted interaction (goto+commit, scrolls, far goto,
+  format, lock, extended toggle ×2, ;R A, copy, both help pages, row
+  delete, ESC), run against the NEW binary and the pre-change binary
+  (a worktree build of the pre-change commit), every cumulative prefix
+  rendered through `tests/pty_render.py` and the final frames COMPARED
+  — all 15 checkpoints IDENTICAL after the fixes above. Captures are
+  slow (~2-3 min); run it in the background.
+- **The debug-tool battery lives in tests/ (2026-11-16, user request)**:
+  `pty_render.py` (the full-CSI pty frame renderer), `frame_harness.py`
+  (the 16-checkpoint frame-identity driver), `pty_driver.py` (the
+  READING pty benchmark driver), `bench.exp` (the byte-count bench),
+  `idle_capture.exp` + `idle_gate.py` + `cs1_reference.txt` (the
+  idle-gate capture + comparison), and `pty_render_selftest.py` (the
+  renderer's synthetic-CSI gate — it caught the CSI regex missing the
+  `@` ICH terminator on the day it was committed). Scratch captures go
+  to tests/.scratch/ (gitignored).
+- **The harness renderers (learned the hard way)**: `tests/pty_render.py`
+  now implements `ESC[J` ED with params (0 = cursor→end, 1 =
+  start→cursor, 2 = full), `ESC[K` EL the same way, and DCH/ICH/ECH/IL/
+  RI — pinned by `tests/pty_render_selftest.py` (the CSI final byte
+  class must be 0x40-0x7e: the old `[A-Za-z]` class silently DROPPED
+  ICH sequences and one hand-mangled renderer lost paints — two false
+  "ghost" alarms). Capture scripts must send control keys with Tcl
   double quotes + escaping (`send "\x18"`) — `send {\x18}` in braces
   sends the LITERAL text (a whole stress run typed "\x18" strings into
   cells). ^B is \x02, not "^B".

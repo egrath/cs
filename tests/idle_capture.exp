@@ -1,0 +1,22 @@
+#!/usr/bin/expect -f
+# tests/idle_capture.exp - the idle-gate capture recipe: goto B3, commit
+# 33.00, ESC - the final frame must be byte-identical (after tab
+# expansion and trailing-space normalization) to the authentic capture
+# tests/cs1_reference.txt.  The comparison driver lives in
+# tests/idle_gate.py.  Spawned from the PROJECT ROOT.
+set timeout 20
+log_file -noappend tests/.scratch/idleA.raw
+spawn ./build/calcstar
+sleep 3
+send ";G"
+sleep 1
+send "B3"
+sleep 1
+send "\r"
+sleep 2
+send "33.00\r"
+sleep 4
+send "\x1b"
+sleep 6
+expect eof
+exit 0
