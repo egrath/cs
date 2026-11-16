@@ -48,6 +48,14 @@
   existing pins).  pty: the user's exact vertical grid.
   VERIFIED: --test 431 ok; the idle gate EXACT.
 
+## BATCH (branch "eng-batch-g" -> merged to master): batch G + the volatile semantics merged (2026-11-16):
+- USER approved; merged fast-forward to master (3c09e35), pushed,
+  the branch deleted (local + origin).  The batch carries ISPRIME +
+  RAND/RANDF/SEED + the CSD volatf byte + the regenerated brainf
+  example + the retain semantics.  Post-merge gates: --test 810 ok,
+  build.count 170, the idle gate EXACT.  THE ENGINEERING LIST IS
+  FULLY ON MASTER.
+
 ## BATCH (branch "eng-batch-g", follow-up): the volatile retain semantics (2026-11-16):
 - USER: the random cell should RETAIN its value under the whole-sheet
   drivers (;R A, RECALC(), the settle passes) and redraw only on the
