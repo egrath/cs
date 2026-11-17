@@ -14,6 +14,7 @@ CALCSTAR.PRN
 
 # build output (objects + executable) lives in build/
 /build/
+/build.dos/
 /calcstar
 /tdta*
 /tfr*

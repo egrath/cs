@@ -2188,3 +2188,28 @@ PREVIOUS BATCH (5 items, verified):
   idle gate MATCH, the maxres check 2,703,360 - EXACTLY the baseline
   (the +16KB seen on the branch run was allocator granularity; the
   merged tree sits back at the recorded value).
+
+## THE DOS TARGET: Makefile.wcc + the OpenWatcom README topic (2026-11-17)
+- THE USER'S NEWS: the app builds with OpenWatcom as an MS-DOS target
+  and runs smoothly on a 386SX/25 (slightly sluggish, expected).
+- Makefile.wcc committed at the root (the user's working file, TAB
+  recipes): wcc386/wcl386, -bt=dos -mf (the flat model) -3r (the 386
+  register calling) -ox -ei -za -w4 -zp8, the DOS4GW extender
+  (-l=dos4g), CURSESPATH pointing at the user's local PDCurses 3.9
+  (the README's step 4.1 tells the next person to edit it), the
+  buildno rule sh tools/buildno.sh build.dos/buildno.h build.count
+  (the interface verified against tools/buildno.sh), the explicit
+  per-file rules, the test/clean targets. GNU make ignores it unless
+  -f-invoked. build.dos/ gitignored. MY OWN near-miss: I typo'd the
+  SRCS line writing the file ("src/dos-removed") - caught and fixed
+  before the commit; the pasted file is authoritative, never alter
+  the working content when transcribing.
+- README.md: the user's notes merged VERBATIM as the topic "Cross
+  compiling with OpenWatcom on Macintosh for MS-DOS" (after Build &
+  run), lightly formatted to markdown; the code-reality review: the
+  flat model + dos4g match the sparse store's design rules (the 64KB
+  allocation cap, the >=24KB linker stack note added to the topic),
+  PDCurses 3.9, the -fo=.obj trick, the buildno interface.
+- The Unix side re-verified: make clean+make rc=0, --test all pass,
+  the idle gate MATCH, the maxres 2,703,360 (the baseline, unchanged
+  - a docs+makefile batch moves nothing).

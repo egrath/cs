@@ -1,0 +1,64 @@
+CC       = wcc386
+LINK     = wcl386
+
+CURSESPATH = /Users/egon/tmp/copy/pdcurses
+CURSESLIB  = $(CURSESPATH)/dos/pdcurses.lib
+
+CFLAGS   = -bt=dos -mf -3r -ox -ei -za -w4 -zp8 -i=build.dos -fo=.obj -i=$(CURSESPATH)
+LDFLAGS  = -bt=dos -l=dos4g
+
+OBJS = build.dos/num.obj build.dos/cells.obj build.dos/parser.obj build.dos/eval.obj &
+       build.dos/screen.obj build.dos/command.obj build.dos/help.obj &
+       build.dos/fileio.obj build.dos/print.obj build.dos/main.obj
+
+SRCS = src/num.c src/cells.c src/parser.c src/eval.c &
+       src/screen.c src/command.c src/help.c &
+       src/fileio.c src/print.c src/main.c
+
+all : build.dos/calcstar.exe
+
+# Link
+build.dos/calcstar.exe : $(OBJS) $(CURSESLIB)
+	$(LINK) $(LDFLAGS) -fe=build.dos/calcstar.exe $(OBJS) $(CURSESLIB)
+
+# Build counter
+build.dos/buildno.h : $(SRCS) tools/buildno.sh
+	mkdir -p build.dos
+	sh tools/buildno.sh build.dos/buildno.h build.count
+
+# Compilation
+build.dos/num.obj : src/num.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/num.obj src/num.c
+
+build.dos/cells.obj : src/cells.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/cells.obj src/cells.c
+
+build.dos/parser.obj : src/parser.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/parser.obj src/parser.c
+
+build.dos/eval.obj : src/eval.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/eval.obj src/eval.c
+
+build.dos/screen.obj : src/screen.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/screen.obj src/screen.c
+
+build.dos/command.obj : src/command.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/command.obj src/command.c
+
+build.dos/help.obj : src/help.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/help.obj src/help.c
+
+build.dos/fileio.obj : src/fileio.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/fileio.obj src/fileio.c
+
+build.dos/print.obj : src/print.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/print.obj src/print.c
+
+build.dos/main.obj : src/main.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/main.obj src/main.c
+
+test : build.dos/calcstar.exe .SYMBOLIC
+	build.dos/calcstar.exe --test
+
+clean : .SYMBOLIC
+	rm -rf build.dos

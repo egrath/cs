@@ -1207,6 +1207,56 @@ same rule. In the `;S` dialog the `P)artial or A)all` question must be
 answered: any other key re-prompts (originally - pressing RETURN does
 nothing), ESC cancels.
 
+## Cross compiling with OpenWatcom on Macintosh for MS-DOS
+
+The DOS target builds on a Mac with OpenWatcom v2 and PDCurses
+(pure C89, no POSIX beyond `mkdir`/`sh` — the same source tree as the
+curses build, no changes needed).  The notes below are the working
+recipe (386+ with a DOS4GW-style extender; `build.dos/calcstar.exe`).
+
+1. Install OpenWatcom
+
+    1.1 Download: https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/ow-snapshot.tar.xz
+    1.2 Extract the files and copy everything from the extracted
+        folder (ow-snapshot) to `~/opt/openwatcom/`
+
+2. Set up the environment for OpenWatcom
+
+    2.1 Create a file `~/opt/openwatcom/env.txt` with the following
+        content:
+
+            export WATCOM=/Users/egon/opt/openwatcom
+            export PATH=${WATCOM}/armo64:${WATCOM}/binw:$PATH
+            export INCLUDE=${WATCOM}/h
+            export EDPATH=${WATCOM}/eddat
+
+    2.2 Merge in the environment variables to your current shell:
+
+            . ~/opt/openwatcom/env.txt
+
+3. Build PDCurses
+
+    3.1 https://github.com/wmcbrine/PDCurses/archive/refs/tags/3.9.tar.gz
+    3.2 Extract and change to the `dos` directory inside the
+        source tree
+    3.3 Edit its `Makefile.wcc` and append `-fo=.obj` to the CFLAGS
+    3.4 Run `wmake -f Makefile.wcc MODEL=f`
+    3.5 You end up with a file `PDCURSES.LIB`
+
+4. Build CalcStar
+
+    4.1 Edit the tree's `Makefile.wcc` and change `CURSESPATH` to the
+        path where your PDCurses library lives
+    4.2 Run `wmake -f Makefile.wcc` to build
+        `build.dos/calcstar.exe` for 386+
+
+The flat memory model (`-mf`), the 386 register calling convention
+(`-3r`) and the DOS4GW extender match the sparse store's design
+rules (no allocation above 64 KiB; keep a linker stack of at least
+24 KiB in mind if you retarget the linker file).  `make test` runs
+the self-test in DOS the same way.  The GNU `Makefile` ignores
+`Makefile.wcc` unless it is invoked with `-f` explicitly.
+
 ## Screen layout (verbatim clone of a genuine 80x24 CalcStar screen)
 
 ```
