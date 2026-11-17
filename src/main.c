@@ -1245,7 +1245,7 @@ static void run_tests(void)
         ckstr("notat dec p0", buf, "1234");
     }
 
-    /* notation survives the CSD4 round trip (packed in the prec byte) */
+    /* notation survives the CSD round trip (packed in the prec byte) */
     {
         Cell *c;
         Csn v2;
@@ -2415,7 +2415,7 @@ static void run_tests(void)
             int k;
             char *junk = (char *) malloc(400);
             memset(junk, 0, 400);
-            fwrite("CSD4", 1, 4, g);
+            fwrite("CSD5", 1, 4, g);
             fputc(0, g); fwrite("\x00\x00", 1, 2, g);   /* the origin */
             for (k = 0; k < 127; k++) {
                 fputc(k == 0 ? 255 : 10, g);           /* the width 255! */
@@ -3337,7 +3337,7 @@ static void run_tests(void)
                 { printf("FAIL A9! ?n?\n"); fails++; }
             else printf("ok   A9! shows ?n? until A9 is filled\n");
         }
-        /* the factf state survives the CSD4 round trip */
+        /* the factf state survives the CSD round trip */
         cs_clear_all();
         cs_commit_entry(0, 0, "5!");
         if (!cs_save("t_ft.CSD", 0, 0, CS_MAXCOL - 1, CS_MAXROW - 1, NULL))
@@ -4252,6 +4252,23 @@ int main(int argc, char **argv)
     if (argc > 1 && strcmp(argv[1], "--test") == 0) {
         cs_headless = 1;
         run_tests();
+    }
+    /* the example generator (a re-runnable genprobe, 2026-11-17):
+     * builds the brainfuck machinery and saves examples/brainf.csd
+     * All-mode - re-run whenever the storage layout changes (the
+     * program is the classic Hello World minus its final '.', whose
+     * byte 10 is outside CHR's 32..127) */
+    if (argc > 1 && strcmp(argv[1], "--genbf") == 0) {
+        cs_headless = 1;
+        bf_build("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---"
+                 ".+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++", NULL);
+        if (!cs_save("examples/brainf.csd", 0, 0,
+                     CS_MAXCOL - 1, CS_MAXROW - 1, NULL)) {
+            printf("genbf: save failed\n");
+            return 1;
+        }
+        printf("genbf: examples/brainf.csd written\n");
+        return 0;
     }
     /* optional file argument: load at startup.  The name is used as
      * typed - cs_load's own name rule appends ".csd" only when no .csd

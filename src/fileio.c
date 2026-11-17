@@ -7,8 +7,13 @@
 #include "cs.h"
 
 /*
- * Custom CalcStar sheet archive ("CSD4"):
- *   char  magic[4] = "CSD4"
+ * Custom CalcStar sheet archive ("CSD5" - the format VERSION rides in
+ * the magic: CSD1..CSD4 are older layouts and are refused with
+ * READ ERROR; a future layout change bumps the digit so a stale file
+ * refuses cleanly instead of desyncing - the 2026-11-16 full-precision
+ * change left the magic stale and CSD4 files desynced on the variable
+ * digit count):
+ *   char  magic[4] = "CSD5"
  *   unsigned char  origin col  (0-based; the saved range's upper-left
  *                  corner - manual 14-9: the load position anchors the
  *                  FILE's upper left corner, not its first data cell,
@@ -20,22 +25,22 @@
  *   cells: unsigned char col, unsigned short row(0-based LE),
  *          unsigned char type (2=text,3=num), unsigned char just,
  *          unsigned char prec+1 (0=none, bits 0-4) | notation<<5
- *            (bits 5-6: 0=auto,1=sci,2=dec - flagged ext 2026-11;
- *            old CSD4 files have zero high bits and load as (auto)),
+ *            (bits 5-6: 0=auto,1=sci,2=dec - flagged ext 2026-11),
  *          unsigned char formf,
  *          unsigned char volatf (the volatile-entry flag, batch G
- *            2026-11-15 - old files have no byte; the format may
- *            change freely until release),
+ *            2026-11-15),
  *          unsigned short contlen + bytes (u16 LE),
  *          [type==3] BCD number of value:
  *               unsigned char sign (0/1),
  *               signed short exp10 (LE, two's complement),
  *               unsigned char ndig (0..CSN_DIGS; the variable digit
- *               count keeps the old 22-digit files loadable),
+ *               count keeps the record honest for the full 40-digit
+ *               mantissa),
  *               ndig digit bytes (0..9, most significant first - the
  *               full 40-digit mantissa is stored),
  *          unsigned short strreslen + bytes, unsigned short replen + bytes
- *  (Older "CSD1"/"CSD2"/"CSD3" files are refused with READ ERROR.)
+ *  (CSD1/2/3/4 files are refused with READ ERROR - the CSD4 layout's
+ *   fixed 22-digit padding is unparseable beside the variable count.)
  */
 static void wr16(FILE *f, int v)
 {
@@ -140,7 +145,7 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
                 count++;
     f = fopen(path, "wb");
     if (!f) { cs_msg("can't open file"); return 0; }
-    fwrite("CSD4", 1, 4, f);
+    fwrite("CSD5", 1, 4, f);
     /* the saved range's upper-left corner: the load position anchors
      * THIS, so All-mode sheets (origin 0,0) load identically at A1 */
     fputc(c1, f);
@@ -168,7 +173,7 @@ int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
             fputc((int) (unsigned char) just, f);
             /* prec+1 occupies 0..25, so bits 5-6 carry the notation
              * (0=auto,1=sci,2=dec) and bit 7 the factorial-entry
-             * flag - the format stays CSD4-compatible */
+             * flag - the layout is stable here */
             fputc(((cl->prec + 1) & 31) | ((cl->notation & 3) << 5) |
                   ((cl->factf & 1) << 7), f);
             fputc(cl->formf, f);
@@ -244,7 +249,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
     cs_savename(name, path, (int) sizeof(path));
     f = fopen(path, "rb");
     if (!f) { cs_msg("write error %s not found", path); return 0; }
-    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD4", 4) != 0) {
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD5", 4) != 0) {
         fclose(f);
         cs_msg("READ ERROR");
         return 0;
@@ -468,8 +473,8 @@ int cs_file_password(const char *name, char *pw, int max)
     f = fopen(path, "rb");
     if (!f) { pw[0] = '\0'; return 0; }
     pw[0] = '\0';
-    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD4", 4)) { fclose(f); return 0; }
-    /* the CSD4 header carries the ORIGIN (1 col + 2 row bytes) between
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD5", 4)) { fclose(f); return 0; }
+    /* the CSD5 header carries the ORIGIN (1 col + 2 row bytes) between
      * the magic and the column table - the old CSD1 probe walked
      * straight into the column table and read the precision bytes as
      * a password, so EVERY overwrite asked for verification and even

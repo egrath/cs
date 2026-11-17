@@ -1987,3 +1987,32 @@ PREVIOUS BATCH (5 items, verified):
   selftest 0 FAILS, the idle gate MATCH, the harness ck0-1 IDENTICAL vs
   /tmp/cs_ref (the pre-uidraw reference worktree at c5c8dbb), the bench
   1259B/1 clear-frame, pty_driver 50 moves clean-exit.
+
+## THE CSD5 FORMAT VERSION + THE BRAINF REGENERATION (2026-11-17)
+- THE USER'S REPORT: examples/brainf.csd wouldn't load (READ ERROR).
+- ROOT CAUSE: the full-precision storage change (5cfedcc, 11-16 13:38)
+  writes EXACTLY ndig digit bytes; the example was saved at 07:20 by
+  the pre-change CSD4 writer that PADDED every value to 22 digit
+  bytes - every short record left bytes the new loader read as the
+  next record's header -> desync -> READ ERROR. THE AGENTS CLAIM "OLD
+  22-DIGIT FILES LOAD UNCHANGED" WAS WRONG (only ndig=22 records were
+  compatible); fixed in AGENTS.md.
+- THE FIX (the user picked versioning): the format VERSION RIDES IN
+  THE MAGIC - saves write "CSD5", the loader accepts CSD5 only
+  (CSD1-4 refuse with READ ERROR); a future layout change bumps the
+  digit so stale files refuse cleanly instead of desyncing. All the
+  CSD4 sites updated (the writer, the loader, cs_file_password, the
+  header comment, the --test crafted-file pin).
+- THE EXAMPLE: regenerated with the new RE-RUNNABLE `--genbf` flag
+  (main.c: bf_build + cs_save All-mode -> examples/brainf.csd, CSD5,
+  4524 bytes) - replaces the throwaway /tmp genprobe pattern. PTY
+  VERIFIED END TO END: load (no READ ERROR, the status box "brainf"),
+  ;R A runs to completion (pc past the program = halted), S7 shows
+  "Hello World!", clean quit.
+- The probe greps gotcha (again): ncurses emits "Calculating" once and
+  then only the changing pass digits - count(b'Calculating') is NOT a
+  pass counter; goto S7 and read the cell. And ";Q" "N" CANCELS the
+  quit (wait4 hung the probe); quit with Y.
+- Stray untracked scratch fixtures removed (t_p.csd, t_p2.csd,
+  t_pwtest.csd, test.CSD). Gates: --test all pass, the idle gate
+  MATCH, zero warnings.
