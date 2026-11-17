@@ -293,6 +293,26 @@ family, and so is `RMS` of nothing (`SUMSQ` of nothing is 0).  `PCT`
 takes a list of values whose LAST argument is the percentile
 (`PCT(1,2,3,4,0.5)` = data 1,2,3 at p 0.5); p outside [0,1], a
 fractional `QUART` q, or an empty data set is an error.  An error
+
+### The abs family: SUMABS/SUMPOS/SUMNEG/MAXABS/MINABS
+
+All streaming like `SUM` — no arrays, one accumulator field per mode
+(2026-11-17).  `SUMPOS` sums the positive values, `SUMNEG` the
+negative magnitudes (always non-negative), `MAXABS`/`MINABS` the
+extremes of the absolute values:
+
+```text
+SUMABS(-4,5)      9          sum of |x|
+SUMPOS(-4,5)      5          sum of the positive values
+SUMNEG(-4,-5)     9          sum of the negative magnitudes
+MAXABS(-9,3)      9          largest |x|
+MINABS(-9,3)      3          smallest |x| (0 in the range -> 0)
+```
+
+The family's rules: empty ranges give 0; text and empty cells in a
+range are skipped; an error cell aborts with the value-range error;
+`SUMABS(3,-4)` takes direct values; multi-area lists work
+(`SUMABS(A1>A3,B1)`); a directly-entered string is an error.
 cell in a range aborts the family as always; more than 512 values
 (the median's bound) is an error.
 
