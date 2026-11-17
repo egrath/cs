@@ -974,6 +974,74 @@ char *cs_shift_refs_n(const char *s, int iscol, int at, int delta)
  | does not fit), 2 = always decimal (too wide: keep the head,  |
  | a '*' as the last symbol marks the visual truncation)        |
  +----------------------------------------------------------- */
+/* the CSV number format (user spec 2026-11-17): 17 significant
+ * digits - the precision an IEEE-754 double (every other
+ * spreadsheet) can hold - TRUNCATED (the engine's identity: never a
+ * digit above the true value), trailing zeros trimmed; plain decimal
+ * for values in [1e-4, 1e17), scientific outside (the %.17g rule).
+ * The sheet's own 40-digit precision is untouched - only the CSV
+ * bytes are 17-digit. */
+/* the CSV number format (user spec 2026-11-17): 17 significant
+ * digits - the precision an IEEE-754 double (every other
+ * spreadsheet) can hold - TRUNCATED (the engine's identity: never a
+ * digit above the true value), trailing zeros trimmed; plain decimal
+ * for values in [1e-4, 1e17), scientific outside (the %.17g rule).
+ * The sheet's own 40-digit precision is untouched - only the CSV
+ * bytes are 17-digit. */
+void cs_csv_num(const Csn *v, char *out, int outn)
+{
+    char dig[18];
+    int i, p = 0, nd, E, dot, k;
+    if (outn < 48) { out[0] = '\0'; return; }
+    if (!v || v->ndig == 0) { strcpy(out, "0"); return; }
+    nd = (v->ndig < 17) ? v->ndig : 17;
+    for (i = 0; i < nd; i++) dig[i] = (char) ('0' + v->nd[i]);
+    for (; i < 17; i++) dig[i] = '0';   /* the value's trailing zeros */
+    E = v->exp10;
+    if (v->sign) out[p++] = '-';
+    if (E >= 18 || E <= -4) {
+        /* scientific d.dddE+e: the value is d1.d2..*10^(E-1); the
+         * mantissa keeps the last nonzero of the 17 digits (a single
+         * digit stands alone, %g-style "5E-5") */
+        k = 17;
+        while (k > 1 && dig[k - 1] == '0') k--;
+        out[p++] = dig[0];
+        if (k > 1) {
+            out[p++] = '.';
+            for (i = 1; i < k; i++) out[p++] = dig[i];
+        }
+        out[p++] = 'E';
+        if (E - 1 < 0) out[p++] = '-'; else out[p++] = '+';
+        p += sprintf(out + p, "%d", E > 0 ? E - 1 : 1 - E);
+        out[p] = '\0';
+        return;
+    }
+    /* plain decimal */
+    if (E <= 0) {
+        out[p++] = '0';
+        out[p++] = '.';
+        for (i = 0; i < -E; i++) out[p++] = '0';
+        for (i = 0; i < 17; i++) out[p++] = dig[i];
+    } else {
+        for (i = 0; i < E; i++) out[p++] = dig[i];
+        out[p++] = '.';
+        for (i = E; i < 17; i++) out[p++] = dig[i];
+    }
+    /* trim the fraction's trailing zeros (never into the integer
+     * part), then a dangling point ("0.500.." -> "0.5", "12." -> "12") */
+    dot = -1;
+    for (k = (v->sign ? 1 : 0); k < p; k++)
+        if (out[k] == '.') { dot = k; break; }
+    if (dot >= 0) {
+        k = p - 1;
+        while (k > dot && out[k] == '0') k--;
+        if (k == dot) k--;               /* the fraction went all-zero */
+        p = k + 1;
+        if (p > 0 && out[p - 1] == '.') p--;
+    }
+    out[p] = '\0';
+}
+
 void cs_fmt_num(const Csn *v, int width, int prec, int iserr, int notation,
                 char *buf, int bufn)
 {

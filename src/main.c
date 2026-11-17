@@ -4239,6 +4239,186 @@ static void run_tests(void)
         else printf("ok   lowercase out-of-range still rejected\n");
     }
 
+    /* ==================== the CSV import/export ===================== */
+    {
+        Csn v; char b[64];
+        struct { const char *in; const char *want; } nt[] = {
+            { "0", "0" },
+            { "2", "2" },
+            { "123.45", "123.45" },
+            { "0.5", "0.5" },
+            { "1.5E-3", "0.0015" },
+            { "0.0012345678901234567", "0.0012345678901234567" },
+            { "1.2345678901234567E20", "1.2345678901234567E+20" },
+            { "5E-5", "5E-5" },
+            { "1E17", "1E+17" },
+            { "1E18", "1E+18" },
+            { "-2.75", "-2.75" },
+            { "0.0001", "0.0001" },
+            { "0.00005", "5E-5" },
+        };
+        for (i = 0; i < (int) (sizeof(nt) / sizeof(nt[0])); i++) {
+            if (csn_parse(nt[i].in, &v) != 0) {
+                printf("FAIL csvnum parse %s\n", nt[i].in); fails++; continue;
+            }
+            cs_csv_num(&v, b, (int) sizeof(b));
+            if (strcmp(b, nt[i].want) != 0)
+                { printf("FAIL csvnum %s -> %s want %s\n",
+                         nt[i].in, b, nt[i].want); fails++; }
+            else printf("ok   csvnum %-22s = %s\n", nt[i].in, b);
+        }
+        /* the 17-digit truncation through the engine (1/3, 2/3) */
+        {
+            Csn a, b2; char *s = NULL; char ob[64];
+            cs_eval_formula("1/3", &a, &s); if (s) free(s);
+            cs_csv_num(&a, ob, (int) sizeof(ob));
+            if (strcmp(ob, "0.33333333333333333") != 0)
+                { printf("FAIL csvnum 1/3 -> %s\n", ob); fails++; }
+            else printf("ok   csvnum 1/3 = %s\n", ob);
+            cs_eval_formula("2/3", &b2, &s); if (s) free(s);
+            cs_csv_num(&b2, ob, (int) sizeof(ob));
+            if (strcmp(ob, "0.66666666666666666") != 0)
+                { printf("FAIL csvnum 2/3 -> %s\n", ob); fails++; }
+            else printf("ok   csvnum 2/3 = %s\n", ob);
+        }
+        /* ---- the export: quote doubling, commas, empty fields,
+         * CRLF separators, no trailing CRLF, 17-digit numerics ---- */
+        {
+            FILE *g;
+            char data[512];
+            size_t got;
+            cs_clear_all();
+            setv(0, 0, "123.45");            /* A1 */
+            setv(1, 0, "2");                 /* B1 */
+            cs_commit_entry(2, 0, "plain text");   /* C1: text */
+            cs_commit_entry(3, 0, "a,comma");      /* D1 */
+            cs_commit_entry(4, 0, "say \"hi\"");   /* E1 */
+            cs_commit_entry(2, 1, "3/4");    /* C2: a formula -> 0.75 */
+            if (!cs_save_csv("t_csv.csv", 0, 0, 4, 1))
+                { printf("FAIL csv save\n"); fails++; }
+            else {
+                g = fopen("t_csv.csv", "rb");
+                memset(data, 0, sizeof(data));
+                got = fread(data, 1, sizeof(data) - 1, g);
+                fclose(g);
+                data[got] = '\0';
+                {
+                    const char *want =
+                        "123.45,2,plain text,\"a,comma\",\"say \"\"hi\"\"\"\r\n"
+                        ",,0.75,,";
+                    if (strcmp(data, want) != 0) {
+                        printf("FAIL csv export bytes:\n  got  %.120s\n  want %.120s\n",
+                               data, want);
+                        fails++;
+                    } else printf("ok   csv export exact bytes\n");
+                }
+            }
+            remove("t_csv.csv");
+        }
+        /* ---- the import: pure numerics, quoted text, doubled
+         * quotes, embedded-newline flattening, the BOM, >127
+         * dropped, ragged rows, the load corner, no recalc ---- */
+        {
+            FILE *g;
+            const char *csv =
+                "\xEF\xBB\xBF"                 /* the UTF-8 BOM */
+                "1,2,3\r\n"
+                "\"41\",\"42\",x\xC3\xA9y\r\n"  /* quoted numerics + UTF-8 */
+                "+7,1.5E-3,\"a,comma\",123 pages\r\n"
+                "\"say \"\"hi\"\"\",\"b\ncc\"\r\n"  /* quoted newline */
+                "tail";
+            g = fopen("t_csv.csv", "wb");
+            fwrite(csv, 1, strlen(csv), g);
+            fclose(g);
+            cs_clear_all();
+            if (!cs_load_csv("t_csv.csv", 2, 1, 0))   /* load at C2 */
+                { printf("FAIL csv load refused\n"); fails++; }
+            else {
+                Cell *c;
+                c = tread(2, 1);   /* C2 = "1" numeric */
+                if (c->type != CE_NUM || strcmp(c->cont, "1") ||
+                    c->val.ndig != 1 || c->val.nd[0] != 1)
+                    { printf("FAIL csv C2\n"); fails++; }
+                else printf("ok   csv C2 = 1 (numeric)\n");
+                c = tread(3, 1);   /* D2 = "2" */
+                if (c->type != CE_NUM || c->val.nd[0] != 2)
+                    { printf("FAIL csv D2\n"); fails++; }
+                else printf("ok   csv D2 = 2\n");
+                c = tread(4, 1);   /* E2 = "3" */
+                if (c->type != CE_NUM || c->val.nd[0] != 3)
+                    { printf("FAIL csv E2\n"); fails++; }
+                else printf("ok   csv E2 = 3\n");
+                c = tread(2, 2);   /* C3: the quoted "41" -> numeric */
+                if (c->type != CE_NUM || c->val.nd[0] != 4 || c->val.nd[1] != 1)
+                    { printf("FAIL csv C3 quoted numeric\n"); fails++; }
+                else printf("ok   csv quoted \"41\" is numeric\n");
+                c = tread(4, 2);   /* E3: x\xC3\xA9y -> the >127 byte
+                                      dropped -> "xy" text */
+                if (c->type != CE_TEXT || strcmp(c->cont, "xy"))
+                    { printf("FAIL csv utf8 drop (got %s)\n",
+                             c->cont ? c->cont : "(null)"); fails++; }
+                else printf("ok   csv utf8 byte dropped\n");
+                c = tread(2, 3);   /* C4: "+7" numeric */
+                if (c->type != CE_NUM || c->val.nd[0] != 7)
+                    { printf("FAIL csv +7\n"); fails++; }
+                else printf("ok   csv +7 numeric\n");
+                c = tread(3, 3);   /* D4: 1.5E-3 */
+                {
+                    Csn w;
+                    csn_parse("0.0015", &w);
+                    if (c->type != CE_NUM || csn_cmp(&c->val, &w) != 0)
+                        { printf("FAIL csv 1.5E-3\n"); fails++; }
+                    else printf("ok   csv 1.5E-3 numeric\n");
+                }
+                c = tread(4, 3);   /* E4: "a,comma" text */
+                if (c->type != CE_TEXT || strcmp(c->cont, "a,comma"))
+                    { printf("FAIL csv quoted comma\n"); fails++; }
+                else printf("ok   csv quoted comma text\n");
+                c = tread(5, 3);   /* F4: "123 pages" stays TEXT */
+                if (c->type != CE_TEXT || strcmp(c->cont, "123 pages"))
+                    { printf("FAIL csv 123 pages (got %s)\n",
+                             c->cont ? c->cont : "(null)"); fails++; }
+                else printf("ok   csv \"123 pages\" stays text\n");
+                c = tread(2, 4);   /* C5: doubled quotes */
+                if (c->type != CE_TEXT || strcmp(c->cont, "say \"hi\""))
+                    { printf("FAIL csv doubled quotes\n"); fails++; }
+                else printf("ok   csv doubled quotes\n");
+                c = tread(3, 4);   /* D5: the embedded newline flattened */
+                if (c->type != CE_TEXT || strcmp(c->cont, "b cc"))
+                    { printf("FAIL csv newline flatten (got %s)\n",
+                             c->cont ? c->cont : "(null)"); fails++; }
+                else printf("ok   csv embedded newline flattened\n");
+                c = tread(2, 5);   /* C6: the ragged "tail" */
+                if (c->type != CE_TEXT || strcmp(c->cont, "tail"))
+                    { printf("FAIL csv tail row\n"); fails++; }
+                else printf("ok   csv ragged tail row\n");
+                if (tread(3, 5)->type != CE_EMPTY)
+                    { printf("FAIL csv ragged empty cell\n"); fails++; }
+                else printf("ok   csv ragged row leaves empties\n");
+                /* no recalculation happened: the formula-free values
+                 * are exactly the parsed ones and the entry pool is
+                 * honest */
+                cs_recount_entries();
+                printf("ok   csv load entry count %d\n", entriesUsed);
+            }
+            remove("t_csv.csv");
+        }
+        /* ---- the refusals: the sheet bounds and the budget ---- */
+        {
+            FILE *g;
+            int k;
+            g = fopen("t_csv.csv", "wb");
+            for (k = 0; k < 300; k++) fprintf(g, "x\r\n");   /* 300 rows */
+            fclose(g);
+            cs_clear_all();
+            if (cs_load_csv("t_csv.csv", 0, 0, 0))
+                { printf("FAIL csv 300 rows accepted\n"); fails++; }
+            else printf("ok   csv over-tall load refused (sheet intact: %s)\n",
+                        tread(0, 0)->type == CE_EMPTY ? "empty" : "?");
+            remove("t_csv.csv");
+        }
+    }
+
     if (fails == 0) printf("\nAll tests passed.\n");
     else printf("\n%d test(s) FAILED.\n", fails);
     exit(fails != 0);

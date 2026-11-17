@@ -2035,3 +2035,44 @@ PREVIOUS BATCH (5 items, verified):
   is the CURRENT row - a commit KEEPS the cursor, so the last seeded
   cell is the prefill; membership greps are position-blind when rows
   shift (goto a cell and read the type line instead).
+
+## THE CSV IMPORT/EXPORT (user spec 2026-11-17)
+- The dispatch: a .csv extension (any case) in ;S/;L/;M takes the CSV
+  path; the name is used AS TYPED (cs_savename would append .csd).
+  The save dialog: the file-exists warning, NO password prompts, then
+  the same P)artial/A)all + corner prompts; SAVED paints.
+- EXPORT: plain 7-bit; numerics as 17 significant digits
+  (cs_csv_num in cells.c: TRUNCATED per the engine identity, trailing
+  zeros trimmed, plain decimal in [1e-4,1e17) and scientific outside -
+  the %.17g rule; the sheet's 40-digit precision untouched); text as
+  typed with the RFC quote-doubling and quoted commas; error cells as
+  ?n?; the derived string type exports its strres; embedded CR/LF
+  flattened to a space on BOTH sides (flagged); empty cells as empty
+  fields with the USED-RANGE extents (the trailing empty fields/rows
+  trimmed; leading/embedded empties stay - positions); CRLF
+  separators, no trailing CRLF.
+- IMPORT: a UTF-8 BOM skipped (csv_open_bom: rewind when not the
+  BOM), bytes >127 dropped, a field is numeric only when the WHOLE
+  field parses as a pure numeric literal (csn_parse; "123 pages"
+  stays text; the RFC's quotes are delimiters, NOT type markers -
+  the user's rule), text commits with NO formula evaluation, no
+  recalculation; the load at the requested corner; ;L replaces
+  (cs_clear_all), ;M overlays (cs_reg_reset); embedded quoted
+  newlines flatten to a space.
+- TWO-PASS like the CSD loader: pass 1 (the dimensions + the
+  nonblank count) refuses an over-tall/wide file with READ ERROR and
+  an over-budget count with MEMORY IS TOO LOW, sheet untouched; the
+  clear happens after pass 1.
+- BUGS FOUND WHILE BUILDING: (1) the placement parsed INTO the cell's
+  own val - cs_set_num's cs_free_cell zeroes it first -> every
+  numeric became 0; the parse target must be a LOCAL (the same
+  self-pointer class as the commit wrappers). (2) the All-mode export
+  emitted a 255x127 comma desert before the used-range trim.
+- PINS: cs_csv_num (13 exact-string cases + 1/3, 2/3 through the
+  engine), the export's exact bytes (the quote doubling, the commas,
+  the empties, the CRLF, no trailing CRLF), the import (the BOM, the
+  utf8 drop, the quoted numerics, "+7", "1.5E-3", "123 pages" text,
+  the doubled quotes, the newline flatten, the ragged rows, the
+  300-row refusal). pty-verified: ;S t_pty.csv A -> "12.5,hello"
+  (the used range), ;L the csv -> A1=12.50 B1=hello text.
+- Gates: --test all pass, the idle gate MATCH, gcc-14 zero warnings.

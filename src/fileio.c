@@ -131,6 +131,228 @@ static void cs_savename(const char *name, char *out, int outn)
     }
 }
 
+/* ------------------- the CSV path (user spec, 2026-11-17) ------------
+ * A filename with a .csv extension (any case) takes the CSV path in
+ * the save/load dialogs; everything else stays CSD.  Plain 7-bit
+ * ASCII both ways (RFC 4180): the numerics as 17 significant digits
+ * (cs_csv_num - the IEEE-754 precision other spreadsheets hold),
+ * text as typed with doubled quotes and quoted commas, embedded
+ * CR/LF flattened to a space on BOTH sides (the grid cannot hold a
+ * newline; flattening both ways keeps the round trip consistent -
+ * flagged: tools that preserve the embedded break round-trip it
+ * losslessly, we do not).  On import every byte > 127 is dropped,
+ * a leading UTF-8 BOM is skipped, and a field is a NUMBER only when
+ * the whole field parses as a pure numeric literal - everything
+ * else commits as text with NO formula evaluation (CSV is static).
+ * No recalculation on load. */
+
+/* the .csv extension test (any case) */
+static int csv_ext(const char *name)
+{
+    size_t n = strlen(name);
+    if (n < 4) return 0;
+    return name[n - 4] == '.' &&
+           toupper((unsigned char) name[n - 3]) == 'C' &&
+           toupper((unsigned char) name[n - 2]) == 'S' &&
+           toupper((unsigned char) name[n - 1]) == 'V';
+}
+
+/* one text field: 7-bit, CR/LF flattened to a space, quoted (with
+ * the internal quotes doubled) when it carries a comma or a quote */
+static void csv_put_field(FILE *f, const char *s)
+{
+    int quote = 0, k;
+    for (k = 0; s[k]; k++) {
+        unsigned char ch = (unsigned char) s[k];
+        if (ch > 127) continue;             /* plain 7-bit ascii */
+        if (ch == ',' || ch == '"') { quote = 1; break; }
+    }
+    if (quote) fputc('"', f);
+    for (k = 0; s[k]; k++) {
+        unsigned char ch = (unsigned char) s[k];
+        if (ch > 127) continue;
+        if (ch == '\r' || ch == '\n') { fputc(' ', f); continue; }
+        if (ch == '"') fputc('"', f);       /* doubled inside quotes */
+        fputc((int) ch, f);
+    }
+    if (quote) fputc('"', f);
+}
+
+int cs_save_csv(const char *name, int c1, int r1, int c2, int r2)
+{
+    FILE *f;
+    int r, c, err;
+    /* the trailing empty fields and rows carry nothing: trim them so
+     * an All-mode export emits the USED range (the spreadsheet
+     * convention) instead of a 255x127 comma desert; leading and
+     * embedded empties stay (they are positions) */
+    {
+        int lastrow = -1, lastcol = -1;
+        for (r = r1; r <= r2; r++)
+            for (c = c1; c <= c2; c++) {
+                Cell *cl = cs_getcell(c, r);
+                if (cl && cl->type != CE_EMPTY && cl->type != CE_ALLOC) {
+                    if (r > lastrow) lastrow = r;
+                    if (c > lastcol) lastcol = c;
+                }
+            }
+        if (lastrow < r1) {          /* a wholly blank range */
+            f = fopen(name, "wb");   /* still write an empty file */
+            if (!f) { cs_msg("can't open"); return 0; }
+            if (fclose(f) != 0) { cs_msg("WRITE ERROR"); return 0; }
+            return 1;
+        }
+        r2 = lastrow;
+        c2 = lastcol;
+    }
+    f = fopen(name, "wb");                  /* the name AS TYPED */
+    if (!f) { cs_msg("can't open"); return 0; }
+    for (r = r1; r <= r2; r++) {
+        for (c = c1; c <= c2; c++) {
+            Cell *cl = cs_getcell(c, r);
+            char nbuf[64];
+            if (c > c1) fputc(',', f);
+            if (!cl || cl->type == CE_EMPTY || cl->type == CE_ALLOC)
+                continue;                   /* an empty field */
+            if (cl->type == CE_NUM) {
+                if (cl->iserr) { fputs("?n?", f); continue; }
+                if (cl->strres) {           /* the derived string type */
+                    csv_put_field(f, cl->strres);
+                    continue;
+                }
+                cs_csv_num(&cl->val, nbuf, (int) sizeof(nbuf));
+                fputs(nbuf, f);
+                continue;
+            }
+            csv_put_field(f, cl->cont ? cl->cont : "");
+        }
+        if (r < r2) { fputc('\r', f); fputc('\n', f); }
+    }
+    err = ferror(f);
+    if (fclose(f) != 0) err = 1;
+    if (err) { cs_msg("WRITE ERROR"); return 0; }
+    return 1;
+}
+
+/* open a CSV positioned after a leading UTF-8 BOM (a plain rewind
+ * when the first bytes are not the BOM - the file is a disk file) */
+static FILE *csv_open_bom(const char *name)
+{
+    FILE *f = fopen(name, "rb");
+    int b1, b2, b3;
+    if (!f) return NULL;
+    b1 = fgetc(f); b2 = fgetc(f); b3 = fgetc(f);
+    if (b1 == EOF) { fclose(f); return NULL; }
+    if (!(b1 == 0xEF && b2 == 0xBB && b3 == 0xBF)) rewind(f);
+    return f;
+}
+
+/* the field-parsing state machine (shared by both passes): pulls one
+ * field into buf (bounded, truncated at 255 - flagged), returns:
+ *   1 = a field was read,  2 = the record ended after the field,
+ *   0 = the file ended. */
+static int csv_get_field(FILE *f, char *buf, int bufn)
+{
+    int fl = 0, inq = 0, done = 0, rec = 0;
+    buf[0] = '\0';
+    while (!done) {
+        int c = fgetc(f);
+        if (c == EOF) {
+            done = 1;
+            if (fl == 0 && !rec) return 0;   /* nothing left */
+            break;
+        }
+        if (inq) {
+            if (c == '"') {
+                int n2 = fgetc(f);
+                if (n2 == '"') {
+                    if (fl < bufn - 1) buf[fl++] = '"';
+                } else {
+                    inq = 0;
+                    if (n2 != EOF) ungetc(n2, f);
+                }
+            } else if (c == '\r' || c == '\n') {
+                if (fl < bufn - 1) buf[fl++] = ' ';   /* flattened */
+            } else if (c < 128) {
+                if (fl < bufn - 1) buf[fl++] = (char) c;
+            }                                       /* >127 dropped */
+        } else if (c == '"') {
+            inq = 1;
+        } else if (c == ',') {
+            done = 1;
+        } else if (c == '\n') {
+            done = 1; rec = 1;
+        } else if (c == '\r') {
+            int n2 = fgetc(f);
+            if (n2 != '\n' && n2 != EOF) ungetc(n2, f);
+            done = 1; rec = 1;
+        } else if (c < 128) {
+            if (fl < bufn - 1) buf[fl++] = (char) c;
+        }                                       /* >127 dropped */
+    }
+    buf[fl] = '\0';
+    return rec ? 2 : 1;
+}
+
+int cs_load_csv(const char *name, int c0, int r0, int merge)
+{
+    FILE *f;
+    int row, col, ok = 1;
+    /* ---- pass 1: the dimensions and the cell count, so an oversized
+     * file is refused with the sheet untouched (the CSD loader's
+     * two-pass discipline) - the clear happens after pass 1 ---- */
+    f = csv_open_bom(name);
+    if (!f) { cs_msg("write error %s not found", name); return 0; }
+    {
+        char buf[256];
+        int r2 = r0, c2 = c0, nonblank = 0;
+        while (ok) {
+            int st = csv_get_field(f, buf, (int) sizeof(buf));
+            if (st == 0) break;
+            if (buf[0] != '\0') {
+                nonblank++;
+                if (r2 >= CS_MAXROW || c2 >= CS_MAXCOL) ok = 0;
+            }
+            if (st == 2) { r2++; c2 = c0; }
+            else c2++;
+        }
+        fclose(f);
+        if (!ok) { cs_msg("READ ERROR"); return 0; }
+        if (nonblank > CS_BUDGET) { cs_msg("MEMORY IS TOO LOW"); return 0; }
+    }
+    if (!merge) cs_clear_all();             /* ;L replaces, ;M overlays */
+    else cs_reg_reset();                    /* merged data: fresh sums */
+    /* ---- pass 2: place the fields ---- */
+    f = csv_open_bom(name);
+    if (!f) { cs_msg("write error %s not found", name); return 0; }
+    row = r0; col = c0;
+    for (;;) {
+        char buf[256];
+        int st = csv_get_field(f, buf, (int) sizeof(buf));
+        if (st == 0) break;
+        if (buf[0] != '\0') {
+            Csn pv;                        /* parsed BEFORE the store
+                                              touches the cell: the
+                                              parse target must not
+                                              live inside it (the
+                                              setters free first) */
+            Cell *cl = cs_alloc_cell(col, row);
+            if (!cl) { cs_msg("MEMORY IS TOO LOW"); ok = 0; break; }
+            if (csn_parse(buf, &pv) == 0) {
+                if (!cs_set_num(cl, buf, &pv, 0, NULL))
+                    { cs_msg("MEMORY IS TOO LOW"); ok = 0; break; }
+            } else if (!cs_set_text(cl, buf, 'L')) {
+                cs_msg("MEMORY IS TOO LOW"); ok = 0; break;
+            }
+        }
+        if (st == 2) { row++; col = c0; }
+        else col++;
+    }
+    fclose(f);
+    if (ok) cs_recount_entries();
+    return ok;
+}
+
 int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
 {
     char path[128];
@@ -538,6 +760,45 @@ int cs_save_dialog(void)
         return 0;
     if (!name[0]) return 0;
 
+    /* the CSV path (user spec 2026-11-17): a .csv extension takes the
+     * CSV route - no password prompts, no CSD layout; the name is
+     * used AS TYPED (cs_savename would append ".csd") */
+    if (csv_ext(name)) {
+        char npath[128];
+        FILE *probe;
+        strncpy(npath, name, (int) sizeof(npath) - 1);
+        npath[sizeof(npath) - 1] = '\0';
+        probe = fopen(npath, "rb");
+        if (probe) {
+            fclose(probe);
+            if (cs_prompt_yn("File exists. Destroy old contents (y,n)?") != 1)
+                return 0;
+        }
+        for (;;) {
+            int pc = cs_prompt_char("P)artial or A)all");
+            cs_draw();
+            if (pc == 27) return 0;
+            if (pc == 'P' || pc == 'p') {
+                char b[24];
+                int c1, r1, c2, r2, t1, t2;
+                if (cs_prompt_str("top left corner:", "A1", b, (int) sizeof(b)) < 0) return 0;
+                if (!cs_coord_text(b, &c1, &r1, &t1, &t2)) { cs_msg("write error bad coord"); return 0; }
+                sprintf(b, "%c%d", 'A' + curCol, curRow + 1);
+                if (cs_prompt_str("bottom right corner:", "", b, (int) sizeof(b)) < 0) return 0;
+                if (!cs_coord_text(b, &c2, &r2, &t1, &t2)) { cs_msg("write error bad coord"); return 0; }
+                if (c2 < c1 || r2 < r1) { cs_msg("write error end>start"); return 0; }
+                if (c2 >= CS_MAXCOL || r2 >= CS_MAXROW) { cs_msg("write error bad coord"); return 0; }
+                if (!cs_save_csv(npath, c1, r1, c2, r2)) return 0;
+                break;
+            } else if (pc == 'A' || pc == 'a') {
+                if (!cs_save_csv(npath, 0, 0, CS_MAXCOL - 1, CS_MAXROW - 1)) return 0;
+                break;
+            }
+        }
+        cs_msg("%s", "SAVED");
+        return 1;
+    }
+
     filex = 0;
     cs_savename(name, pwbuf, (int) sizeof(pwbuf));
     probe = fopen(pwbuf, "rb");
@@ -618,7 +879,10 @@ int cs_load_dialog(int merge)
         if (!cs_coord_text(b, &c0, &r0, &t1, &t2)) { cs_msg("bad coord"); return 0; }
     }
     cs_msg("...");
-    ok = cs_load(name, c0, r0, merge);
+    if (csv_ext(name))
+        ok = cs_load_csv(name, c0, r0, merge);   /* the CSV path */
+    else
+        ok = cs_load(name, c0, r0, merge);
     cs_draw();
     if (!ok) {
         /* cs_load painted its own reason (not found / READ ERROR):
@@ -627,7 +891,12 @@ int cs_load_dialog(int merge)
          * to be missing (2026-11-15) */
         char p2[128];
         FILE *probe;
-        cs_savename(name, p2, (int) sizeof(p2));
+        if (csv_ext(name)) {
+            strncpy(p2, name, (int) sizeof(p2) - 1);   /* as typed */
+            p2[sizeof(p2) - 1] = '\0';
+        } else {
+            cs_savename(name, p2, (int) sizeof(p2));
+        }
         probe = fopen(p2, "rb");
         if (!probe) cs_msg("write error %s not found", name);
         else fclose(probe);

@@ -171,6 +171,7 @@ void   cs_reg_reset(void);   /* zero the REGR() state */
 int    cs_commit_entry(int col, int rw, const char *entry);
 void   cs_fmt_num(const Csn *v, int width, int prec, int iserr, int notation,
                   char *buf, int bufn);
+void   cs_csv_num(const Csn *v, char *buf, int bufn);   /* CSV: 17 sig digits */
 int    cs_ensure_room(void);
 void   cs_recount_entries(void);
 void   cs_fname_disp(const char *name, char *out, int outn);
@@ -231,6 +232,27 @@ void   cs_goto_cmd(void);
 /* fileio.c */
 int    cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw);
 int    cs_load(const char *name, int c0, int r0, int merge);
+/* the CSV path (user spec 2026-11-17): a .csv extension (any case) in
+ * the save/load dialogs takes the CSV route - plain 7-bit ASCII
+ * (RFC 4180): numerics as 17 significant digits (cs_csv_num, the
+ * IEEE-754 precision, truncated per the engine identity, trailing
+ * zeros trimmed, plain decimal in [1e-4, 1e17) and scientific
+ * outside), text as typed with doubled quotes and quoted commas,
+ * embedded CR/LF flattened to a space on BOTH sides (flagged: the
+ * round trip stays consistent, tools that preserve the break do not),
+ * empty cells as empty fields with the used-range extents (the
+ * trailing empty fields/rows trimmed).  Import: a UTF-8 BOM skipped,
+ * bytes > 127 dropped, a field is numeric only when the WHOLE field
+ * parses as a pure numeric literal ("123 pages" stays text; the RFC's
+ * quotes are delimiters, not type markers), text commits with NO
+ * formula evaluation, no recalculation; two-pass like the CSD loader
+ * (an over-tall/wide file refuses with READ ERROR, an over-budget
+ * count with MEMORY IS TOO LOW, the sheet untouched).  ;L replaces,
+ * ;M overlays, both anchor at the requested corner. */
+int    cs_save_csv(const char *name, int c1, int r1, int c2, int r2);
+int    cs_load_csv(const char *name, int c0, int r0, int merge);
+int    cs_save_csv(const char *name, int c1, int r1, int c2, int r2);
+int    cs_load_csv(const char *name, int c0, int r0, int merge);
 int    cs_save_dialog(void);
 int    cs_load_dialog(int merge);
 int    cs_file_password(const char *name, char *pw, int max);
