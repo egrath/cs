@@ -2180,3 +2180,11 @@ PREVIOUS BATCH (5 items, verified):
   SUMPRODUCT(A1>A3,B1>B3) = 200 (the spec's Example 1).
 - The branch "sumprod" (the user asked for a new branch); the merge
   to master awaits the user's review.
+
+## THE SUMPRODUCT MERGE (2026-11-17)
+- The "sumprod" branch merged to master (fast-forward 10470d7 ->
+  6694553) and deleted locally + remotely after the user's review
+  ("looks good, commit"). The post-merge gates: --test all pass, the
+  idle gate MATCH, the maxres check 2,703,360 - EXACTLY the baseline
+  (the +16KB seen on the branch run was allocator granularity; the
+  merged tree sits back at the recorded value).
