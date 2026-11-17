@@ -2081,6 +2081,30 @@ master when every phase passes.
   refusal). PTY-verified: `;S t_pty.csv A` → `12.5,hello` (the used
   range); `;L` the csv → A1=12.50, B1=`hello` text.
 
+## THE DOS TARGET (user report 2026-11-17, Makefile.wcc + README)
+
+- The app builds with OpenWatcom v2 as an MS-DOS target
+  (`Makefile.wcc` at the tree root, the user's working file) and
+  runs smoothly on a 386SX/25 (slightly sluggish, expected — the
+  BCD engine does software arithmetic at ~40 digits per operation).
+- The build: wcc386/wcl386, `-bt=dos -mf` (the 32-bit flat model —
+  the sparse store's no-64KB-allocation design), `-3r` (the 386
+  register calling), `-ox -ei -za -w4 -zp8`, the DOS4GW extender
+  (`-l=dos4g`), PDCurses 3.9 built with `MODEL=f` (its CFLAGS gain
+  `-fo=.obj`), CURSESPATH edited per checkout. The buildno
+  generation runs `sh tools/buildno.sh build.dos/buildno.h
+  build.count` — the SAME shared counter as the Unix build. The
+  recipe lives in README.md ("Cross compiling with OpenWatcom on
+  Macintosh for MS-DOS", the user's notes verbatim). GNU make
+  ignores the file unless invoked with `-f`; `build.dos/` is
+  gitignored.
+- The C89 disciplines that make this possible were standing rules
+  (no vsnprintf, no math.h, the bounded formatters, the
+  reserve-first relink, the ≥24 KB linker stack) — keep them when
+  touching anything the DOS compiler sees; grep for C99 functions
+  before every DOS build (the macOS headers declare them even
+  under -std=c89).
+
 ## Source map
 
 | file | responsibility |
