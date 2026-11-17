@@ -2242,3 +2242,20 @@ PREVIOUS BATCH (5 items, verified):
   tools/buildno.sh. The machine-local /tmp/cs_ref worktree (the
   c5c8dbb reference build) is recreatable from git at any time.
 - Everything committed and pushed; the tree clean on master.
+
+## THE AGENTS.MD MAINTENANCE RULE (user request, 2026-11-17)
+- The user verified the standing instructions: the session memory rule
+  was explicit (the Read first item 1 + the workflow step 6), but
+  AGENTS.md's OWN maintenance was implied by practice, never a rule.
+- FIXED: the Read first section gains item 4 - "Maintain this file:
+  every batch appends its record here - AGENTS.md is the project's
+  engineering record, and a later pickup must be possible from
+  AGENTS.md + the session memory alone; both files are part of the
+  batch workflow's definition of done" - and the workflow's step 6
+  now says "Update .opencode/opencode.txt AND AGENTS.md". README.md
+  and docs/functions.txt stay the user-facing pair (updated when the
+  change is visible to the user).
+- The project state at the rule's commit: everything committed and
+  pushed (master = the DOS target + the perf table + the pickup
+  audit's README fixes), the tree clean, the standing battery green,
+  the maxres at the baseline. READY FOR PICKUP.

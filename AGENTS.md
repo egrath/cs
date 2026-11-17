@@ -30,6 +30,14 @@ follow the original. Read this file before changing anything.
    screen must remain **byte-for-byte identical** (after tab expansion and
    trailing-space normalization).
 
+4. **Maintain this file**: every batch appends its record here (what
+   changed and why, the design decisions, the traps, the new rules) —
+   AGENTS.md is the project's engineering record, and a later pickup
+   must be possible from AGENTS.md + the session memory alone. Both
+   files are part of the batch workflow's definition of done (steps 6-7
+   below); README.md and docs/functions.txt are user-facing and are
+   updated when the change is visible to the user.
+
 ## Identity & hard invariants
 
 - **No floating point anywhere.** All math is the BCD engine. A value is
@@ -677,7 +685,8 @@ Batch workflow (do all steps before reporting done):
 5. **The maxres check** (see THE MAXRES CHECK above): `/usr/bin/time -l
    ./build/calcstar --test` — compare against the recorded baseline
    (macOS only; skipped with a note elsewhere).
-6. Update `.opencode/opencode.txt`.
+6. Update `.opencode/opencode.txt` **and AGENTS.md** — both files are
+   the definition of done (see Read first, item 4).
 7. **Commit the finished work to git with a meaningful message**
    (batch-level: what changed and why), **then push to `master`**.
    Check `git status --short` first so only intended files land in the
