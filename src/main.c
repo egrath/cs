@@ -315,9 +315,12 @@ void run_session(void)
                     " license (build %d)", CS_VERSION, CS_BUILDNO);
         cs_start_msg(bm);
     }
-    /* load the file given on the command line, if any */
+    /* load the file given on the command line, if any - a .csv
+     * extension takes the CSV path (user spec 2026-11-17) */
     if (cs_cmdfile[0]) {
-        if (cs_load(cs_cmdfile, 0, 0, 0))
+        if (cs_csv_ext(cs_cmdfile)
+            ? cs_load_csv(cs_cmdfile, 0, 0, 0)
+            : cs_load(cs_cmdfile, 0, 0, 0))
             redraw();            /* repaint the loaded sheet */
         else
             cs_start_msg_clear();    /* the load error message wins */

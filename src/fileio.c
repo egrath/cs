@@ -146,8 +146,9 @@ static void cs_savename(const char *name, char *out, int outn)
  * else commits as text with NO formula evaluation (CSV is static).
  * No recalculation on load. */
 
-/* the .csv extension test (any case) */
-static int csv_ext(const char *name)
+/* the .csv extension test (any case) - cross-file: the CLI load
+ * dispatches on it too */
+int cs_csv_ext(const char *name)
 {
     size_t n = strlen(name);
     if (n < 4) return 0;
@@ -730,7 +731,7 @@ int cs_prompt_hidden(const char *pr, char *out, int max)
         cs_draw_prompt_text(line, dots);
         ch = getch();
         if (cs_was_resize(ch)) continue;
-        if (ch == 27) return -1;
+        if (ch == 27) { cs_prompt_hide(); return -1; }
         if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) break;
         if (ch == KEY_BACKSPACE || ch == 8 || ch == 127) {
             if (n > 0) buf[--n] = '\0';
@@ -758,12 +759,12 @@ int cs_save_dialog(void)
     dflt[38] = '\0';
     if (cs_prompt_str("File name :", fname[0] ? dflt : "", name, (int) sizeof(name)) < 0)
         return 0;
-    if (!name[0]) return 0;
+    if (!name[0]) { cs_prompt_hide(); return 0; }
 
     /* the CSV path (user spec 2026-11-17): a .csv extension takes the
      * CSV route - no password prompts, no CSD layout; the name is
      * used AS TYPED (cs_savename would append ".csd") */
-    if (csv_ext(name)) {
+    if (cs_csv_ext(name)) {
         char npath[128];
         FILE *probe;
         strncpy(npath, name, (int) sizeof(npath) - 1);
@@ -869,9 +870,10 @@ int cs_load_dialog(int merge)
 {
     char name[40], b[24];
     int c0, r0, ok;
-    if (cs_prompt_str(merge ? "File name :" : "File name : (make sure file is saved)",
+    if (cs_prompt_str(merge ? "File name :" :
+                      "File name (make sure current file is saved) :",
                       "", name, (int) sizeof(name)) < 0) return 0;
-    if (!name[0]) return 0;
+    if (!name[0]) { cs_prompt_hide(); return 0; }
     if (cs_prompt_coord(merge ? "Load position:" : "Load position:", "A1", b, (int) sizeof(b), 1) < 0)
         return 0;
     {
@@ -879,7 +881,7 @@ int cs_load_dialog(int merge)
         if (!cs_coord_text(b, &c0, &r0, &t1, &t2)) { cs_msg("bad coord"); return 0; }
     }
     cs_msg("...");
-    if (csv_ext(name))
+    if (cs_csv_ext(name))
         ok = cs_load_csv(name, c0, r0, merge);   /* the CSV path */
     else
         ok = cs_load(name, c0, r0, merge);
@@ -891,7 +893,7 @@ int cs_load_dialog(int merge)
          * to be missing (2026-11-15) */
         char p2[128];
         FILE *probe;
-        if (csv_ext(name)) {
+        if (cs_csv_ext(name)) {
             strncpy(p2, name, (int) sizeof(p2) - 1);   /* as typed */
             p2[sizeof(p2) - 1] = '\0';
         } else {

@@ -251,8 +251,7 @@ int    cs_load(const char *name, int c0, int r0, int merge);
  * ;M overlays, both anchor at the requested corner. */
 int    cs_save_csv(const char *name, int c1, int r1, int c2, int r2);
 int    cs_load_csv(const char *name, int c0, int r0, int merge);
-int    cs_save_csv(const char *name, int c1, int r1, int c2, int r2);
-int    cs_load_csv(const char *name, int c0, int r0, int merge);
+int    cs_csv_ext(const char *name);          /* the .csv test (any case) */
 int    cs_save_dialog(void);
 int    cs_load_dialog(int merge);
 int    cs_file_password(const char *name, char *pw, int max);

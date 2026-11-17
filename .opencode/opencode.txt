@@ -2076,3 +2076,32 @@ PREVIOUS BATCH (5 items, verified):
   300-row refusal). pty-verified: ;S t_pty.csv A -> "12.5,hello"
   (the used range), ;L the csv -> A1=12.50 B1=hello text.
 - Gates: --test all pass, the idle gate MATCH, gcc-14 zero warnings.
+
+## THE PROMPT-ABORT RESTORE + THE CLI CSV + THE LOAD WORDING (2026-11-17)
+- THE USER'S REPORT: aborting the save dialog with ESC left "File
+  name :" on the status row until the next key. THE CLASS: every
+  prompt primitive's ESC exit only cleared promptvis - the prompt
+  text lingered (the save/load/load-position/goto prompts; the
+  dialogs that repaint after a prompt read were fine).
+- FIXED at the primitives: prompt_str_core's ESC and
+  cs_prompt_coord's ESC now call cs_prompt_hide() (the clrtoeol +
+  edit-line restore + place_cursor + refresh) before returning -1;
+  cs_prompt_hidden's ESC too; the dialogs' empty-name RETURN aborts
+  (;S/;L "if (!name[0])") restore the same way. The goto-ESC
+  lingering was pre-existing behavior, now deliberately improved
+  (flagged).
+- THE CLI CSV (user report): "calcstar test.csv" dispatched to the
+  CSD loader and said "test.csv.csd not found". main.c's CLI load
+  now dispatches on cs_csv_ext (exported from fileio.c; the static
+  csv_ext renamed) -> cs_load_csv(name, 0, 0, 0).
+- THE LOAD WORDING (user request): "File name : (make sure file is
+  saved)" -> "File name (make sure current file is saved) :" (the
+  join adds the space before the typed value); the merge prompt
+  stays "File name :".
+- PTY checks must render the FRAME, not grep the plain byte tail:
+  the erase sequences strip to nothing but the earlier text stays in
+  the byte stream (three false negatives before the frame renders).
+- Verified: the save/load ESC + the empty-name RETURN leave the
+  status row BLANK (rendered frames); the CLI csv message uses the
+  raw name; --test all pass; the idle gate MATCH; gcc-14 zero
+  warnings.

@@ -893,7 +893,10 @@ static int prompt_str_core(const char *pr, const char *dflt, char *out,
         cs_draw_prompt_text(line, "");
         ch = getch();
         if (cs_was_resize(ch)) continue;
-        if (ch == 27) { promptvis = 0; return -1; }
+        /* the ESC abort restores the screen at once (the user's
+         * report, 2026-11-17): the prompt text used to linger on the
+         * status row until the next key's repaint */
+        if (ch == 27) { cs_prompt_hide(); return -1; }
         if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
             promptvis = 0;
             if (n == 0 && dflt && dflt[0]) {
@@ -970,7 +973,7 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
             prompt_edit_paint(pr, dflt ? dflt : "");
         ch = getch();
         if (cs_was_resize(ch)) continue;
-        if (ch == 27) { promptvis = 0; return -1; }
+        if (ch == 27) { cs_prompt_hide(); return -1; }
         if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
             promptvis = 0;
             if (n == 0 && dflt && dflt[0]) {
