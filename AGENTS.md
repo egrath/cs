@@ -2011,6 +2011,34 @@ master when every phase passes.
   right-justified (the width sites bounded by analysis, the largest
   24 — the format's own bound).
 
+- **SUMPRODUCT (user spec 2026-11-17, branch "sumprod")**: variadic
+  element-wise products summed — `SUMPRODUCT(r1, r2, ...)`; the
+  arguments are ranges or single cells (NO broadcasting: a one-cell
+  arg only beside other one-element args, per the spec); the
+  ELEMENT-COUNT equality is the dimension check (Error 2 — count-
+  based, not shape-based: a 2×3 and a 3×2 pair positionally,
+  flagged; Excel requires shapes); the correspondence is the
+  row-major index. Coercion: absent/empty/allocated → 0 (per the
+  spec — unlike SUM's skip), text and derived-string cells skipped
+  (our existing rule — the spec defers text to it, flagged), an
+  error cell → the value-range abort, Bools → 0/1, a direct
+  Number/String argument → Error 6 (neither a range nor a cell).
+  Single-argument SUMPRODUCT = SUM. No args → Error 3 (the empty
+  parens checked before the first parse); >16 args → Error 3
+  (the documented cap); junk after the args → Error 7. The
+  coordinates collect into a LOCAL `CsRng[16]` (~256 stack bytes) —
+  the products accumulate immediately (the spec's no-product-array
+  rule), chained csn_mul → csn_add with the overflow aborting; the
+  40-digit precision throughout. The dependency tracking works
+  unchanged (the `>` scanner lists already cover the ranges).
+- **docs/functions.txt (user request, 2026-11-17)**: a plain-text
+  function reference grouped by topic — ALL functions, generated
+  from the fnid table (verified complete: all 96 name-table entries
+  incl. the aliases are covered). **MAINTENANCE RULE: update it
+  every time a new function is added** (part of the batch
+  workflow's spirit; a verification one-liner greps the fn table
+  against it).
+
 ## THE CSV IMPORT/EXPORT (user spec 2026-11-17, RFC 4180 in docs/)
 
 - The dispatch: a `.csv` extension (any case) in `;S`/`;L`/`;M` takes

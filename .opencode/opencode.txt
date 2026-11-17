@@ -2146,3 +2146,37 @@ PREVIOUS BATCH (5 items, verified):
 - GATES: --test all pass (24 new pins), the idle gate MATCH, gcc-14
   zero warnings, AND THE NEW MAXRES CHECK: 2,703,360 - EXACTLY the
   baseline (zero new accumulator fields, as the user demanded).
+
+## SUMPRODUCT (branch "sumprod", user spec 2026-11-17)
+- The user's full spec implemented: variadic element-wise products
+  summed; ranges or single cells; the element-count dimension check
+  (Error 2; count-based not shape-based - FLAGGED, Excel requires
+  shapes); NO broadcast of single cells (per the spec, FLAGGED -
+  Excel broadcasts); empty cells -> 0 (per the spec - unlike SUM's
+  skip), text/derived-string cells skipped (our coercion rule - the
+  spec defers text to it), an error cell -> the value-range abort,
+  a direct Number/String/Bool arg -> Error 6; no args -> Error 3,
+  >16 args -> Error 3 (the cap), junk after the args -> Error 7.
+- The implementation: a local CsRng[16] (~256 stack bytes), the
+  products chained csn_mul -> csn_add accumulating immediately (the
+  spec's no-product-array rule), the row-major index walk with the
+  per-range width, the 40-digit precision throughout. Single-arg =
+  SUM (the same loop). The deps work unchanged (the > scanner
+  lists).
+- MY PIN BUGS: the canon exponent (the value 1.2345e36 -> the canon
+  "+1.2345679012345E+37" - e = exp10, AGAIN), the sheet-state
+  collisions (the abs block's B1=3/B2=text and C1/C2=9.9E998
+  overflow seeds shared the pin ranges - use clean cells for the
+  product pins), a reversed-range pin with mismatched counts (5 vs
+  3 -> the dims Error 2 was CORRECT behavior), and the engine's
+  263 = 3+0+30+80+150 vs my 1403 arithmetic slip.
+- docs/functions.txt created (the user request): ALL functions
+  grouped by topic, verified complete against the fnid table (96
+  entries incl. the aliases); THE RULE: update it with every new
+  function.
+- Gates: --test all pass (20 SP pins), the idle gate MATCH, gcc-14
+  zero warnings, the maxres 2,719,744 = the baseline +16KB (the
+  allocator granularity; noted in AGENTS.md), the live pty check:
+  SUMPRODUCT(A1>A3,B1>B3) = 200 (the spec's Example 1).
+- The branch "sumprod" (the user asked for a new branch); the merge
+  to master awaits the user's review.

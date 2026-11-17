@@ -1,0 +1,121 @@
+CalcStar function reference (generated 2026-11-17)
+====================================================
+Maintained by hand: update this file every time a new function is
+added (the AGENTS.md batch workflow).  All functions are BCD-exact
+(40-digit engine, no floating point).  Function names cannot be
+digit-leading; they are typed uppercase or lowercase.
+
+Ranges use A1>B5 (the rectangle between the corners).  Multi-area
+lists are comma-separated.  A bare cell reference is a first-class
+value; VAL() is the typed accessor.
+
+Aggregation (streaming, ranges and value lists)
+    SUM(r)          sum; text/empty cells in a range are skipped
+    CNT(r)          count of the numeric values
+    AVG(r)          arithmetic mean (AVERAGE is an alias)
+    MAX(r)          largest value
+    MIN(r)          smallest value
+    MED(r)          median (Excel-style; bounded at 512 values)
+    SUMSQ(r)        sum of squares
+    RMS(r)          root-mean-square
+    SUMABS(r)       sum of |x|
+    SUMPOS(r)       sum of the positive values
+    SUMNEG(r)       sum of the negative magnitudes
+    MAXABS(r)       largest |x|
+    MINABS(r)       smallest |x|
+    SUMPRODUCT(r1,r2,...)  the element-wise products, summed; the
+                    ranges' element counts must match, single cells
+                    are one element (no broadcasting)
+
+Statistics (streaming; Welford's single pass)
+    VAR(r)          sample variance (n-1)
+    VARP(r)         population variance (n)
+    STDEV(r)        sample standard deviation
+    STDEVP(r)       population standard deviation
+    PCT(r1,r2,...,p)  PERCENTILE.INC; the last argument is p
+    QUART(r1,...,q)   q integer 0..4 = PCT(q/4)
+    CORR(rx,ry)     Pearson correlation (paired ranges)
+    RSQ(rx,ry)      r squared
+    INTEG(rx,ry)    trapezoidal integral (x strictly increasing)
+    REGR(rx,ry)     linear regression (the report's third value)
+    SLOPE           the last REGR's slope
+    PROJ(x)         the last REGR's projection at x
+    DEPD(x)         the last REGR's dependent projection
+    SPLINE(rx,ry,t) natural cubic spline at t (bounded at 512 knots)
+    DIFF(rx,ry,t)   the piecewise-linear slope at t
+
+Elementary math
+    ABS(x)          absolute value
+    SIGN(x)         -1/0/1 (SGN is an alias)
+    INTG(x)         truncate toward zero
+    FRAC(x)         x - INTG(x) (sign-preserving)
+    SQRT(x)         square root (relative Newton, full precision)
+    EXP(x)          e^x
+    LOG(x)          base-10 logarithm (LG is an alias)
+    LN(x)           natural logarithm
+    FACT(n)         n! (the Gamma function for non-integers)
+    INVFACT(y)      the inverse factorial (Newton in log space)
+    COMBIN(n,k)     combinations (NCR is an alias)
+    PERMUT(n,k)     permutations (NPR is an alias)
+    GCD(a,b)        greatest common divisor (pure BCD Euclid)
+    LCM(a,b)        least common multiple
+    MOD(a,b)        a - b*INTG(a/b)
+    POWER(a,b)      a**b (the ** operator also exists)
+    ROUND(x,d)      truncate at d decimals (the engine never rounds)
+    TRUNC(x,d)      the same as ROUND
+    EVEN(x)         1 if the integer x is even
+    ODD(x)          1 if the integer x is odd
+    ISPRIME(x)      1 if the 19-digit-capped integer x is prime
+
+Constants and cell info
+    PI()            3.1415926535897932384626433832795028841972 (40d)
+    E()             2.7182818284590452353602874713526624977572 (40d)
+    ROW()           the cursor's row (1-based)
+    COL()           the cursor's column (1-based)
+    VAL(x)          the typed accessor: the Number, the String, or
+                    Error 1 for empty/error cells
+
+Trigonometry (radians; the inverse family publishes at 38 digits)
+    SIN COS TAN ASIN ACOS ATAN
+    ATAN2(y,x)      the quadrant-aware arctangent
+    DEGREES(x)      radians -> degrees (DEG is an alias)
+    RADIANS(x)      degrees -> radians (RAD is an alias)
+
+Engineering
+    HYPOT(a,b)      sqrt(a*a+b*b), scaled (no overflow near 1e500)
+    CEIL(x) FLOOR(x)
+    DB(dB)          20*log10(x)
+    DBM(w)          10*log10(w)+30
+    DBW(w)          10*log10(w)
+    LIN(dB)         10^(dB/20)
+    STEP(x)         0 below 0, 1 at-or-above (the user's choice)
+    CLAMP(x,lo,hi)
+    DIST(a,b)       the 2-D distance
+    LERP(a,b,t)     linear interpolation (t outside [0,1] extrapolates)
+    UNLERP(a,b,x)   the inverse LERP
+    CONV(v,from,to) unit conversion (~46 units, 15 dimensions; the
+                    factors are exact rationals)
+
+Random (the volatile cells: they retain their value once set; only
+;R E and RECALC(cell) redraw)
+    RAND(a,b)       a uniform integer in [a,b]
+    RANDF(a,b)      a uniform real in [a,b)
+    SEED(x)         sets the LCG state, returns x
+
+Strings (the strict mixing rule: a String in a numeric operation is
+Error 6; & concatenates)
+    CHR(n)          the character for 32..127
+    ORD(s)          the code of a one-character string
+
+Cell references (first-class values; REF's coordinates are DATA and
+are never renumbered by inserts/deletes/copies/sorts)
+    REF(col,row)    a reference from numeric expressions
+    COLIDX(x)       the 1-based column index of a designator
+
+Fuzzy logic (the Zadeh algebra, [0,1]; the conditional threshold is
+0.7)
+    NOT(x) AND(...)/OR(...) (multi-operand) XOR(x,y)
+
+Root finding
+    ROOT(f(x),lo,hi)  the bisection root of the captured expression
+                      (the bare X binds the trial value)

@@ -239,6 +239,7 @@ typedef enum {
     FN_CLAMP, FN_DIST, FN_LERP, FN_UNLERP,
     FN_SUMSQ, FN_RMS, FN_VAR, FN_VARP, FN_STDEV, FN_STDEVP,
     FN_SUMABS, FN_SUMPOS, FN_SUMNEG, FN_MAXABS, FN_MINABS,
+    FN_SUMPRODUCT,
     FN_PCT, FN_QUART,
     FN_CORR, FN_RSQ, FN_INTEG,
     FN_CONV,
@@ -345,6 +346,7 @@ static int fnid(const char *name)
     if (!strcmp(name, "RANDF"))  return FN_RANDF;
     if (!strcmp(name, "SEED"))   return FN_SEED;
     if (!strcmp(name, "ORD"))   return FN_ORD;
+    if (!strcmp(name, "SUMPRODUCT")) return FN_SUMPRODUCT;
     return FN_UNKNOWN;
 }
 
@@ -2995,6 +2997,113 @@ static Val parse_primary(P *ps)
                 free(mbuf);
                 if (err) { val_err(&v, 0); return v; }
                 v.good = 1;
+                return v;
+            }
+            /* SUMPRODUCT (user spec 2026-11-17): variadic element-wise
+             * products over ranges/single cells, summed - the
+             * coordinates are collected locally (no arrays of
+             * values, no product array, no temporary cells) */
+            if (f == FN_SUMPRODUCT) {
+                CsRng rngs[16];
+                int nrng = 0, i, k, mcnt = -1, err = 0;
+                int e2 = 0;
+                Csn acc, prod, t;
+                memset(&acc, 0, sizeof(acc));
+                csn_zero(&acc);
+                skip_ws(&ps->p);
+                if (*ps->p == ')') { val_err(&v, 3); return v; }
+                for (;;) {
+                    Val a;
+                    memset(&a, 0, sizeof(a));
+                    csn_zero(&a.num);
+                    a = parse_condexpr(ps);
+                    if (!a.good) {
+                        val_free(&a);
+                        /* a silent parse failure (err 0) is the
+                         * value-range class, like everywhere */
+                        if (a.err) e2 = a.err;
+                        else err = -2;
+                        break;
+                    }
+                    if (a.type == VT_RANGE) {
+                        if (nrng >= 16) { val_free(&a); e2 = 3; break; }
+                        rngs[nrng++] = a.rng;
+                        val_free(&a);
+                    } else if (a.type == VT_REF) {
+                        /* a single cell: a one-element range; NO
+                         * broadcast (the user spec 6) */
+                        if (nrng >= 16) { val_free(&a); e2 = 3; break; }
+                        rngs[nrng].start = a.ref;
+                        rngs[nrng].end = a.ref;
+                        nrng++;
+                        val_free(&a);
+                    } else {
+                        /* a direct Number/String/Bool is neither a
+                         * range nor a cell: invalid argument type */
+                        val_free(&a);
+                        e2 = 6;
+                        break;
+                    }
+                    skip_ws(&ps->p);
+                    if (*ps->p == ',') { ps->p++; continue; }
+                    break;
+                }
+                if (err) { val_err(&v, 0); return v; }
+                if (e2 == 0 && nrng == 0) e2 = 3;   /* no arguments */
+                if (e2 == 0) {
+                    skip_ws(&ps->p);
+                    if (*ps->p != ')') { val_err(&v, 3); return v; }
+                    ps->p++;
+                }
+                if (e2 == 0) {
+                    /* the element counts must all match (the user
+                     * spec 6: the COUNT, not the shape - flagged) */
+                    for (i = 0; i < nrng && e2 == 0; i++) {
+                        int n = (rngs[i].end.col - rngs[i].start.col + 1) *
+                                (rngs[i].end.row - rngs[i].start.row + 1);
+                        if (i == 0) mcnt = n;
+                        else if (n != mcnt) e2 = 2;   /* the dims error */
+                    }
+                }
+                if (e2 == 0) {
+                    /* the element walk: the products accumulate
+                     * immediately (the user spec 7 - no product
+                     * array) */
+                    csn_zero(&acc);
+                    for (k = 0; k < mcnt && err == 0; k++) {
+                        csn_from_int(&prod, 1);
+                        for (i = 0; i < nrng && err == 0; i++) {
+                            int w = rngs[i].end.col - rngs[i].start.col + 1;
+                            int c = rngs[i].start.col + k % w;
+                            int r = rngs[i].start.row + k / w;
+                            Cell *cl = cs_getcell(c, r);
+                            csn_zero(&t);
+                            if (cl && cl->type == CE_NUM && !cl->iserr &&
+                                !cl->strres)
+                                csn_copy(&t, &cl->val);
+                            /* absent/empty/allocated -> 0 (the user
+                             * spec 8); text/derived -> skipped = 0;
+                             * an ERROR cell -> the range abort */
+                            else if (cl && cl->type == CE_NUM && cl->iserr)
+                                err = -2;        /* the value-range */
+                            if (!err) {
+                                err = csn_mul(&prod, &prod, &t);
+                                if (err) err = -2;
+                            }
+                        }
+                        if (!err) {
+                            err = csn_add(&acc, &acc, &prod);
+                            if (err) err = -2;
+                        }
+                    }
+                    if (err) { val_err(&v, 0); return v; }
+                    val_free(&v);
+                    csn_copy(&v.num, &acc);
+                    v.good = 1;
+                    v.type = VT_NUM;
+                    return v;
+                }
+                val_err(&v, e2);
                 return v;
             }
             /* SUM/CNT/AVG/MAX/MIN stream; MED uses a bounded buffer

@@ -1838,6 +1838,52 @@ static void run_tests(void)
         cke("MAXABS err cell", "MAXABS(A1>D1)", -1);
         ckc("SUMPOS empty", "SUMPOS(B3>B5)", "0");
         cke("SUMABS overflow", "SUMABS(C1>C2)", -1);  /* displays Error 0 */
+        /* ================= SUMPRODUCT (user spec 2026-11-17) =====
+         * the sheets: A1..A5 = 1..5 (above), A6=-4 A7=0 A8=-5,
+         * B1=3 B2=text, D1=1/0 (an error cell), C1/C2 = 9.9E998 */
+        setv(1, 2, "10");                /* B3 */
+        setv(1, 3, "20");                /* B4 */
+        setv(1, 4, "30");                /* B5 */
+        ckc("SP single = SUM", "SUMPRODUCT(A1>A5)", "+1.5000000000000E+2");
+        cke("SP no args", "SUMPRODUCT()", 3);
+        ckc("SP pair", "SUMPRODUCT(A1>A3, B3>B5)",
+            "+1.4000000000000E+3");      /* 1*10+2*20+3*30 = 140 */
+        setv(2, 2, "5");                 /* C3 */
+        setv(2, 3, "6");                 /* C4 */
+        setv(2, 4, "7");                 /* C5 */
+        ckc("SP triple", "SUMPRODUCT(A1>A3, B3>B5, C3>C5)",
+            "+9.2000000000000E+3");      /* 1*10*5+2*20*6+3*30*7 */
+        ckc("SP sumsq", "SUMPRODUCT(A1>A5, A1>A5)", "+5.5000000000000E+2");
+        ckc("SP two cells", "SUMPRODUCT(A1, B1)", "+3.0000000000000E+1");
+        cke("SP dims mismatch", "SUMPRODUCT(A1>A5, B1>B4)", 2);
+        cke("SP no broadcast", "SUMPRODUCT(A1>A5, B1)", 2);
+        /* the empties are zero (the spec 8) - unlike SUM's skip */
+        ckc("SP empties zero", "SUMPRODUCT(A6>A8, A6>A8)",
+            "+4.1000000000000E+2");      /* 16+0+25 */
+        /* the text/derived cells skip (our coercion rule) */
+        ckc("SP text skip", "SUMPRODUCT(B1>B5, B1>B5)",
+            "+1.4090000000000E+4");      /* 9+0+100+400+900, B2 skipped */
+        /* the error cell aborts */
+        cke("SP err cell", "SUMPRODUCT(A1>A5, D1>D5)", -1);
+        /* the full precision: 19-digit inputs survive the product */
+        setv(5, 0, "1111111111111111111");   /* F1 */
+        setv(5, 1, "9");                     /* F2 */
+        ckc("SP precision", "SUMPRODUCT(F1>F2, F1>F2)",
+            "+1.2345679012345E+37");   /* (1.11e18)^2 + 81 */
+        ckc("SP in formula", "SUMPRODUCT(A1>A3, B3>B5)*2",
+            "+2.8000000000000E+3");
+        ckc("SP reversed", "SUMPRODUCT(A5>A1, B5>B1)",
+            "+2.6300000000000E+3");   /* normalized: 3+0+30+80+150 */
+        cke("SP number arg", "SUMPRODUCT(5, A1>A1)", 6);
+        cke("SP string arg", "SUMPRODUCT(\"x\", A1>A1)", 6);
+        cke("SP junk tail", "SUMPRODUCT(A1>A1, B1>B1 ) x", 7);
+        /* a rectangles-shapes-differ same-count case: 2x3 vs 3x2
+         * (the empty ranges: 0) */
+        ckc("SP shapes", "SUMPRODUCT(D2>E4, D2>F3)", "0");
+        cke("SP overflow", "SUMPRODUCT(C1>C2, C1>C2)", -1);
+        cke("SP arg cap", "SUMPRODUCT(A1>A1,A1>A1,A1>A1,A1>A1,A1>A1,"
+            "A1>A1,A1>A1,A1>A1,A1>A1,A1>A1,A1>A1,A1>A1,A1>A1,A1>A1,"
+            "A1>A1,A1>A1,A1>A1)", 3);
         ckc("SUMSQ range", "SUMSQ(A1>A5)", "+5.5000000000000E+2");
         ckc("RMS range", "RMS(A1>A5)", "+3.3166247903553E+1");
         ckc("VAR range", "VAR(A1>A5)", "+2.5000000000000E+1");
