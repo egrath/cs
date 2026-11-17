@@ -858,7 +858,7 @@ void dep_check_range(int iscol, int a1, int a2, char *list, int listmax)
 
 static void delete_cmd(void)
 {
-    char list[256], dflt[8], inp[80];
+    char list[256], dflt[16], inp[80];
     int ch, c1, r1, c2, r2;
     ch = cs_prompt_char("Delete: A)ll R)ow C)olumn F)rom-To E)ntry");
     crepaint(CS_D_STATUS);   /* the prompt line goes away */
@@ -870,7 +870,11 @@ static void delete_cmd(void)
     }
     if (ch == 'R' || ch == 'r') {
         int hit;
-        cs_coord_str(dflt, (int) sizeof(dflt), curCol, curRow);
+        /* the ROW prefill is the plain row number (the user completes
+         * "5" as "5>7"; the columns' letter prefill below) - the
+         * GCC-14 audit's cs_coord_str sweep briefly made this a full
+         * cell location "A5" (user report 2026-11-17) */
+        sprintf(dflt, "%d", curRow + 1);
         if (cs_prompt_range("Delete rows (From>To)", dflt, inp, (int) sizeof(inp)) < 0) return;
         crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (!del_range_text(inp, 1, &r1, &r2))

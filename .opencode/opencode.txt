@@ -2016,3 +2016,22 @@ PREVIOUS BATCH (5 items, verified):
 - Stray untracked scratch fixtures removed (t_p.csd, t_p2.csd,
   t_pwtest.csd, test.CSD). Gates: --test all pass, the idle gate
   MATCH, zero warnings.
+
+## THE ROW-DELETE PREFILL REGRESSION (user report 2026-11-17)
+- ;D R's From-To prefill regressed from the plain row number ("5",
+  completed as "5>7") to a full cell location ("A5") - the GCC-14
+  audit (5cfedcc) swept the prefill's sprintf("%d", curRow+1) into
+  its cs_coord_str replacement along with the genuinely
+  coordinate-shaped sites (NOT the ui redesign; the user
+  misattributed). The column prefill (cs_col_name -> the letter) was
+  never touched, which is why columns still worked.
+- FIXED: the row prefill is the plain number again (dflt widened
+  8 -> 16 for the gcc-14 -Wformat-overflow gate; the original [8]
+  tripped it). The parse accepted the plain form all along.
+- PTY-verified the user's exact flow: the prefill shows the current
+  row, ">7" completes to "5>7"-style ranges, forward AND reversed
+  ranges delete correctly (10>9 -> rows 9-10 with A8 kept; 9>7 ->
+  7-9), the verify Y/N flow intact. NOTE for pty tests: the prefill
+  is the CURRENT row - a commit KEEPS the cursor, so the last seeded
+  cell is the prefill; membership greps are position-blind when rows
+  shift (goto a cell and read the type line instead).
