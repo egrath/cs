@@ -2213,3 +2213,12 @@ PREVIOUS BATCH (5 items, verified):
 - The Unix side re-verified: make clean+make rc=0, --test all pass,
   the idle gate MATCH, the maxres 2,703,360 (the baseline, unchanged
   - a docs+makefile batch moves nothing).
+
+## THE BRAINF PERFORMANCE TABLE (user data, 2026-11-17)
+- The user's measured wall times for the full brainf run (~1769
+  passes, the BCD engine): Pentium 66 = 50s, 386DX/33 = 222s
+  (MS-DOS), Mac M1 = 0.35s (UNIX). Merged into the README's brainf
+  section (under examples/brainf.csd) as a fenced table, plus a
+  pointer line in the OpenWatcom DOS topic. The ratio Pentium66/M1
+  ~ 140x and 386DX33/M1 ~ 630x - the BCD arithmetic dominates (the
+  SX is ~expected-sluggish per the user's earlier note).

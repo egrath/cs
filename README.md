@@ -1025,6 +1025,18 @@ recalculate:
 ./build/calcstar examples/brainf.csd      ;R A       ;G S7
 ```
 
+Measured wall times for the full run (~1769 recalculation passes,
+the whole machine in the BCD engine), as a reference for what to
+expect on period hardware versus a modern machine:
+
+```text
+MS-DOS
+        Pentium 66      50 seconds
+        386DX/33        222 seconds
+UNIX
+        Macintosh M1    0.35 seconds
+```
+
 To build it by hand instead, follow the recipe below.
 
 The classic program, minus its final `.` (the trailing newline byte
@@ -1255,7 +1267,9 @@ The flat memory model (`-mf`), the 386 register calling convention
 rules (no allocation above 64 KiB; keep a linker stack of at least
 24 KiB in mind if you retarget the linker file).  `make test` runs
 the self-test in DOS the same way.  The GNU `Makefile` ignores
-`Makefile.wcc` unless it is invoked with `-f` explicitly.
+`Makefile.wcc` unless it is invoked with `-f` explicitly.  For a
+taste of what the 40-digit BCD engine costs on period hardware,
+see the brainfuck performance table in this document.
 
 ## Screen layout (verbatim clone of a genuine 80x24 CalcStar screen)
 
