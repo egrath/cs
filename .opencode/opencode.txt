@@ -2105,3 +2105,20 @@ PREVIOUS BATCH (5 items, verified):
   status row BLANK (rendered frames); the CLI csv message uses the
   raw name; --test all pass; the idle gate MATCH; gcc-14 zero
   warnings.
+
+## THE MAXRES CHECK (user rule, 2026-11-17)
+- The standing LAST STEP of every batch: /usr/bin/time -l on the app,
+  compare the "maximum resident set size" against the baselines in
+  AGENTS.md (macOS arm64, 2026-11-17): --test 2,703,360 bytes; the
+  idle pty session 1,720,320; the brainf load + ;R A 1,998,848.
+- MACOS-ONLY: Linux lacks /usr/bin/time (GNU time -v when installed,
+  else skip the step - never approximate).
+- THE RECIPES: --test directly (/usr/bin/time -l ./build/calcstar
+  --test); the interactive runs via the pty driver with the exec
+  /usr/bin/time -l -o /tmp/maxres.txt ./build/calcstar (the -o keeps
+  the report out of the pty stream; the pty wrapper reads it after
+  wait4). The quit needs Y (N cancels).
+- The CSV batch's own check (the first application of the rule):
+  --test 2,703,360 - unchanged from the pre-CSV state, the CSV
+  buffers (the 256-byte field scratch, the bounded export) added
+  nothing measurable.

@@ -454,6 +454,25 @@ Batch workflow (do all steps before reporting done):
   FORTIFY aborted (EXC_BREAKPOINT, silent app death on paste of a
   long conditional).  Now vsnprintf(lastmsg, sizeof(lastmsg)) with
   lastmsg[256]; the display truncation stays at 75.
+- **THE MAXRES CHECK (user rule, 2026-11-17)**: as the LAST step of
+  every batch, run the app under `/usr/bin/time -l` and compare the
+  **maximum resident set size** against the recorded baseline — it
+  catches memory-intensive features and wrong implementations (a
+  small feature ballooning the resident size) before the commit.
+  **MACOS-ONLY TOOLING** (the user's note: Linux does not have this
+  command; the shell builtin's `time` has no size report): on Linux
+  GNU time's `/usr/bin/time -v` reports the same field when
+  installed — otherwise the step is skipped ("N/A on this
+  platform"), never approximated.  The baselines are
+  MACHINE-SPECIFIC and live here (macOS arm64, 2026-11-17):
+  - `--test` (the worst-case fixtures: the 4000-cell seeds, the CSV
+    batteries): **2,703,360** bytes — reproducible
+  - the idle interactive pty session: **1,720,320** bytes
+  - the brainf example loaded + `;R A` to halt: **1,998,848** bytes
+  The interactive runs are probed via the pty driver with
+  `/usr/bin/time -l -o FILE` (the -o keeps the report out of the pty
+  stream).  A batch whose maxres jumps beyond a reasonable margin
+  for its scope gets investigated before the commit.
 - **The factorial entry "5!"** (user-ext 2026-11-13): an entry ending
   with '!' whose PREFIX PARSES (decision (b): a syntax check, not an
   evaluation — `A5!` over an empty A5 shows ?n? until filled; the
@@ -655,8 +674,11 @@ Batch workflow (do all steps before reporting done):
      file headers).
 3. Interactive pty check of the affected UI paths with an `expect` script.
 4. The cs1.txt idle diff (see recipe in `.opencode/opencode.txt`).
-5. Update `.opencode/opencode.txt`.
-6. **Commit the finished work to git with a meaningful message**
+5. **The maxres check** (see THE MAXRES CHECK above): `/usr/bin/time -l
+   ./build/calcstar --test` — compare against the recorded baseline
+   (macOS only; skipped with a note elsewhere).
+6. Update `.opencode/opencode.txt`.
+7. **Commit the finished work to git with a meaningful message**
    (batch-level: what changed and why), **then push to `master`**.
    Check `git status --short` first so only intended files land in the
    commit; scratch fixtures (t_*.csd, pty files) must never be committed.
