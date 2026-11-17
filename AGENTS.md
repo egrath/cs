@@ -1968,6 +1968,48 @@ master when every phase passes.
   sort/save/print/auto/quit-cancel pty comparison vs master (render3),
   --test, the idle gate, gcc-14 zero warnings.
 
+## THE CSV IMPORT/EXPORT (user spec 2026-11-17, RFC 4180 in docs/)
+
+- The dispatch: a `.csv` extension (any case) in `;S`/`;L`/`;M` takes
+  the CSV path; the name is used AS TYPED (cs_savename would append
+  `.csd`). The save dialog keeps its flow (the file-exists warning,
+  then P)artial/A)all + the corners) minus the password prompts — CSV
+  has none.
+- **Export**: plain 7-bit ASCII. Numerics as **17 significant digits**
+  (`cs_csv_num` in cells.c — the precision an IEEE-754 double holds,
+  per the user: "this is also the precision of IEEE754 which is used
+  by many spreadsheets"): TRUNCATED (the engine identity — never a
+  digit above the true value), trailing zeros trimmed, plain decimal
+  in [1e-4, 1e17) and scientific outside (the `%.17g` rule). Text as
+  typed with the RFC quote-doubling and quoted commas; `?n?` error
+  cells export as the token; the derived string type exports its
+  strres. Embedded CR/LF **flatten to a space on both sides** (the
+  grid cannot hold a newline; flagged: the round trip stays
+  consistent, tools that preserve the break do not). Empty cells as
+  empty fields, trimmed to the **used range** (the trailing empty
+  fields/rows dropped; leading/embedded empties stay — positions);
+  CRLF separators, no trailing CRLF.
+- **Import**: a UTF-8 BOM skipped (`csv_open_bom`), bytes >127
+  dropped, a field is **numeric only when the whole field parses as a
+  pure numeric literal** ("123 pages" stays text; the RFC's quotes
+  are delimiters, NOT type markers — the user's confirmed rule),
+  text commits with **no formula evaluation**, no recalculation; the
+  load anchors at the requested corner; `;L` replaces, `;M`
+  overlays. **Two-pass like the CSD loader**: over-tall/wide →
+  READ ERROR, over-budget → MEMORY IS TOO LOW, the sheet untouched;
+  the clear happens after pass 1.
+- Bugs found while building: the placement parsed INTO the cell's own
+  `val` — cs_set_num's cs_free_cell zeroes it first, so every numeric
+  became 0 (the self-pointer class; the parse target is a local
+  now); the All-mode export first emitted a 255×127 comma desert
+  before the used-range trim.
+- Pins: 13 exact `cs_csv_num` cases + 1/3, 2/3 through the engine,
+  the export's exact bytes, the import battery (the BOM, the utf8
+  drop, the quoted numerics, `+7`, `1.5E-3`, `123 pages`, the doubled
+  quotes, the newline flatten, the ragged rows, the 300-row
+  refusal). PTY-verified: `;S t_pty.csv A` → `12.5,hello` (the used
+  range); `;L` the csv → A1=12.50, B1=`hello` text.
+
 ## Source map
 
 | file | responsibility |
