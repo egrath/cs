@@ -1990,6 +1990,27 @@ master when every phase passes.
   sort/save/print/auto/quit-cancel pty comparison vs master (render3),
   --test, the idle gate, gcc-14 zero warnings.
 
+- **THE ABS FAMILY (user spec 2026-11-17)**: SUMABS/SUMPOS/SUMNEG/
+  MAXABS/MINABS in the STREAMING CsAgg machinery — **zero new
+  accumulator fields** (the modes reuse `sum` and `ext`; the |x|
+  transform is a sign-bit clear on a local copy). Semantics: SUMPOS
+  sums the positive values, SUMNEG the NEGATIVE MAGNITUDES (always
+  non-negative), MAXABS/MINABS the extremes of |x| (a range
+  containing 0 → MINABS 0). The family's rules: empty → 0 (the SUM
+  rule for the sums, the MAX/MIN rule for the extremes), text/
+  empty/derived-string cells in a range skipped, an error cell →
+  the value-range abort, a direct String → Error 6, direct Numbers/
+  Bools/deref'd References aggregate, multi-area lists, csn_add
+  overflow → Error 0. SUMSQ/RMS already existed (batch B, streaming)
+  and were repinned. NOT in the in-app help (byte-identical);
+  documented here and in README.
+- BONUS FIX (caught by the pty probe of the new family): the
+  ?-calculator printed the LITERAL "= %24s" — the bounded message
+  formatter (cs_msg_vfmt) didn't honor a %<width>s conversion. It
+  now parses an optional decimal width as the minimum field width,
+  right-justified (the width sites bounded by analysis, the largest
+  24 — the format's own bound).
+
 ## THE CSV IMPORT/EXPORT (user spec 2026-11-17, RFC 4180 in docs/)
 
 - The dispatch: a `.csv` extension (any case) in `;S`/`;L`/`;M` takes

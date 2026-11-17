@@ -2122,3 +2122,27 @@ PREVIOUS BATCH (5 items, verified):
   --test 2,703,360 - unchanged from the pre-CSV state, the CSV
   buffers (the 256-byte field scratch, the bounded export) added
   nothing measurable.
+
+## THE ABS FAMILY: SUMABS/SUMPOS/SUMNEG/MAXABS/MINABS (2026-11-17)
+- The user's list included SUMSQ - ALREADY EXISTS (batch B, streaming,
+  + RMS); repinned, not reimplemented.
+- Five new streaming modes in the CsAgg machinery: ZERO new accumulator
+  fields (the modes reuse sum/ext; |x| = a sign-bit clear on a local
+  copy). SUMPOS skips x<=0, SUMNEG takes |x| for x<0 (the magnitudes,
+  always non-negative), MAXABS/MINABS the extremes of |x|.
+- The family rules: empty -> 0, text/empty/derived-string cells
+  skipped, an error cell -> the value-range abort (-1 internally,
+  displaying Error 0), a direct String -> Error 6, Bools aggregate,
+  multi-area, overflow -> Error 0.
+- BONUS: the pty probe caught the ?-calculator printing the LITERAL
+  "=%24s" - cs_msg_vfmt didn't honor %<width>s; it now parses the
+  optional width (right-justified, the sites bounded, the largest
+  24). The ?-calculator's answer formats again.
+- THE PIN GOTCHAS (mine): the canon exponents (9 = +9.0E+1), the
+  exact zero pins as the bare "0", "err cell" pins must actually
+  seed an error cell (my first version had none - vacuous pass),
+  the value-range convention is cke(...,-1) (displays Error 0), and
+  MINABS's range includes the zero cell by construction.
+- GATES: --test all pass (24 new pins), the idle gate MATCH, gcc-14
+  zero warnings, AND THE NEW MAXRES CHECK: 2,703,360 - EXACTLY the
+  baseline (zero new accumulator fields, as the user demanded).

@@ -1809,6 +1809,35 @@ static void run_tests(void)
         setv(0, 2, "3");
         setv(0, 3, "4");
         setv(0, 4, "5");
+        /* the abs family (user spec 2026-11-17): streaming, no arrays */
+        setv(2, 0, "9.9E998");           /* C1 */
+        setv(2, 1, "9.9E998");           /* C2: the sum overflows */
+        setv(0, 5, "-4");                /* A6 */
+        setv(0, 6, "0");                 /* A7 */
+        setv(0, 7, "-5");                /* A8 */
+        setv(1, 0, "3");                 /* B1 */
+        setv(1, 1, "hello");             /* B2: text - skipped */
+        cs_commit_entry(3, 0, "1/0");    /* D1: an ERROR cell */
+        ckc("SUMABS mixed", "SUMABS(A1>A8)", "+2.4000000000000E+2");
+        ckc("SUMPOS mixed", "SUMPOS(A1>A8)", "+1.5000000000000E+2");
+        ckc("SUMNEG mags", "SUMNEG(A1>A8)", "+9.0000000000000E+1");
+        ckc("MAXABS mixed", "MAXABS(A1>A8)", "+5.0000000000000E+1");
+        ckc("MINABS zero", "MINABS(A1>A8)", "0");
+        ckc("MINABS nozero", "MINABS(A6>A6)", "+4.0000000000000E+1");
+        ckc("SUMABS direct", "SUMABS(3,-4)", "+7.0000000000000E+1");
+        ckc("SUMPOS direct", "SUMPOS(-2,3,5)", "+8.0000000000000E+1");
+        ckc("SUMNEG direct", "SUMNEG(-2,-3,4)", "+5.0000000000000E+1");
+        ckc("MAXABS direct", "MAXABS(-9,3)", "+9.0000000000000E+1");
+        ckc("MINABS direct", "MINABS(-9,3)", "+3.0000000000000E+1");
+        ckc("SUMABS multi-area", "SUMABS(A1>A3,B1)", "+9.0000000000000E+1");
+        ckc("SUMABS bools", "SUMABS(1=1,1=2)", "+1.0000000000000E+1");
+        ckc("SUMABS text-only", "SUMABS(B2>B2)", "0");
+        ckc("MAXABS text-only", "MAXABS(B2>B2)", "0");
+        cke("SUMABS string arg", "SUMABS(\"x\")", 6);
+        cke("SUMABS err cell", "SUMABS(A1>D1)", -1);   /* displays Error 0 */
+        cke("MAXABS err cell", "MAXABS(A1>D1)", -1);
+        ckc("SUMPOS empty", "SUMPOS(B3>B5)", "0");
+        cke("SUMABS overflow", "SUMABS(C1>C2)", -1);  /* displays Error 0 */
         ckc("SUMSQ range", "SUMSQ(A1>A5)", "+5.5000000000000E+2");
         ckc("RMS range", "RMS(A1>A5)", "+3.3166247903553E+1");
         ckc("VAR range", "VAR(A1>A5)", "+2.5000000000000E+1");

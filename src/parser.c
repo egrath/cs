@@ -238,6 +238,7 @@ typedef enum {
     FN_DB, FN_DBM, FN_DBW, FN_LIN, FN_STEP,
     FN_CLAMP, FN_DIST, FN_LERP, FN_UNLERP,
     FN_SUMSQ, FN_RMS, FN_VAR, FN_VARP, FN_STDEV, FN_STDEVP,
+    FN_SUMABS, FN_SUMPOS, FN_SUMNEG, FN_MAXABS, FN_MINABS,
     FN_PCT, FN_QUART,
     FN_CORR, FN_RSQ, FN_INTEG,
     FN_CONV,
@@ -321,6 +322,11 @@ static int fnid(const char *name)
     if (!strcmp(name, "UNLERP")) return FN_UNLERP;
     if (!strcmp(name, "SUMSQ")) return FN_SUMSQ;
     if (!strcmp(name, "RMS"))   return FN_RMS;
+    if (!strcmp(name, "SUMABS")) return FN_SUMABS;
+    if (!strcmp(name, "SUMPOS")) return FN_SUMPOS;
+    if (!strcmp(name, "SUMNEG")) return FN_SUMNEG;
+    if (!strcmp(name, "MAXABS")) return FN_MAXABS;
+    if (!strcmp(name, "MINABS")) return FN_MINABS;
     if (!strcmp(name, "VAR"))   return FN_VAR;
     if (!strcmp(name, "VARP"))  return FN_VARP;
     if (!strcmp(name, "STDEV")) return FN_STDEV;
@@ -1192,6 +1198,31 @@ static int agg_item(CsAgg *ag, int f, const Csn *num)
         if (err) return 0;
         err = csn_add(&ag->sumsq, &ag->sumsq, &t);
         if (err) return 0;
+        break;
+    case FN_SUMABS:
+    case FN_SUMPOS:
+    case FN_SUMNEG:
+    case FN_MAXABS:
+    case FN_MINABS:
+        /* the abs family (user spec 2026-11-17): the |x| transform is
+         * a sign-bit clear on a local copy - one accumulator field
+         * per mode, no arrays */
+        csn_copy(&t, num);
+        t.sign = 0;                      /* |x| */
+        if (f == FN_SUMPOS && csn_cmp(num, &cs_fuzzy_zero) <= 0)
+            break;                       /* zeros add nothing */
+        if (f == FN_SUMNEG && csn_cmp(num, &cs_fuzzy_zero) >= 0)
+            break;                       /* the magnitudes only */
+        if (f == FN_SUMABS || f == FN_SUMPOS || f == FN_SUMNEG) {
+            err = csn_add(&ag->sum, &ag->sum, &t);
+            if (err) return 0;
+        } else if (f == FN_MAXABS) {
+            if (!ag->started || csn_cmp(&t, &ag->ext) > 0)
+                csn_copy(&ag->ext, &t);
+        } else {                         /* FN_MINABS */
+            if (!ag->started || csn_cmp(&t, &ag->ext) < 0)
+                csn_copy(&ag->ext, &t);
+        }
         break;
     case FN_VAR:
     case FN_VARP:
@@ -2972,6 +3003,8 @@ static Val parse_primary(P *ps)
                 f == FN_MAX || f == FN_MIN || f == FN_MED ||
                 f == FN_FAND || f == FN_FOR ||
                 f == FN_SUMSQ || f == FN_RMS ||
+                f == FN_SUMABS || f == FN_SUMPOS || f == FN_SUMNEG ||
+                f == FN_MAXABS || f == FN_MINABS ||
                 f == FN_VAR || f == FN_VARP ||
                 f == FN_STDEV || f == FN_STDEVP) {
                 CsAgg ag;
@@ -3072,6 +3105,9 @@ static Val parse_primary(P *ps)
                         derr = csn_sqrt(&v.num, &v.num);
                     if (derr) { val_err(&v, 0); return v; }
                 } else if (f == FN_SUM) {
+                    csn_copy(&v.num, &ag.sum);
+                } else if (f == FN_SUMABS || f == FN_SUMPOS ||
+                           f == FN_SUMNEG) {
                     csn_copy(&v.num, &ag.sum);
                 } else if (f == FN_CNT) {
                     csn_from_int(&v.num, ag.cnt);

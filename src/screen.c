@@ -736,11 +736,27 @@ static void cs_msg_vfmt(char *out, int outn, const char *fmt, va_list ap)
     while (*f && p < outn - 1) {
         if (*f == '%') {
             f++;
-            if (*f == 's') {
-                const char *sv = va_arg(ap, const char *);
+            if (*f == 's' || (*f >= '0' && *f <= '9' && strchr(f, 's'))) {
+                /* %s and %<width>s: the width is a minimum field
+                 * width, right-justified with spaces (the
+                 * ?-calculator's "=%24s" answer format - the width
+                 * sites are bounded by analysis, the largest 24) */
+                int w = 0;
+                while (*f >= '0' && *f <= '9') w = w * 10 + (*f - '0'), f++;
+                if (*f != 's') {        /* a width on a non-s: verbatim */
+                    out[p++] = '%';
+                    continue;           /* f already at the digit */
+                }
                 f++;
-                if (!sv) sv = "(null)";
-                while (*sv && p < outn - 1) out[p++] = *sv++;
+                {
+                    const char *sv = va_arg(ap, const char *);
+                    int len = 0, pad;
+                    if (!sv) sv = "(null)";
+                    while (sv[len]) len++;
+                    pad = w > len ? w - len : 0;
+                    while (pad-- > 0 && p < outn - 1) out[p++] = ' ';
+                    while (*sv && p < outn - 1) out[p++] = *sv++;
+                }
             } else if (*f == 'd') {
                 int dv = va_arg(ap, int);
                 char tmp[12];
