@@ -294,6 +294,26 @@ takes a list of values whose LAST argument is the percentile
 (`PCT(1,2,3,4,0.5)` = data 1,2,3 at p 0.5); p outside [0,1], a
 fractional `QUART` q, or an empty data set is an error.  An error
 
+### SUMPRODUCT
+
+`SUMPRODUCT(r1, r2, ...)` multiplies corresponding elements of the
+ranges and sums the products (2026-11-17).  A single argument
+behaves like `SUM`.  The arguments are ranges or single cells; the
+ranges' ELEMENT COUNTS must match (count-based, not shape-based: a
+2×3 and a 3×2 pair positionally by the row-major index; a
+mismatch is the standard dimension error) and single cells are NOT
+broadcast — a one-cell argument only works beside other one-element
+arguments.  Empty cells are zero (unlike the SUM family's skip);
+text cells are skipped; an error cell aborts with the value-range
+error; overflow aborts.  No product array, no temporary cells —
+the full 40-digit precision throughout:
+
+```text
+SUMPRODUCT(A1>A3, B1>B3)   2*10+3*20+4*30 = 200
+SUMPRODUCT(A1>A5, A1>A5)   the sum of squares
+SUMPRODUCT(A1>A5, B1>B5) / SUM(B1>B5)   the weighted average
+```
+
 ### The abs family: SUMABS/SUMPOS/SUMNEG/MAXABS/MINABS
 
 All streaming like `SUM` — no arrays, one accumulator field per mode
@@ -729,8 +749,8 @@ underflow collapse to zero.  **Inline comments** (manual II.18):
 everything from a `\` to the end of an entry is non-evaluative:
 `+SUM(A1>A5) \This is a comment` — kept in the contents, invisible to
 the sheet, printouts and every reference scanner.  Cells and the save
-format (CSD4) hold the BCD values as-is; older magics are refused with
-the manual's `READ ERROR`.
+format (CSD5) hold the BCD values as-is; older magics (CSD1..CSD4)
+are refused with the manual's `READ ERROR` — re-save to convert.
 
 ### The aggregation functions (SUM/CNT/AVG/MAX/MIN/MED)
 
@@ -867,7 +887,7 @@ arguments are `?n?`.
   cell shows `(form mode set)` after the type text - e.g.
   `type: (empty, but allocated) (form mode set)` on an empty stop cell,
   `type: numeric (form mode set)` once data is in. The flag survives
-  commits, `;D E`, copy, and save/load (CSD4); it is reset only by
+  commits, `;D E`, copy, and save/load (CSD5); it is reset only by
   `;D A` / clear. `;A` walks the flags in L-R/T-B order and announces
   itself: `Form Control Mode` on the bottom row at every stop, and
   `Auto complete` when the course ends (the original's wording). RETURN
@@ -1424,12 +1444,17 @@ to-right by default (`;O` toggles).
 
 ## File format (.CSD)
 
-Custom documented format ("CSD4"), written by `src/fileio.c`: column
-widths/precisions, optional password (hidden `*` echo), cell records with
-contents, BCD values and repeat patterns.  Layout:
+Custom documented format ("CSD5" — **the format version rides in the
+magic**: CSD1..CSD4 are older layouts, refused with the manual's
+`READ ERROR`; a future layout change bumps the digit so a stale file
+refuses cleanly instead of desyncing), written by `src/fileio.c`:
+column widths/precisions, optional password (hidden `*` echo), cell
+records with contents, BCD values (the FULL 40-digit mantissa: per
+value exactly `ndig` digit bytes — the old CSD4 fixed-22 padding is
+gone) and repeat patterns.  Layout:
 
 ```
-magic   4 bytes  "CSD4"
+magic   4 bytes  "CSD5"
 origin  1 byte col + 2 bytes row (LE): the saved range's upper-left
                  corner - the load position anchors THIS, so an All-mode
                  sheet (origin 0,0) loads identically at A1

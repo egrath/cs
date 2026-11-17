@@ -2037,7 +2037,24 @@ master when every phase passes.
   incl. the aliases are covered). **MAINTENANCE RULE: update it
   every time a new function is added** (part of the batch
   workflow's spirit; a verification one-liner greps the fn table
-  against it).
+  against it). SUMPRODUCT included.
+- **THE PICKUP AUDIT (2026-11-17)**: the user asked whether all
+  relevant information is saved for a later pickup. The gaps found
+  and fixed: (1) the README's file-format section still said CSD4 —
+  updated to CSD5 (the version-in-the-magic, the variable digit
+  count, the refusal/re-save rule); (2) SUMPRODUCT had no README
+  section (the AGENTS claim "documented in README" was aspirational
+  — now true); (3) the stale MERGED local branches (notation,
+  printfix, ref-val, safetyfix, turing) deleted — nothing unmerged.
+  Verified saved: AGENTS.md (the engineering record incl. the DOS
+  target and the maxres rule with the baselines), opencode.txt (the
+  session memory, 2200+ lines), README.md (the DOS topic, the perf
+  table, the abs family, SUMPRODUCT, CSD5), docs/functions.txt +
+  rfc4180.txt, tests/ (the pty battery + the reference capture),
+  Makefile.wcc, tools/buildno.sh. The cs1.txt reference lives in
+  tests/cs1_reference.txt; the external /tmp/cs_ref worktree (the
+  c5c8dbb reference build for the frame-identity harness) is
+  machine-local, recreatable from git.
 
 ## THE CSV IMPORT/EXPORT (user spec 2026-11-17, RFC 4180 in docs/)
 

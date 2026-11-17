@@ -2222,3 +2222,23 @@ PREVIOUS BATCH (5 items, verified):
   pointer line in the OpenWatcom DOS topic. The ratio Pentium66/M1
   ~ 140x and 386DX33/M1 ~ 630x - the BCD arithmetic dominates (the
   SX is ~expected-sluggish per the user's earlier note).
+
+## THE PICKUP AUDIT (2026-11-17)
+- The user asked: is everything saved for a later pickup? The audit
+  found and fixed three gaps: (1) the README's File format section
+  still documented CSD4 (the CSD5 update only reached AGENTS.md) -
+  fixed: the magic-in-the-version rule, the variable digit count,
+  the refusal/re-save wording; (2) SUMPRODUCT had no README section
+  (my AGENTS claim "documented here and in README" was
+  aspirational) - added near the abs family; (3) the stale merged
+  branches (notation, printfix, ref-val, safetyfix, turing) deleted
+  (git branch --no-merged = EMPTY, nothing unmerged).
+- Verified saved: AGENTS.md (the full engineering record), the
+  opencode.txt session memory (2224 lines), README.md (the DOS
+  topic, the perf table, the abs family, SUMPRODUCT, CSD5),
+  docs/functions.txt + rfc4180.txt, tests/ (the pty battery, the
+  idle reference capture, the frame harness, the reading driver,
+  the renderer + its selftest, precision_ref), Makefile.wcc,
+  tools/buildno.sh. The machine-local /tmp/cs_ref worktree (the
+  c5c8dbb reference build) is recreatable from git at any time.
+- Everything committed and pushed; the tree clean on master.
