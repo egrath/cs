@@ -2259,3 +2259,38 @@ PREVIOUS BATCH (5 items, verified):
   pushed (master = the DOS target + the perf table + the pickup
   audit's README fixes), the tree clean, the standing battery green,
   the maxres at the baseline. READY FOR PICKUP.
+
+## THE ;D F PREFILL + THE @ RULE (user report 2026-11-19)
+- TWO BUGS: (1) the ;D F From-To prefill showed "AA1" - the
+  composition glued the column letter ("A") in front of the
+  coordinate ("A1"); fixed: the plain cs_coord_str cursor location.
+  (2) the @ in the From-To prompt REPLACED the edit line - the old
+  `if (setmode)` swept setmode 2 into the replace.
+- THE REFINED @ RULE (the user's design): @ REPLACES when the field
+  is UNTOUCHED (n == 0 - the prefill is display-only) or setmode 1;
+  @ APPENDS once the user modified the text (the keepgt "A1>" seed,
+  direct typing). An empty buffer makes the append the insert anyway
+  (the copy corners unchanged).
+- VERIFIED (the working pty driver - see the driver lesson below):
+  the prefill "A3" at A3; the @ on the untouched field replaces with
+  the cursor location; the > seeds "A3>"; the arrow moves; the @
+  appends "A3>A4"; the clear works (A1/A2 survive); the goto @
+  replaces; the copy corner appends. The "cursor moved to column B"
+  mystery: my probe's stray \r after the y - the verify returns on y
+  and the \r did the MANUAL'S documented RETURN-moves-right
+  (A5->B5) - the app correct, the probe wrong.
+- THE PTY DRIVER LESSON (two days lost): the python pty.fork()
+  drivers BROKE on this machine (the app ignored all keys) - the
+  slave's WINDOW SIZE is 0x0 and ncurses can't run; THE FIX: set the
+  winsize via TIOCSWINSZ BEFORE the exec (the openpty + ioctl +
+  the manual fork/exec pattern, /tmp/pd.py). The Nov-17 probes
+  worked; the os/toolchain state changed by Nov 19. THE EXPECT
+  TRANSPORT ALWAYS WORKED. ALSO: ncurses' minimal-delta
+  optimization splits text across cursor moves ("A3\b4") - literal
+  expect patterns CANNOT match; render the frame or match the
+  deltas. ALSO: this terminal's terminfo defines the arrows as the
+  application-mode \EOB sequences (kcud1=\EOB) - the cursor-mode
+  \E[B sends NEVER worked in the probes; use \033OB.
+- Gates: --test all pass, the idle gate MATCH, gcc-14 zero warnings,
+  the maxres 2,703,360 (the first run showed +32KB, the repeat at
+  the baseline - transient allocator arena state).

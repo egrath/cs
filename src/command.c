@@ -903,12 +903,10 @@ static void delete_cmd(void)
         if (ch != 1) return;
         cs_delete_columns(c1, c2);
     } else if (ch == 'F' || ch == 'f') {
-        cs_col_name(curCol, dflt);
-        {
-            char tmp2[10];
-            cs_coord_str(tmp2, (int) sizeof(tmp2), curCol, curRow);
-            strcat(dflt, tmp2);
-        }
+        /* the plain cursor location: the old composition glued the
+         * column letter in front of the coordinate ("A"+"A1" =
+         * "AA1", the user's report 2026-11-19) */
+        cs_coord_str(dflt, (int) sizeof(dflt), curCol, curRow);
         if (cs_prompt_coord("Delete (From>To)", dflt, inp, (int) sizeof(inp), 2) < 0) return;
         crepaint(CS_D_STATUS);   /* the prompt line goes away */
         if (!cs_coord_text(inp, &c1, &r1, &c2, &r2)) {

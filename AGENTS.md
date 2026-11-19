@@ -329,6 +329,13 @@ follow the original. Read this file before changing anything.
   (Goto>, print corners, Load position - @ REPLACES the input),
   setmode=0 to APPEND for range fields (;C From/To coord so "B3>" +
   @ forms "B3>A5"). Name fields keep literal @ text (flagged choice).
+  **THE @ RULE REFINED (user report 2026-11-19)**: @ REPLACES when the
+  field is untouched (n == 0 — the shown prefill is display-only) or
+  in setmode 1, and APPENDS once the user modified the text (the
+  keepgt "A1>" seed, direct typing) — "A1>" + the moved cursor + @
+  forms a range; an empty buffer makes the append the insert anyway.
+  The `;D F` prefill is the plain cursor location (the old
+  column-letter + coordinate composition showed "AA1").
 - Recalculation is **manual**: `;R` prompts `Recalculate - A)ll or E)ntry`.
   Committing an entry only evaluates that entry.
 - After a data entry commit the cell cursor **stays**; RETURN moves right

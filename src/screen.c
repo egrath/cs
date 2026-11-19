@@ -1003,10 +1003,17 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
         }
         if (ch == '@') {
             /* insert the current cursor coordinate; the cell cursor
-             * stays where it is */
+             * stays where it is.  The rule (user-refined
+             * 2026-11-19): REPLACE when the field is untouched
+             * (n == 0 - the shown prefill is display-only) or in
+             * the single-coordinate fields (setmode 1: the
+             * documented Goto/Load-position semantics); APPEND
+             * once the user modified the text (the keepgt "A1>"
+             * seed, direct typing) so "A1>" + @ forms a range.  An
+             * empty buffer makes the append the insert anyway. */
             char coord[10];
             cs_coord_str(coord, (int) sizeof(coord), curCol, curRow);
-            if (setmode) { buf[0] = '\0'; n = 0; }
+            if (setmode == 1 || n == 0) { buf[0] = '\0'; n = 0; }
             {
                 int i;
                 for (i = 0; coord[i]; i++)
