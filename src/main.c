@@ -680,10 +680,17 @@ static void port_guards(void)
         { printf("FAIL pool math (%d chunks)\n", slots); fails++; }
     else printf("ok   pool math: %d chunks of %d slots\n", slots,
                 CS_BUDGET / slots);
-    if (sizeof(Cell) * 250 > 65535)
-        { printf("FAIL chunk exceeds 64 KiB\n"); fails++; }
-    else printf("ok   a chunk is %d KiB\n",
-                (int) (sizeof(Cell) * 250 / 1024));
+    /* the 64 KiB chunk guard (the DOS design rule): the volatile read
+     * defeats the compiler's constant folding so the failure branch
+     * stays "reachable" (Watcom W201 flags a folded-unreachable
+     * branch even though the guard is the point) */
+    {
+        volatile size_t csz = sizeof(Cell);
+        if (csz * 250 > 65535)
+            { printf("FAIL chunk exceeds 64 KiB\n"); fails++; }
+        else printf("ok   a chunk is %d KiB\n",
+                    (int) (sizeof(Cell) * 250 / 1024));
+    }
 }
 
 static void run_tests(void)

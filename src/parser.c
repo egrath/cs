@@ -953,8 +953,11 @@ static void lcg_seed(void)
 {
     time_t now = time(NULL);
     clock_t ck = clock();
-    unsigned long tu = (now < 0) ? (unsigned long) -now
-                                 : (unsigned long) now;
+    /* the clock magnitude as the seed.  NO negative-time branch: it
+     * was unreachable paranoia, and Watcom's time_t is UNSIGNED
+     * (W124 "comparison result always 0") - a pre-1970 clock would
+     * wrap in the cast, which only perturbs an LCG seed. */
+    unsigned long tu = (unsigned long) now;
     unsigned long ku = (unsigned long) (ck % 1000000L);
     char buf[32];
     Csn p20, p40, tt;

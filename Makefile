@@ -1,33 +1,50 @@
 CC      = cc
-CFLAGS  = -std=c89 -pedantic -Wall -Ibuild -Wextra -pedantic-errors
+CFLAGS  = -std=c89 -pedantic -Wall -I$(OUTDIR) -Wextra -pedantic-errors
 LDLIBS  = -lcurses
+OUTDIR  = build
 
-OBJS = build/num.o build/cells.o build/parser.o build/eval.o build/screen.o \
-      build/command.o build/help.o build/fileio.o build/print.o \
-      build/main.o
+OBJS = $(OUTDIR)/num.o $(OUTDIR)/cells.o $(OUTDIR)/parser.o $(OUTDIR)/eval.o \
+      $(OUTDIR)/screen.o $(OUTDIR)/command.o $(OUTDIR)/help.o \
+      $(OUTDIR)/fileio.o $(OUTDIR)/print.o $(OUTDIR)/main.o
 
 SRCS = src/num.c src/cells.c src/parser.c src/eval.c src/screen.c \
       src/command.c src/help.c src/fileio.c src/print.c src/main.c
 
-build/calcstar: $(OBJS)
+$(OUTDIR)/calcstar: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
-build/%.o: src/%.c src/cs.h build/buildno.h
-	@mkdir -p build
+$(OUTDIR)/%.o: src/%.c src/cs.h $(OUTDIR)/buildno.h
+	@mkdir -p $(OUTDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# the build counter (CS_BUILDNO in build/buildno.h) increments on every
-# SOURCE-CHANGING build: the generated header depends on the sources, so
-# a no-op make does not touch it; build.count is created on first use
-# and survives make clean.  (Keep this rule AFTER the default goal.)
-build/buildno.h: $(SRCS) tools/buildno.sh
-	@mkdir -p build
-	@sh tools/buildno.sh build/buildno.h build.count
+# the build counter (CS_BUILDNO in $(OUTDIR)/buildno.h) increments on
+# every SOURCE-CHANGING build: the generated header depends on the
+# sources, so a no-op make does not touch it; build.count is created on
+# first use and survives make clean.  (Keep this rule AFTER the default
+# goal.)
+$(OUTDIR)/buildno.h: $(SRCS) tools/buildno.sh
+	@mkdir -p $(OUTDIR)
+	@sh tools/buildno.sh $(OUTDIR)/buildno.h build.count
 
-test: build/calcstar
-	./build/calcstar --test
+test: $(OUTDIR)/calcstar
+	./$(OUTDIR)/calcstar --test
 
 clean:
-	rm -rf build
+	rm -rf build build.gcc
 
 .PHONY: test clean
+
+# the gcc-14 second build (2026-11-22): the SAME sources and flags
+# against gcc-14, objects in build.gcc/ - catches every warning the
+# default cc (clang) build may accept.  The build counter is COPIED
+# from the default build's header (no bump: one source change bumps
+# build.count once, via the cc build).
+gcc:
+	@test -f build/buildno.h || $(MAKE) build/buildno.h
+	@mkdir -p build.gcc
+	@cp build/buildno.h build.gcc/buildno.h
+	@touch build.gcc/buildno.h
+	@$(MAKE) OUTDIR=build.gcc CC=gcc-14 build.gcc/calcstar
+	./build.gcc/calcstar --test
+
+.PHONY: gcc

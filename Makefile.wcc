@@ -1,7 +1,7 @@
 CC       = wcc386
 LINK     = wcl386
 
-CURSESPATH = /Users/egon/tmp/copy/pdcurses
+CURSESPATH = /Users/egon/opt/pdcurses
 CURSESLIB  = $(CURSESPATH)/dos/pdcurses.lib
 
 CFLAGS   = -bt=dos -mf -3r -ox -ei -za -w4 -zp8 -i=build.dos -fo=.obj -i=$(CURSESPATH)

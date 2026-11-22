@@ -689,7 +689,20 @@ Batch workflow (do all steps before reporting done):
      file headers).
 3. Interactive pty check of the affected UI paths with an `expect` script.
 4. The cs1.txt idle diff (see recipe in `.opencode/opencode.txt`).
-5. **The maxres check** (see THE MAXRES CHECK above): `/usr/bin/time -l
+5. `make clean && make` — zero warnings.
+5b. **`make gcc`** — the same sources and flags against gcc-14, objects
+   in `build.gcc/` (the counter is COPIED from the cc build's header:
+   one source change bumps build.count once, via the cc build); zero
+   warnings required, and the gcc-linked binary runs `--test` (a free
+   portability check). `make clean` removes both directories.
+5c. **The DOS build** — `. ~/opt/openwatcom/env.txt && wmake -f
+   Makefile.wcc` — zero errors and zero warnings required (wcc386 is
+   at `-w4`). The paths are per-machine (CURSESPATH =
+   /Users/egon/opt/pdcurses on this one). The two compilers surface
+   platform warnings clang/gcc do not (e.g. Watcom's unsigned time_t,
+   its constant-fold W201) — investigate each one and either fix the
+   code or document it as a platform note; never just accept it.
+5d. **The maxres check** (see THE MAXRES CHECK above): `/usr/bin/time -l
    ./build/calcstar --test` — compare against the recorded baseline
    (macOS only; skipped with a note elsewhere).
 6. Update `.opencode/opencode.txt` **and AGENTS.md** — both files are
@@ -2120,6 +2133,12 @@ master when every phase passes.
   (`Makefile.wcc` at the tree root, the user's working file) and
   runs smoothly on a 386SX/25 (slightly sluggish, expected — the
   BCD engine does software arithmetic at ~40 digits per operation).
+- **THE BUILD IS A STANDING BATCH STEP (2026-11-22)**: `. 
+  ~/opt/openwatcom/env.txt && wmake -f Makefile.wcc` after every
+  source change — zero errors and zero warnings required. The
+  OpenWatcom install is per-machine (`~/opt/openwatcom`, source
+  `env.txt` first for WATCOM/PATH/INCLUDE/EDPATH); PDCurses 3.9 is
+  precompiled at `~/opt/pdcurses` (`CURSESPATH` in Makefile.wcc).
 - The build: wcc386/wcl386, `-bt=dos -mf` (the 32-bit flat model —
   the sparse store's no-64KB-allocation design), `-3r` (the 386
   register calling), `-ox -ei -za -w4 -zp8`, the DOS4GW extender
@@ -2131,12 +2150,27 @@ master when every phase passes.
   Macintosh for MS-DOS", the user's notes verbatim). GNU make
   ignores the file unless invoked with `-f`; `build.dos/` is
   gitignored.
-- The C89 disciplines that make this possible were standing rules
+- THE C89 disciplines that make this possible were standing rules
   (no vsnprintf, no math.h, the bounded formatters, the
   reserve-first relink, the ≥24 KB linker stack) — keep them when
   touching anything the DOS compiler sees; grep for C99 functions
   before every DOS build (the macOS headers declare them even
   under -std=c89).
+- **THE PLATFORM WARNINGS (2026-11-22, the first strict DOS pass)**:
+  the Watcom compiler surfaces two classes clang/gcc-14 do not:
+  (1) W124 "comparison result always 0" — Watcom's time_t is
+  UNSIGNED, so the LCG seed's negative-clock branch was a
+  tautology; the branch is deleted (a pre-1970 clock would only
+  wrap an LCG seed). (2) W201 "unreachable code" — the --test's
+  64 KiB chunk guard folds to a constant; the failure branch is
+  guarded with a volatile `sizeof` read so it stays reachable
+  (the guard is the point). Both fixed at the source; the DOS
+  build is now zero-warning.
+- **THE GCC-14 SECOND BUILD (2026-11-22)**: `make gcc` builds the
+  same sources with gcc-14 into `build.gcc/` and runs its `--test`
+  — the standing second-compiler gate (see the batch workflow
+  5b). The Makefile's output directory is parameterized (OUTDIR,
+  default `build`).
 
 ## THE LONG-PATH + READ-ERROR BATCH (user report 2026-11-22)
 

@@ -2374,3 +2374,31 @@ PREVIOUS BATCH (5 items, verified):
   gone) - re-run with /private/tmp/cs_ref explicitly (the c5c8dbb
   reference worktree was restored for it: the copied Makefile +
   make clean && make).
+
+## THE BUILD SYSTEM ADOPTION (user request, 2026-11-22)
+- THE DOS BUILD IS A STANDING BATCH STEP: . ~/opt/openwatcom/env.txt
+  && wmake -f Makefile.wcc - zero errors AND zero warnings required
+  (wcc386 at -w4). OpenWatcom per-machine at ~/opt/openwatcom
+  (source env.txt for WATCOM/PATH/INCLUDE/EDPATH); PDCurses
+  precompiled at ~/opt/pdcurses (CURSESPATH in Makefile.wcc updated
+  from the user's local copy path).
+- THE GCC-14 SECOND BUILD: make gcc = the same sources/flags with
+  CC=gcc-14 into build.gcc/ + its --test run (the free portability
+  check). The Makefile's output dir is parameterized (OUTDIR=build
+  default); make clean removes BOTH dirs. THE COUNTER: the gcc
+  build COPIES build/buildno.h (no regeneration) - one source change
+  bumps build.count once via the cc build (the double-bump avoided).
+- THE FIRST STRICT DOS PASS SURFACED TWO PLATFORM WARNINGS (the
+  point of the gate!): (1) W124 comparison-always-0 - Watcom's
+  time_t is UNSIGNED, the LCG seed's negative-clock branch was a
+  tautology -> deleted (a pre-1970 clock only wraps an LCG seed);
+  (2) W201 unreachable code - the --test's 64 KiB chunk guard folds
+  constant -> the failure branch guarded with a volatile sizeof
+  read (the guard stays, Watcom stays quiet). BOTH FIXED AT THE
+  SOURCE - all three compilers (cc/clang, gcc-14, wcc386) build
+  zero-warning now.
+- VERIFIED: make (cc) rc=0 zero warnings; make gcc rc=0 zero
+  warnings + the gcc --test all pass; the DOS build zero
+  warnings/errors (322KB LE executable); the cc --test all pass;
+  the idle gate MATCH; build.count 345 (the source change + the
+  counter behavior verified: a no-op make/wmake does not bump).
