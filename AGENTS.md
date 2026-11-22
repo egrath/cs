@@ -2252,6 +2252,41 @@ Two user issues, one crash class and one misleading string:
    variance is ±80 KB on this machine — the reference build measured
    in the same session). build.count 336 -> 339.
 
+## THE ULTRIX TARGET (user request, 2026-11-22)
+
+- The Makefile detects ULTRIX (`UNAME = $(shell uname -s)`, `ifeq
+  ($(UNAME), ULTRIX)` → `CC = gcc` — the ancient cc stays unused —
+  and `CFLAGS += -DULTRIX`).
+- The curses inclusion is SINGLE-POINT in cs.h (the per-file
+  `<curses.h>` includes are gone): under ULTRIX it includes
+  `<cursesX.h>` and declares the missing functions — the
+  TextStar-verified set (beep, delwin, endwin, idlok, keypad,
+  mvwprintw, noecho, nonl, overwrite, raw, touchwin, waddch,
+  waddstr, wattroff, wattron, wattrset, wclear, wclrtoeol, wdelch,
+  wdeleteln, werase, winsertln, wmove, wrefresh) plus OURS
+  (curs_set, ungetch, nodelay) — each declaration guarded by
+  `#ifndef <name>` so a cursesX.h macro never collides.
+- VERIFIED AGAINST THE SHIPPED cursesX.h (the user placed it at
+  /Users/egon/tmp/cursesX.h): it MACROS every stdscr form we call
+  (getch/move/clear/clrtoeol/refresh/erase/mvaddch/mvaddstr/
+  attron/attroff/attrset — never declare those; a declaration would
+  macro-expand into a syntax error) and ALREADY DECLARES
+  initscr/newwin/subwin/newpad/longname/erasechar/killchar/wgetch/
+  newterm, and defines ALL our KEY_* constants (KEY_BACKSPACE,
+  KEY_ENTER, KEY_DC — no guards needed). Its PITFALLS: "#define
+  bool char", "#define reg register", TRUE/FALSE/ERR/OK — no
+  identifier of ours may collide (verified). KEY_RESIZE does not
+  exist (the guards handle it; a mid-session resize is not
+  auto-detected on ULTRIX).
+- help.c's draw_page casts the const pages to char* (ULTRIX's
+  waddstr predates const).
+- FLAGGED RISK: curs_set is in neither the header nor possibly the
+  library — the call already falls back on ERR; if the ULTRIX link
+  fails on the symbol, wrap the two calls in #ifdef. The ULTRIX
+  build itself is verified by the user on that machine
+  (syntax-checked here against a cursesX.h stub — the stub caught
+  nodelay missing from the list and the const-cast).
+
 ## Source map
 
 | file | responsibility |

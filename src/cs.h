@@ -5,6 +5,52 @@
 #include <stdio.h>
 #include "num.h"
 
+/* the curses inclusion (single point - the per-file <curses.h>
+ * includes are gone).  ULTRIX: its cursesX.h declares almost nothing
+ * (initscr/newwin/subwin/newpad, longname/erasechar/killchar,
+ * wgetch/newterm - plus the stdscr and mv MACROS), so everything
+ * beyond that is declared here, each guarded by #ifndef <name> so a
+ * cursesX.h macro never collides.  PITFALLS of cursesX.h, do not
+ * trip later: it does "#define bool char", "#define reg register",
+ * and defines TRUE/FALSE/ERR/OK - no identifier of ours may be named
+ * bool, reg, TRUE, FALSE, OK or ERR.  It does NOT define KEY_RESIZE
+ * (the guards handle it; a mid-session resize is just not
+ * auto-detected on ULTRIX). */
+#ifdef ULTRIX
+#include <cursesX.h>
+
+extern int beep (void);
+extern int curs_set (int);
+extern int delwin (WINDOW *);
+extern int endwin (void);
+extern int idlok (WINDOW *, int);
+extern int keypad (WINDOW *, int);
+extern int nodelay (WINDOW *, int);
+extern int mvwprintw (WINDOW *, int, int, ...);
+extern int noecho (void);
+extern int nonl (void);
+extern int overwrite (WINDOW *, WINDOW *);
+extern int raw (void);
+extern int touchwin (WINDOW *);
+extern int waddch (WINDOW *, chtype);
+extern int waddstr (WINDOW *, char *);
+extern int wattroff (WINDOW *, int);
+extern int wattron (WINDOW *, int);
+extern int wattrset (WINDOW *, int);
+extern int wclear (WINDOW *);
+extern int wclrtoeol (WINDOW *);
+extern int wdelch (WINDOW *);
+extern int wdeleteln (WINDOW *);
+extern int werase (WINDOW *);
+extern int winsertln (WINDOW *);
+extern int wmove (WINDOW *, int, int);
+extern int wrefresh (WINDOW *);
+extern int ungetch (int);
+#else
+#include <curses.h>
+#endif
+
+
 #define CS_MAXROW 255          /* rows 1..255 */
 #define CS_MAXCOL 127          /* cols A..DW  */
 #define CS_DEF_W 10

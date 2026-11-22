@@ -27,7 +27,6 @@
 #include <string.h>
 #include <stdarg.h>
 #include <ctype.h>
-#include <curses.h>
 #include "cs.h"
 
 static char lastmsg[256];   /* the formatted text; the DISPLAY still

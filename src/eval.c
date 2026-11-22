@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <curses.h>
 #include "cs.h"
 
 int cs_is_inputf(const Cell *c);

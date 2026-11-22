@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <curses.h>
 #include "cs.h"
 
 static void wait_space(void)

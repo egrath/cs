@@ -2402,3 +2402,41 @@ PREVIOUS BATCH (5 items, verified):
   warnings/errors (322KB LE executable); the cc --test all pass;
   the idle gate MATCH; build.count 345 (the source change + the
   counter behavior verified: a no-op make/wmake does not bump).
+
+## THE ULTRIX TARGET (user request, 2026-11-22)
+- The Makefile: UNAME = $(shell uname -s); ifeq ULTRIX -> CC = gcc
+  (the ancient cc unused) + CFLAGS += -DULTRIX.
+- The curses inclusion is SINGLE-POINT in cs.h now: the seven
+  per-file <curses.h> includes removed, cs.h carries the
+  #ifdef ULTRIX block (cursesX.h + the extern declarations) /
+  #else <curses.h>. All the use comes after the includes - no
+  order risk.
+- THE EXTERN SET (verified against the SHIPPED cursesX.h the user
+  placed at /Users/egon/tmp/cursesX.h - READ IT BEFORE GUESSING):
+  the TextStar set (beep delwin endwin idlok keypad mvwprintw
+  noecho nonl overwrite raw touchwin waddch waddstr wattroff
+  wattron wattrset wclear wclrtoeol wdelch wdeleteln werase
+  winsertln wmove wrefresh) + OURS (curs_set ungetch nodelay).
+  cursesX.h MACROS every stdscr form we call (getch move clear
+  clrtoeol refresh erase attron/attroff/attrset mvaddch mvaddstr)
+  - NEVER declare those (a declaration macro-expands into a
+  syntax error); it DECLARES initscr/newwin/subwin/newpad/
+  longname/erasechar/killchar/wgetch/newterm (old-style, untyped
+  params); it DEFINES all our KEY_* constants (KEY_BACKSPACE
+  KEY_ENTER KEY_DC - no KEY guards needed) + A_REVERSE/A_NORMAL +
+  ERR/OK. PITFALLS: "#define bool char", "#define reg register",
+  TRUE/FALSE/ERR/OK - no identifier of ours may collide (checked).
+  KEY_RESIZE does not exist -> the guards handle it (no
+  auto-resize detection on ULTRIX).
+- FLAGGED RISK: curs_set in neither the header nor possibly the
+  library - the call falls back on ERR; if the ULTRIX link fails
+  on the symbol, wrap the two calls in #ifdef.
+- SYNTAX-CHECKED HERE with a cursesX stub (/tmp/ultrix_inc): the
+  stub caught (1) nodelay MISSING from the extern list (we call it
+  in cs_kb_nodelay_set/cs_getch_nodelay) and (2) help.c's
+  mvaddstr(const) - ULTRIX's waddstr takes char*, the call casts.
+  The stub pattern is the way to check the ULTRIX path without a
+  ULTRIX machine.
+- GATES: the cc/gcc/DOS builds zero-warning unchanged (the #else
+  path is byte-identical), --test x2 all pass, the idle gate MATCH,
+  the maxres 2,703,360 = the baseline.

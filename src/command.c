@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <curses.h>
 #include "cs.h"
 
 /* helpers defined in other modules */

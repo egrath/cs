@@ -1,6 +1,5 @@
 /* help.c - the two CalcStar help pages */
 #include <string.h>
-#include <curses.h>
 #include "cs.h"
 
 /* the ORIGINAL CalcStar help screens (user-supplied verbatim,
@@ -68,7 +67,8 @@ static void draw_page(const char **pg, int n)
     int i;
     clear();
     for (i = 0; i < n && i < LINES; i++)
-        mvaddstr(i, 0, pg[i]);
+        /* ULTRIX's waddstr predates const: the pages are read-only */
+        mvaddstr(i, 0, (char *) pg[i]);
 }
 
 void cs_help_cmd(void)

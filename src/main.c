@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <curses.h>
 #include "buildno.h"
 #include "cs.h"
 

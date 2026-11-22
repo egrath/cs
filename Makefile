@@ -1,5 +1,14 @@
 CC      = cc
 CFLAGS  = -std=c89 -pedantic -Wall -I$(OUTDIR) -Wextra -pedantic-errors
+
+# ULTRIX: the ancient cc stays unused - gcc understands our C89 flags,
+# and -DULTRIX switches the curses inclusion to cursesX.h with the
+# missing declarations (see cs.h).
+UNAME   = $(shell uname -s)
+ifeq ($(UNAME), ULTRIX)
+	CC = gcc
+	CFLAGS += -DULTRIX
+endif
 LDLIBS  = -lcurses
 OUTDIR  = build
 
