@@ -2349,3 +2349,28 @@ PREVIOUS BATCH (5 items, verified):
   explicitly: python3 tests/frame_harness.py /private/tmp/cs_ref
   (the c5c8dbb reference worktree; rebuild it with the copied
   Makefile + make clean && make if the binary is missing).
+
+## THE SESSION MERGE (2026-11-22): the long-path session's export
+- The user ran a SECOND OpenCode session on the same project (the
+  long-path + read-error batch) and exported it to
+  /Users/egon/tmp/test.json (the OpenCode session JSON: info +
+  messages, the content arrays carrying the text/reasoning/tool
+  parts). MERGED: the work was already on master (68768a1) with the
+  AGENTS.md and the opencode.txt records written by that session -
+  the audit found nothing missing except the items below.
+- THE INTERACTIVE MAXRES RECIPE (from that session): the pty wrapper
+  measuring ru_maxrss of BOTH builds (the new + the reference) in
+  ONE session - comparing ranges cancels the ASLR/allocator noise
+  (the +-80KB run-to-run variance; the reference build measured
+  2,719,744 in the same session). Sketch: pty.fork the binary, drain
+  ~4s, ESC + ";Q" + "Y", wait4, read ru.ru_maxrss - one line per
+  build appended to a file.
+- THE HARNESS PROGRESS LESSON: the harness's stdout through
+  "tail -25" looks EMPTY while running (the pipeline flushes only at
+  the end) - the progress is visible in tests/.scratch/fc_new_N.raw
+  (the file currently being captured).
+- THE HARNESS RUN VALIDITY: the first background run "failed" 16/16
+  with EMPTY old frames - the STALE DEFAULT refdir (/tmp/cs_master,
+  gone) - re-run with /private/tmp/cs_ref explicitly (the c5c8dbb
+  reference worktree was restored for it: the copied Makefile +
+  make clean && make).
