@@ -24,3 +24,4 @@ CALCSTAR.PRN
 /test.CSD
 /tests/.scratch/
 /tests/__pycache__/
+/build.gcc/
