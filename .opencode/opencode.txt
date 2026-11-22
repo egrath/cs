@@ -2440,3 +2440,22 @@ PREVIOUS BATCH (5 items, verified):
 - GATES: the cc/gcc/DOS builds zero-warning unchanged (the #else
   path is byte-identical), --test x2 all pass, the idle gate MATCH,
   the maxres 2,703,360 = the baseline.
+
+## THE RENAME: main.c -> cs.c (user request, 2026-11-22)
+- The UNIX tradition: the main file carries the application's short
+  name - cs.c joins cs.h. git mv (the history preserved: git log
+  --follow keeps the file since the initial commit).
+- The reference sites: the Makefile (SRCS + the OBJS entry
+  $(OUTDIR)/cs.o - THE OBJS LINE WAS MISSED IN THE FIRST PASS: the
+  build broke with "No rule to make target build/main.o" until
+  fixed - the lesson: a file rename has TWO reference classes in a
+  makefile, the SOURCES and the OBJECTS), Makefile.wcc (SRCS + the
+  explicit rule renamed to build.dos/cs.obj), the source maps in
+  README/AGENTS.
+- The historical records KEEP main.c (they describe the past state
+  - the 15 opencode.txt mentions and the AGENTS batch entries stay
+  as written; the rename entry is the mapping).
+- Gates: the three compilers zero-warning (cc/gcc-14/wcc386), --test
+  x2 all pass, the idle gate MATCH, the maxres 2,752,512 (~the
+  baseline + one 32KB allocator step, the run-to-run variance the
+  record already documents).
