@@ -14,10 +14,10 @@ OUTDIR  = build
 
 OBJS = $(OUTDIR)/num.o $(OUTDIR)/cells.o $(OUTDIR)/parser.o $(OUTDIR)/eval.o \
       $(OUTDIR)/screen.o $(OUTDIR)/command.o $(OUTDIR)/help.o \
-      $(OUTDIR)/fileio.o $(OUTDIR)/print.o $(OUTDIR)/main.o
+      $(OUTDIR)/fileio.o $(OUTDIR)/print.o $(OUTDIR)/cs.o
 
 SRCS = src/num.c src/cells.c src/parser.c src/eval.c src/screen.c \
-      src/command.c src/help.c src/fileio.c src/print.c src/main.c
+      src/command.c src/help.c src/fileio.c src/print.c src/cs.c
 
 $(OUTDIR)/calcstar: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)

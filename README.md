@@ -1548,4 +1548,4 @@ password-protected file asks to verify the password first.
 | `src/fileio.c`| save/load/merge, password dialog                       |
 | `src/print.c` | Print command, titles, segments, page breaks           |
 | `src/help.c`  | two help pages                                          |
-| `src/main.c`  | key loop, entry engine, `--test` mode                   |
+| `src/cs.c`     | key loop, entry engine, `--test` mode                   |

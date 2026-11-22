@@ -9,11 +9,11 @@ LDFLAGS  = -bt=dos -l=dos4g
 
 OBJS = build.dos/num.obj build.dos/cells.obj build.dos/parser.obj build.dos/eval.obj &
        build.dos/screen.obj build.dos/command.obj build.dos/help.obj &
-       build.dos/fileio.obj build.dos/print.obj build.dos/main.obj
+       build.dos/fileio.obj build.dos/print.obj build.dos/cs.obj
 
 SRCS = src/num.c src/cells.c src/parser.c src/eval.c &
        src/screen.c src/command.c src/help.c &
-       src/fileio.c src/print.c src/main.c
+       src/fileio.c src/print.c src/cs.c
 
 all : build.dos/calcstar.exe
 
@@ -54,8 +54,8 @@ build.dos/fileio.obj : src/fileio.c src/cs.h build.dos/buildno.h
 build.dos/print.obj : src/print.c src/cs.h build.dos/buildno.h
 	$(CC) $(CFLAGS) -fo=build.dos/print.obj src/print.c
 
-build.dos/main.obj : src/main.c src/cs.h build.dos/buildno.h
-	$(CC) $(CFLAGS) -fo=build.dos/main.obj src/main.c
+build.dos/cs.obj : src/cs.c src/cs.h build.dos/buildno.h
+	$(CC) $(CFLAGS) -fo=build.dos/cs.obj src/cs.c
 
 test : build.dos/calcstar.exe .SYMBOLIC
 	build.dos/calcstar.exe --test
