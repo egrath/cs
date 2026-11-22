@@ -543,16 +543,24 @@ static void draw_editline_idle(void)
  * with optional progress dots */
 void cs_draw_prompt_text(const char *txt, const char *dots)
 {
+    int w = cs_scrw();
+    int n = (int) strlen(txt);
+    int x;
     cs_compute_layout();
     promptvis = 1;
     move(line_prompt, 0);
     clrtoeol();
-    cput(line_prompt, 0, txt);
+    /* a long field shows the SUFFIX that fits (the edit field's
+     * scrolling rule): the caret rests at the line end, so the user
+     * must see what they just typed */
+    if (n < w) cput(line_prompt, 0, txt);
+    else cput(line_prompt, 0, txt + (n - w));
     if (dots && dots[0])
-        cput(line_prompt, (int) strlen(txt) + 1, dots);
-    move(line_prompt, (int) strlen(txt) +
-                      ((dots && dots[0]) ? 1 + (int) strlen(dots) : 0));
-    if (cs_scrw() < 4) move(line_prompt, 0);
+        cput(line_prompt, n + 1, dots);
+    x = n + ((dots && dots[0]) ? 1 + (int) strlen(dots) : 0);
+    if (x >= w) x = w - 1;
+    if (w < 4) x = 0;
+    move(line_prompt, x);
     refresh();
 }
 
@@ -822,6 +830,27 @@ void cs_msg_str(const char *s)
     cs_msg_text(lastmsg, A_NORMAL);
 }
 
+/* the LAST message's text for the --test pins (bounded copy; the
+ * message row itself is display-only) */
+void cs_last_msg(char *out, int outn)
+{
+    int i;
+    if (outn < 1) return;
+    for (i = 0; lastmsg[i] && i < outn - 1; i++) out[i] = lastmsg[i];
+    out[i] = '\0';
+}
+
+/* re-paint the last message AFTER a full repaint: paint_status wipes
+ * the message row on every repaint, so a failure reason painted
+ * before the load dialog's cs_draw() never reached the screen (the
+ * long-path batch, 2026-11-22 - the old code worked around this with
+ * a second, reworded message after the draw) */
+void cs_msg_repaint(void)
+{
+    if (!lastmsg[0]) return;
+    cs_msg_text(lastmsg, A_REVERSE);
+}
+
 /* shared paint: system messages are inverse (CalcStar behavior),
  * Evaluate answers are NOT: CalcStar shows the result plainly. The
  * terminal cursor never rests in the status bar: it belongs on the
@@ -891,6 +920,19 @@ int cs_prompt_yn(const char *pr)
     }
 }
 
+/* bounded compose: prompt text, one space, then the field text.  The
+ * old sprintf(line, "%s %s", pr, buf) into a fixed char line[100]
+ * overflowed once prompt + input passed ~100 bytes (the long-path
+ * crash at ~56 typed characters, user report 2026-11-22). */
+static void prompt_line(char *out, int outn, const char *pr, const char *txt)
+{
+    int n = 0, i;
+    for (i = 0; pr[i] && n < outn - 1; i++) out[n++] = pr[i];
+    if (n < outn - 1) out[n++] = ' ';
+    for (i = 0; txt[i] && n < outn - 1; i++) out[n++] = txt[i];
+    out[n] = '\0';
+}
+
 /* the plain prompt editor: dflt shows while nothing is typed, the
  * first printable keystroke replaces it.  With keepgt != 0 a '>' as
  * the FIRST keystroke instead seeds the buffer with dflt + '>' - the
@@ -899,13 +941,15 @@ int cs_prompt_yn(const char *pr)
 static int prompt_str_core(const char *pr, const char *dflt, char *out,
                            int maxlen, int keepgt)
 {
-    char buf[80];
+    char buf[CS_PATHMAX + 4];
     int n, ch;
+    if (maxlen < 1) maxlen = 1;
     n = 0;
     buf[0] = '\0';
     for (;;) {
-        char line[100];
-        sprintf(line, "%s %s", pr, n ? buf : (dflt ? dflt : ""));
+        char line[CS_PATHMAX + 96];
+        prompt_line(line, (int) sizeof(line), pr,
+                    n ? buf : (dflt ? dflt : ""));
         cs_draw_prompt_text(line, "");
         ch = getch();
         if (cs_was_resize(ch)) continue;
@@ -931,13 +975,16 @@ static int prompt_str_core(const char *pr, const char *dflt, char *out,
         if (ch == '>' && keepgt && n == 0 && dflt && dflt[0]) {
             /* keep the prefilled row/column as the left side */
             int i;
-            for (i = 0; dflt[i] && n < (int) sizeof(buf) - 2; i++)
+            for (i = 0; dflt[i] && n < maxlen - 2; i++)
                 buf[n++] = dflt[i];
-            if (n < (int) sizeof(buf) - 2) buf[n++] = '>';
+            if (n < maxlen - 2 && n < (int) sizeof(buf) - 2) buf[n++] = '>';
             buf[n] = '\0';
             continue;
         }
-        if (ch >= 32 && ch < 127 && n < (int) sizeof(buf) - 2) {
+        /* typing stops at the caller's buffer edge (the answer is
+         * never silently truncated at commit time) */
+        if (ch >= 32 && ch < 127 &&
+            n < maxlen - 1 && n < (int) sizeof(buf) - 2) {
             buf[n++] = (char) ch;
             buf[n] = '\0';
         }
@@ -960,8 +1007,8 @@ int cs_prompt_range(const char *pr, const char *dflt, char *out, int maxlen)
  * plain prompt editors) */
 static void prompt_edit_paint(const char *pr, const char *shown)
 {
-    char line[100];
-    sprintf(line, "%s %s", pr, shown);
+    char line[CS_PATHMAX + 96];
+    prompt_line(line, (int) sizeof(line), pr, shown);
     cs_draw_prompt_text(line, "");
 }
 
@@ -979,6 +1026,7 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
 {
     char buf[80];
     int n, ch;
+    if (maxlen < 1) maxlen = 1;
     n = 0;
     buf[0] = '\0';
     for (;;) {
@@ -1017,7 +1065,8 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
             {
                 int i;
                 for (i = 0; coord[i]; i++)
-                    if (n < (int) sizeof(buf) - 2) buf[n++] = coord[i];
+                    if (n < maxlen - 2 && n < (int) sizeof(buf) - 2)
+                        buf[n++] = coord[i];
                 buf[n] = '\0';
             }
             continue;
@@ -1044,13 +1093,14 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
         if (ch == '>' && setmode == 2 && n == 0 && dflt && dflt[0]) {
             /* keep the prefilled coordinate as the left side */
             int i;
-            for (i = 0; dflt[i] && n < (int) sizeof(buf) - 2; i++)
+            for (i = 0; dflt[i] && n < maxlen - 2; i++)
                 buf[n++] = dflt[i];
-            if (n < (int) sizeof(buf) - 2) buf[n++] = '>';
+            if (n < maxlen - 2 && n < (int) sizeof(buf) - 2) buf[n++] = '>';
             buf[n] = '\0';
             continue;
         }
-        if (ch >= 32 && ch < 127 && n < (int) sizeof(buf) - 2) {
+        if (ch >= 32 && ch < 127 &&
+            n < maxlen - 1 && n < (int) sizeof(buf) - 2) {
             buf[n++] = (char) ch;
             buf[n] = '\0';
         }

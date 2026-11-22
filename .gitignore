@@ -23,3 +23,4 @@ CALCSTAR.PRN
 .DS_Store
 /test.CSD
 /tests/.scratch/
+/tests/__pycache__/

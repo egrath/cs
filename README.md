@@ -1229,7 +1229,10 @@ division-by-zero `?n?`, display truncation, file round-trip) and exits with a
 nonzero status on any failure. An interactive session needs a real terminal;
 launch it under a tty (or drive it with a pty driver such as `expect`).
 If the file given on the command line does not exist, the usual
-`write error NAME.csd not found` message appears on the status row.
+`read error NAME.csd not found` message appears on the status row (the
+read side of the manual's `write error <file> not found` — a write error
+is only ever reported when writing fails; flagged 2026-11-22). File-name
+fields take up to 256 characters (paths included).
 
 Save-file naming: a bare name gets the lowercase `.csd` appended
 (`pt01 -> pt01.csd`); a typed `.csd`/`.CSD`/`.Csd` tail is kept exactly as

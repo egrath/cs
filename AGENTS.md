@@ -2138,6 +2138,86 @@ master when every phase passes.
   before every DOS build (the macOS headers declare them even
   under -std=c89).
 
+## THE LONG-PATH + READ-ERROR BATCH (user report 2026-11-22)
+
+Two user issues, one crash class and one misleading string:
+
+1. **THE ~56-CHARACTER LOAD CRASH**: the file-name prompt editor
+   (`prompt_str_core`, screen.c) composed the prompt line with
+   `sprintf(line, "%s %s", pr, buf)` into a FIXED `char line[100]`
+   while the input buffer was `buf[80]` — the load prompt text is 44
+   chars + 1 space, so input past ~55 typed characters smashed the
+   stack. THE CLASS: any prompt whose text + input passed 100 bytes
+   (the coord-prompt painter `prompt_edit_paint` had the same shape).
+   Even without the crash the dialog answers were truncated to 39
+   chars (`name[40]`) and the stored name to 39 (`fname[40]`).
+   - **CS_PATHMAX = 256** (cs.h, user-chosen size): the global
+     `fname`/`cs_cmdfile`, both dialogs' `name`/`dflt`/`npath`
+     buffers, and the save dialog's file-exists probe path. The
+     internal `path[CS_PATHMAX + 4]` buffers (cs_save, cs_load,
+     cs_load_csv via the typed name, cs_file_password) hold a
+     full-length name + the appended `.csd`.
+   - `prompt_str_core` now: input buffer `CS_PATHMAX + 4`, typing
+     CLAMPED at `min(maxlen-1, sizeof(buf)-2)` (the answer is never
+     silently truncated at commit), the display line composed by the
+     bounded helper `prompt_line()` (C89 copy loop, no snprintf —
+     DOS discipline). `prompt_edit_paint` uses the same helper.
+     `cs_prompt_coord` got the same `maxlen` clamps (its commit and
+     the `>`-seed and the @-insert).
+   - `cs_draw_prompt_text` (screen.c): an over-wide prompt text now
+     paints the SUFFIX that fits (the edit field's scrolling rule —
+     the caret rests at the line end), and the rest cursor position
+     is clamped to the screen width. Short texts take the old path
+     byte-for-byte (the idle gate is unaffected; prompts are
+     transient).
+   - `cs_savename`'s hardcoded 100-char name cap deleted (the
+     `outn - 5` bound is the real one now that buffers are 260).
+   - Stack accounting (DOS): the prompt editor's frame is now ~600 B
+     (`buf[260]` + `line[336]`), the dialogs two 256-byte locals —
+     still under the largest current frame (~500 B in num.c's digit
+     scratch) and fine for the ≥24 KB DOS4GW stack. print.c's output
+     file field (`dest[40]`) was LEFT at 40 (the user's report was
+     the load path; the prompt editor no longer crashes for any
+     caller, truncation is bounded and visible — flagged scope
+     decision).
+2. **"write error xxx not found" ON LOAD**: ALL FOUR existing uses of
+   that string were on the LOAD side (cs_load, cs_load_csv x2, and
+   the load dialog's fallback probe) — the manual's save-side wording
+   was never painted by a failing WRITE (the save opens use `can't
+   open file`/`can't open`). The three loader open-failure sites now
+   paint **`read error %s not found`** (user-chosen wording, flagged:
+   not in the manuals — the load side has no manual not-found string;
+   parallel to the manual's save-side family). `write error ... not
+   found` remains reserved for actual write failures (currently
+   unpainted).
+   - THE REPAINT TRAP (cost one pty round): cs_load_dialog calls
+     cs_draw() after the load, and paint_status WIPES the message row
+     on every repaint — a failure reason painted by the loader before
+     the draw never reached the screen (the old fallback probe
+     existed precisely to paint a SECOND, reworded message after the
+     draw). The new `cs_msg_repaint()` (screen.c, exported) re-paints
+     `lastmsg` (inverse) AFTER the dialog's cs_draw, so the loader's
+     own wording survives for EVERY failure class (not found, READ
+     ERROR, MEMORY IS TOO LOW) — the old code only re-worded the
+     missing-file case and left the others wiped.
+   - The fallback probe (a second fopen + a possibly different
+   wording) is DELETED.
+3. **THE TEST HOOK**: `cs_last_msg(char*, int)` (screen.c, exported)
+   copies the last message text bounded — the --test pins assert the
+   exact new strings. `cs_msg_repaint` is also exported.
+4. PINS (--test, +7): the 240-char single-component name saves and
+   loads back (the value = 7 round trip); a missing CSD load refuses
+   with `read error t_nosuchfile_xyz.csd not found` and a missing CSV
+   with the `.csv` form (both exact strings).
+5. VERIFIED: --test 977 ok; the idle gate MATCH; the frame-identity
+   harness (16 checkpoints); pty: the 62-char missing name does NOT
+   crash and paints the read-side message (the 75-char display
+   truncation is the normal message rule), the 50-char name shows the
+   full `read error ... .csd not found`; maxres --test and the idle
+   pty session inside the baseline's run-to-run noise (allocator
+   variance is ±80 KB on this machine — the reference build measured
+   in the same session). build.count 336 -> 339.
+
 ## Source map
 
 | file | responsibility |

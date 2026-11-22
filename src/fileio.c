@@ -121,10 +121,10 @@ static void cs_savename(const char *name, char *out, int outn)
         }
     }
     /* the lowercase ".csd" appended, the name capped so the result
-     * always fits (the %.100s bound of the old snprintf, spelled out) */
+     * always fits (the buffers are CS_PATHMAX + 4 since the 2026-11-22
+     * long-path batch) */
     {
         int k = (int) n;
-        if (k > 100) k = 100;
         if (k > outn - 5) k = outn - 5;
         memcpy(out, name, (size_t) k);
         memcpy(out + k, ".csd", 5);
@@ -303,7 +303,7 @@ int cs_load_csv(const char *name, int c0, int r0, int merge)
      * file is refused with the sheet untouched (the CSD loader's
      * two-pass discipline) - the clear happens after pass 1 ---- */
     f = csv_open_bom(name);
-    if (!f) { cs_msg("write error %s not found", name); return 0; }
+    if (!f) { cs_msg("read error %s not found", name); return 0; }
     {
         char buf[256];
         int r2 = r0, c2 = c0, nonblank = 0;
@@ -325,7 +325,7 @@ int cs_load_csv(const char *name, int c0, int r0, int merge)
     else cs_reg_reset();                    /* merged data: fresh sums */
     /* ---- pass 2: place the fields ---- */
     f = csv_open_bom(name);
-    if (!f) { cs_msg("write error %s not found", name); return 0; }
+    if (!f) { cs_msg("read error %s not found", name); return 0; }
     row = r0; col = c0;
     for (;;) {
         char buf[256];
@@ -356,7 +356,7 @@ int cs_load_csv(const char *name, int c0, int r0, int merge)
 
 int cs_save(const char *name, int c1, int r1, int c2, int r2, const char *pw)
 {
-    char path[128];
+    char path[CS_PATHMAX + 4];   /* name (<= CS_PATHMAX) + ".csd" */
     FILE *f;
     int r, c, count = 0;
     Cell *cl;
@@ -463,7 +463,7 @@ static int rd_check_record(FILE *f)
 
 int cs_load(const char *name, int c0, int r0, int merge)
 {
-    char path[128];
+    char path[CS_PATHMAX + 4];   /* name (<= CS_PATHMAX) + ".csd" */
     FILE *f;
     int c, count, pwlen, i;
     int bascc = 0, basrr = 0;
@@ -471,7 +471,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
 
     cs_savename(name, path, (int) sizeof(path));
     f = fopen(path, "rb");
-    if (!f) { cs_msg("write error %s not found", path); return 0; }
+    if (!f) { cs_msg("read error %s not found", path); return 0; }
     if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "CSD5", 4) != 0) {
         fclose(f);
         cs_msg("READ ERROR");
@@ -688,7 +688,7 @@ int cs_load(const char *name, int c0, int r0, int merge)
 /* read the stored password of a .CSD file */
 int cs_file_password(const char *name, char *pw, int max)
 {
-    char path[128];
+    char path[CS_PATHMAX + 4];   /* name (<= CS_PATHMAX) + ".csd" */
     FILE *f;
     char magic[4];
     int c, pwlen, i;
@@ -749,14 +749,14 @@ int cs_prompt_hidden(const char *pr, char *out, int max)
 
 int cs_save_dialog(void)
 {
-    char name[40], pwbuf[40], pw2[40];
-    char dflt[40];
+    char name[CS_PATHMAX], pwbuf[40], pw2[40];
+    char dflt[CS_PATHMAX];
     int filex;
     FILE *probe;
     char promptbuf[80];
 
-    strncpy(dflt, fname, 38);
-    dflt[38] = '\0';
+    strncpy(dflt, fname, (int) sizeof(dflt) - 1);
+    dflt[sizeof(dflt) - 1] = '\0';
     if (cs_prompt_str("File name :", fname[0] ? dflt : "", name, (int) sizeof(name)) < 0)
         return 0;
     if (!name[0]) { cs_prompt_hide(); return 0; }
@@ -765,7 +765,7 @@ int cs_save_dialog(void)
      * CSV route - no password prompts, no CSD layout; the name is
      * used AS TYPED (cs_savename would append ".csd") */
     if (cs_csv_ext(name)) {
-        char npath[128];
+        char npath[CS_PATHMAX];
         FILE *probe;
         strncpy(npath, name, (int) sizeof(npath) - 1);
         npath[sizeof(npath) - 1] = '\0';
@@ -801,8 +801,11 @@ int cs_save_dialog(void)
     }
 
     filex = 0;
-    cs_savename(name, pwbuf, (int) sizeof(pwbuf));
-    probe = fopen(pwbuf, "rb");
+    {
+        char probebuf[CS_PATHMAX + 4];   /* name (<= CS_PATHMAX) + ".csd" */
+        cs_savename(name, probebuf, (int) sizeof(probebuf));
+        probe = fopen(probebuf, "rb");
+    }
     if (probe) { fclose(probe); filex = 1; }
 
     if (filex) {
@@ -868,7 +871,7 @@ int cs_save_dialog(void)
 
 int cs_load_dialog(int merge)
 {
-    char name[40], b[24];
+    char name[CS_PATHMAX], b[24];
     int c0, r0, ok;
     if (cs_prompt_str(merge ? "File name :" :
                       "File name (make sure current file is saved) :",
@@ -887,21 +890,12 @@ int cs_load_dialog(int merge)
         ok = cs_load(name, c0, r0, merge);
     cs_draw();
     if (!ok) {
-        /* cs_load painted its own reason (not found / READ ERROR):
-         * the generic not-found message is painted only when the
-         * file is genuinely absent - a REFUSED file must not claim
-         * to be missing (2026-11-15) */
-        char p2[128];
-        FILE *probe;
-        if (cs_csv_ext(name)) {
-            strncpy(p2, name, (int) sizeof(p2) - 1);   /* as typed */
-            p2[sizeof(p2) - 1] = '\0';
-        } else {
-            cs_savename(name, p2, (int) sizeof(p2));
-        }
-        probe = fopen(p2, "rb");
-        if (!probe) cs_msg("write error %s not found", name);
-        else fclose(probe);
+        /* the loader painted its own reason (read error ... not
+         * found / READ ERROR / MEMORY IS TOO LOW) BEFORE this
+         * repaint - paint_status wipes the message row, so the
+         * reason is re-painted from lastmsg AFTER the draw (the old
+         * fallback probe painted a SECOND, reworded message here) */
+        cs_msg_repaint();
     }
     return ok;
 }

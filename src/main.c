@@ -4497,6 +4497,59 @@ static void run_tests(void)
         }
     }
 
+    /* ---- the long-path batch (user report 2026-11-22) ---- */
+    {
+        /* a 240-char single-component name: saves through cs_save,
+         * loads back by the same name (the old 40-byte dialog buffer
+         * truncated answers to 39 chars - and the prompt editor's
+         * fixed 100-byte compose line crashed at ~56 typed chars) */
+        char longname[CS_PATHMAX];
+        int k;
+        char got[256];
+        Cell *c;
+        for (k = 0; k < 240; k++) longname[k] = (char) ('a' + (k % 26));
+        longname[240] = '\0';
+        cs_clear_all();
+        setv(0, 0, "7");
+        if (!cs_save(longname, 0, 0, 0, 0, NULL))
+            { printf("FAIL long path save refused\n"); fails++; }
+        else printf("ok   long path (240 chars) save\n");
+        cs_clear_all();
+        if (!cs_load(longname, 0, 0, 0))
+            { printf("FAIL long path load refused\n"); fails++; }
+        else printf("ok   long path (240 chars) load\n");
+        c = tread(0, 0);
+        {
+            Csn want;
+            csn_parse("7", &want);
+            if (!c || c->type != CE_NUM || csn_cmp(&c->val, &want) != 0)
+                { printf("FAIL long path round trip value\n"); fails++; }
+            else printf("ok   long path round trip value = 7\n");
+        }
+        remove(longname);
+        strcat(longname, ".csd");
+        remove(longname);
+
+        /* the read-side not-found message: the old wording said
+         * "write error ..." on the LOAD path (the write side never
+         * used it) - now "read error <file> not found" */
+        cs_clear_all();
+        if (cs_load("t_nosuchfile_xyz", 0, 0, 0))
+            { printf("FAIL missing csd load accepted\n"); fails++; }
+        else printf("ok   missing csd load refused\n");
+        cs_last_msg(got, (int) sizeof(got));
+        if (strcmp(got, "read error t_nosuchfile_xyz.csd not found"))
+            { printf("FAIL read error message (got %s)\n", got); fails++; }
+        else printf("ok   read error <file> not found message\n");
+        if (cs_load_csv("t_nosuchfile_xyz.csv", 0, 0, 0))
+            { printf("FAIL missing csv load accepted\n"); fails++; }
+        else printf("ok   missing csv load refused\n");
+        cs_last_msg(got, (int) sizeof(got));
+        if (strcmp(got, "read error t_nosuchfile_xyz.csv not found"))
+            { printf("FAIL csv read error message (got %s)\n", got); fails++; }
+        else printf("ok   csv read error <file> not found message\n");
+    }
+
     if (fails == 0) printf("\nAll tests passed.\n");
     else printf("\n%d test(s) FAILED.\n", fails);
     exit(fails != 0);

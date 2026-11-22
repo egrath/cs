@@ -13,6 +13,9 @@
 #define CS_DEF_P 2
 #define CS_MAX_P 24   /* visible decimals; engineering extension (manual: 12) */
 #define CS_EDITMAX 120
+#define CS_PATHMAX 256         /* file-name/path buffers (user request
+                                * 2026-11-22: absolute paths did not fit
+                                * the old 40-byte dialogs) */
 #define CS_VERSION "1.5"       /* the startup message's version string */
 #define CS_BUDGET 4000         /* emulated entry pool for ';?' (4000
                                 * on the 386 target, flagged deviation:
@@ -90,8 +93,8 @@ extern int  dirTB;              /* 0 = L-R, 1 = T-B */
 extern int  extended;           /* 1 = 15-row window (menu hidden) */
 extern int  lockCols, lockRows; /* locked (titled) rows/cols counts */
 extern int  showForm;           /* ^B data toggle: show formulas instead of values */
-extern char fname[40];          /* current file name (no extension) */
-extern char cs_cmdfile[40];     /* .CSD name given on the command line */
+extern char fname[CS_PATHMAX];  /* current file name (no extension) */
+extern char cs_cmdfile[CS_PATHMAX]; /* .CSD name given on the command line */
 void   cs_stay_visible(void);   /* re-anchor window around the cursor */
 void   cs_move_cursor(int dc, int dr);     /* exported cursor step */
 void   cs_delete_rows(int r1, int r2);   /* shift cells+refs+formats */
@@ -163,6 +166,9 @@ void   errq_reset(void);           /* fresh queue */
 void   cs_sticky_err(int code, const char *expr, int col, int rw);
 void   cs_start_msg(const char *text);  /* the startup banner */
 void   cs_msg_str(const char *s);       /* an unbounded string result */
+void   cs_last_msg(char *out, int outn); /* the last message's text (tests) */
+void   cs_msg_repaint(void);      /* re-paint the last message after a
+                                   * full repaint wiped the row */
 int    cs_start_msg_active(void);
 void   cs_start_msg_clear(void);
 void   cs_set_errpend(int on);             /* main.c: sticky-message walker */

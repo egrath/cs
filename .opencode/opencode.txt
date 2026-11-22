@@ -2294,3 +2294,58 @@ PREVIOUS BATCH (5 items, verified):
 - Gates: --test all pass, the idle gate MATCH, gcc-14 zero warnings,
   the maxres 2,703,360 (the first run showed +32KB, the repeat at
   the baseline - transient allocator arena state).
+
+## BATCH (master, 2026-11-22): the long-path + read-error batch:
+- USER ISSUES: (1) the load file-name field crashed at ~56 typed
+  chars; (2) a missing file on LOAD answered "write error xxx not
+  found" - a write error on a read path.
+- CRASH ROOT CAUSE: prompt_str_core's sprintf(line,"%s %s",pr,buf)
+  into a fixed char line[100] with buf[80] - the load prompt text is
+  45 with the space, so input past ~55 chars smashed the stack. THE
+  CLASS applies to every long-text prompt (prompt_edit_paint too).
+  Even uncrashed, the dialogs truncated answers to 39 (name[40]) and
+  fname[40] capped the stored name.
+- FIX: CS_PATHMAX 256 (cs.h, user-chosen) on fname/cs_cmdfile, the
+  dialog name/dflt/npath buffers, the save probe path; internal
+  path[CS_PATHMAX+4] in cs_save/cs_load/cs_file_password (name+".csd").
+  prompt_str_core: buf[CS_PATHMAX+4], typing clamped at
+  min(maxlen-1,sizeof(buf)-2) (no silent commit truncation), the line
+  composed by the bounded prompt_line() helper (no snprintf - DOS).
+  prompt_edit_paint uses the helper; cs_prompt_coord got the maxlen
+  clamps (commit, >-seed, @-insert). cs_draw_prompt_text paints the
+  SUFFIX when the text overflows the screen (the edit-field rule) and
+  clamps the rest cursor to the width - short texts byte-identical.
+  cs_savename's hardcoded 100-char cap deleted (outn-5 is the bound).
+  print.c dest[40] left at 40 (scope: the load path; no crash
+  anywhere now, truncation bounded - flagged).
+- MESSAGE: the three loader open-failure sites paint "read error %s
+  not found" (user-chosen; flagged: not in the manuals). ALL FOUR
+  old uses of "write error ... not found" were load-side - the
+  save-side string was never painted by a failing write. The save
+  dialogs keep "can't open file"/"can't open".
+- THE REPAINT TRAP (one pty round): cs_load_dialog's cs_draw() after
+  the load WIPES the message row (paint_status) - the loader's reason
+  painted before the draw never showed; the old fallback probe
+  existed to paint a second reworded message after the draw. NEW:
+  cs_msg_repaint() (screen.c, exported) re-paints lastmsg AFTER the
+  draw - the loader's own wording survives for EVERY failure class
+  (the old code left READ ERROR / MEMORY IS TOO LOW wiped). The
+  fallback probe is deleted.
+- NEW EXPORTS: cs_last_msg(char*,int) (test hook, bounded copy) and
+  cs_msg_repaint().
+- PINS (+7, 977 total): the 240-char name save/load round trip
+  (A1=7), the exact missing-CSD and missing-CSV message strings.
+- GATES: --test 977 ok; idle gate MATCH; frame harness 16
+  checkpoints; pty lp70/lp50 (62-char no crash + message, 50-char
+  full message); maxres inside noise (NOTE: maxres varies up to
+  +-80KB run-to-run on this machine - the reference build measured
+  2,719,744..; compare ranges, not single numbers). build.count 339.
+  tests/__pycache__/ added to .gitignore. README's CLI-load section
+  updated (the new string + the 256-char note).
+- HARNESS GOTCHA (2026-11-22): frame_harness.py's DEFAULT refdir is
+  /tmp/cs_master, which no longer exists - the run "fails" 16/16 with
+  'couldn\'t change working directory to "/tmp/cs_master"' and EMPTY
+  old frames (a config failure, not a diff). ALWAYS pass the refdir
+  explicitly: python3 tests/frame_harness.py /private/tmp/cs_ref
+  (the c5c8dbb reference worktree; rebuild it with the copied
+  Makefile + make clean && make if the binary is missing).
