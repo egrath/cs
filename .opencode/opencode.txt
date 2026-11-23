@@ -2459,3 +2459,34 @@ PREVIOUS BATCH (5 items, verified):
   x2 all pass, the idle gate MATCH, the maxres 2,752,512 (~the
   baseline + one 32KB allocator step, the run-to-run variance the
   record already documents).
+
+## THE DEL KEY ON ULTRIX + THE PORTABLE buildno.sh (2026-11-23)
+- buildno.sh ADOPTED THE USER'S PORTABLE VERSION verbatim (with our
+  comment header): no $() substitution, no $(( )), no printf -
+  backticks/expr/test/echo (the Bourne core). OURS USED THREE
+  ULTRIX-HOSTILE CONSTRUCTS ($() and $(( )) and printf). Verified:
+  sh/bash/dash runs, the corrupt-counter reset, the usage error,
+  the no-op semantics in all three makefiles (354/355 stable).
+- THE DEL FIX: cs_del_scan() (screen.c, exported) - the ESC-peek
+  pattern from the TextStar session log the user supplied: peek
+  nodelay after the ESC; ESC [ 3 ~ = the DEL key consumed;
+  anything else ungetch'ed back LIFO (skipping ERR); a lone ESC
+  peeks ERR instantly (no latency). FOUR SITES: the main loop's
+  case 27 (the DEL runs the ;D E entry-delete) + the three prompt
+  editors (the DEL = the field's backspace-left). PLUS the
+  pre-existing gap the probe exposed: the prompts NEVER handled
+  the curses-translated KEY_DC (the DEL did nothing in a prompt on
+  ANY platform) - the backspace if-chains gain || ch == KEY_DC.
+- THE ULTRIX EXTERNS were ALREADY THERE (the ULTRIX batch added
+  nodelay/ungetch to cs.h) - no prototype work, unlike TextStar.
+- VERIFIED: the DEL deletes the current cell (the cursor stays),
+  the DEL in a prompt backspaces the field, the lone ESC unchanged,
+  --test all pass, the idle gate MATCH, the three compilers
+  zero-warning, the maxres 2,703,360 = the baseline. THE RAW
+  ESC [ 3 ~ PATH: exercised only on ULTRIX (the user verifies
+  there - flagged).
+- THE TOOLING NOTE: /tmp gets cleaned between the days - the probe
+  tooling (render3.py, pd.py, the expect scripts) is NOT committed
+  (the debug-only rule) and must be RECREATED from the session
+  memory recipes when needed. pd.py (the working driver) and
+  render3.py (the renderer) were recreated this session.

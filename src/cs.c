@@ -441,6 +441,17 @@ void run_session(void)
             showForm = !showForm;
             cs_touch(CS_D_GRID | CS_D_STATUS); break;
         case 27:                       /* ESC */
+            /* the DEL key on the terminfo-poor systems arrives as
+             * ESC [ 3 ~ (the ULTRIX report, 2026-11-23): the scan
+             * consumes it and the entry is deleted; anything else
+             * ungets back and the ESC acts as before */
+            if (cs_del_scan()) {
+                cs_free_cell_at(curCol, curRow);
+                cs_recount_entries();
+                cs_mark_sheet_change();
+                cs_touch(CS_D_GRID | CS_D_STATUS | CS_D_MENU);
+                break;
+            }
             edit_clear();
             cs_prompt_hide();
             cs_touch(CS_D_CURSOR | CS_D_STATUS); break;

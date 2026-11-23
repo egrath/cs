@@ -563,6 +563,32 @@ void cs_draw_prompt_text(const char *txt, const char *dots)
     refresh();
 }
 
+/* the DEL key on the terminfo-poor systems (the user report,
+ * 2026-11-23, the TextStar fix class): ULTRIX's terminfo lacks
+ * kdch1, so the DEL key's escape sequence (ESC [ 3 ~) passes
+ * through curses raw and the ESC opens whatever the caller's ESC
+ * case does while the tail types out.  Call this right after the
+ * ESC is caught: it peeks non-blocking (no added latency for a
+ * lone ESC) and consumes ESC [ 3 ~ as the DEL key.  Returns 1 when
+ * the DEL sequence was consumed (the caller runs its DEL action),
+ * 0 otherwise - the peeked characters are ungetch'ed back LIFO
+ * (skipping ERR) so the caller's normal ESC handling sees them
+ * again. */
+int cs_del_scan(void)
+{
+    int c1, c2, c3;
+    c1 = cs_getch_nodelay();
+    if (c1 == ERR) return 0;
+    if (c1 != '[') { ungetch(c1); return 0; }
+    c2 = cs_getch_nodelay();
+    if (c2 == ERR) { ungetch(c1); return 0; }
+    if (c2 != '3') { ungetch(c2); ungetch(c1); return 0; }
+    c3 = cs_getch_nodelay();
+    if (c3 == ERR) { ungetch(c2); ungetch(c1); return 0; }
+    if (c3 != '~') { ungetch(c3); ungetch(c2); ungetch(c1); return 0; }
+    return 1;
+}
+
 void cs_prompt_hide(void)
 {
     promptvis = 0;
@@ -955,6 +981,11 @@ static int prompt_str_core(const char *pr, const char *dflt, char *out,
         /* the ESC abort restores the screen at once (the user's
          * report, 2026-11-17): the prompt text used to linger on the
          * status row until the next key's repaint */
+        if (cs_del_scan()) {           /* the DEL key (ESC [ 3 ~) on
+                                        * the terminfo-poor systems */
+            if (n > 0) buf[--n] = '\0';
+            continue;
+        }
         if (ch == 27) { cs_prompt_hide(); return -1; }
         if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
             promptvis = 0;
@@ -967,7 +998,11 @@ static int prompt_str_core(const char *pr, const char *dflt, char *out,
             out[maxlen - 1] = '\0';
             return (int) strlen(out);
         }
-        if (ch == KEY_BACKSPACE || ch == 8 || ch == 127) {
+        if (ch == KEY_BACKSPACE || ch == 8 || ch == 127
+#ifdef KEY_DC
+            || ch == KEY_DC
+#endif
+           ) {
             if (n > 0) buf[--n] = '\0';
             continue;
         }
@@ -1036,6 +1071,11 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
             prompt_edit_paint(pr, dflt ? dflt : "");
         ch = getch();
         if (cs_was_resize(ch)) continue;
+        if (cs_del_scan()) {           /* the DEL key (ESC [ 3 ~) on
+                                        * the terminfo-poor systems */
+            if (n > 0) buf[--n] = '\0';
+            continue;
+        }
         if (ch == 27) { cs_prompt_hide(); return -1; }
         if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
             promptvis = 0;
@@ -1085,7 +1125,11 @@ int cs_prompt_coord(const char *pr, const char *dflt, char *out,
         if (ch == 24) { cs_move_cursor(0, 1); cs_draw(); continue; }
         if (ch == 19) { cs_move_cursor(-1, 0); cs_draw(); continue; }
         if (ch == 4) { cs_move_cursor(1, 0); cs_draw(); continue; }
-        if (ch == KEY_BACKSPACE || ch == 8 || ch == 127) {
+        if (ch == KEY_BACKSPACE || ch == 8 || ch == 127
+#ifdef KEY_DC
+            || ch == KEY_DC
+#endif
+           ) {
             if (n > 0) buf[--n] = '\0';
             continue;
         }

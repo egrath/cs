@@ -275,6 +275,8 @@ int    cs_prompt_char(const char *prompt);
 int    cs_prompt_yn(const char *prompt);
 int    cs_prompt_str(const char *prompt, const char *dflt, char *out, int maxlen);
 void   cs_prompt_hide(void);
+int    cs_del_scan(void);     /* consume the DEL key's ESC [ 3 ~; 1 =
+                                DEL seen (ULTRIX terminfo lacks kdch1) */
 
 /* command.c */
 void   cs_command_menu(void);

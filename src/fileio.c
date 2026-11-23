@@ -730,9 +730,19 @@ int cs_prompt_hidden(const char *pr, char *out, int max)
         cs_draw_prompt_text(line, dots);
         ch = getch();
         if (cs_was_resize(ch)) continue;
+        if (cs_del_scan()) {           /* the DEL key (ESC [ 3 ~) on
+                                        * the terminfo-poor systems */
+            if (n > 0) buf[--n] = '\0';
+            if (dn > 0) dots[--dn] = '\0';
+            continue;
+        }
         if (ch == 27) { cs_prompt_hide(); return -1; }
         if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) break;
-        if (ch == KEY_BACKSPACE || ch == 8 || ch == 127) {
+        if (ch == KEY_BACKSPACE || ch == 8 || ch == 127
+#ifdef KEY_DC
+            || ch == KEY_DC
+#endif
+           ) {
             if (n > 0) buf[--n] = '\0';
             if (dn > 0) dots[--dn] = '\0';
         } else if (ch >= 32 && ch < 127 && n < max - 1) {

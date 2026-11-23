@@ -2287,7 +2287,31 @@ Two user issues, one crash class and one misleading string:
   (syntax-checked here against a cursesX.h stub — the stub caught
   nodelay missing from the list and the const-cast).
 
-## Source map
+- **THE DEL KEY ON ULTRIX (user report 2026-11-23)**: the ULTRIX
+  terminfo lacks kdch1, so the DEL key's escape sequence (ESC [ 3 ~)
+  passes through curses raw — the ESC fired the cancel while
+  `[3~` typed out. THE FIX: `cs_del_scan()` (screen.c, exported) —
+  called right after any ESC is caught, it peeks non-blocking (a
+  lone ESC peeks ERR instantly, no added latency) and consumes
+  ESC [ 3 ~ as the DEL key; anything else ungets back LIFO
+  (skipping ERR) and the ESC acts as before. Applied at FOUR sites:
+  the main loop's ESC (the DEL runs the `;D E` entry-delete) and
+  the three prompt editors (`;S`/`;L`'s prompt_str_core, the coord
+  prompt, the hidden password prompt) — the DEL becomes the field's
+  backspace-left there. ALSO: the prompts never handled the
+  curses-translated KEY_DC at all (the DEL key did nothing in a
+  prompt on ANY platform) — the backspace if-chains gain
+  `|| ch == KEY_DC` (guarded). VERIFIED: the DEL key deletes the
+  current cell (the cursor stays, the `;D E` semantics), the DEL in
+  a prompt backspaces the field, the lone ESC is unchanged. The
+  raw ESC [ 3 ~ path itself is exercised only on ULTRIX (the user
+  verifies there). tools/buildno.sh is now PORTABLE ACROSS THE
+  SHELLS (the user's version): no `$()` substitution (ULTRIX's
+  Bourne sh lacks it), no `$(( ))`, no printf — backticks, expr,
+  test, echo; verified with sh/bash/dash + the corrupt-counter
+  reset + the usage error + the no-op semantics in all three
+  makefiles.
+
 
 | file | responsibility |
 |---|---|
