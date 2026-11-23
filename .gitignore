@@ -25,3 +25,5 @@ CALCSTAR.PRN
 /tests/.scratch/
 /tests/__pycache__/
 /build.gcc/
+/pty
+/hec

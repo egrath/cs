@@ -2523,3 +2523,42 @@ PREVIOUS BATCH (5 items, verified):
   deletes the cell (A1's 2.00 intact, the marks around the empty
   C1). Gates: --test, the idle gate, gcc-14, the DOS build, the
   maxres - all green.
+
+## THE USER'S PTY TOOLS IN tools/ (2026-11-23)
+- tools/pty.c (the master: the forwarding through a pty; the child =
+  argv[1] when given, else ./hec) and tools/hec.c (the slave: the
+  raw-mode hex dumper until the SPACE) - the USER'S byte-level
+  verification tools, now in the tree. Compile: cc tools/pty.c -o pty;
+  cc tools/hec.c -o hec (the root, gitignored). RUN FROM A TERMINAL:
+  ./pty [child] - the keys forwarded, the output byte-transparent.
+  THE NESTED VERIFY: my driver spawns ./pty [./build/calcstar] - the
+  keys through TWO pty layers.
+- THE FIXES ON ADOPTION: (1) the c_cflag |= ~(CS8) BUG in BOTH tools
+  - it ORs the COMPLEMENT of CS8, setting every unrelated c_cflag
+  bit (baud, parity) to garbage; the standard cfmakeraw form now
+  (c &= ~(CSIZE|PARENB); c |= CS8). (2) the winsize default 24x80
+  when TIOCGWINSZ yields 0x0 (the tool run from a script) - the SAME
+  lesson as the python drivers (the 0x0 slave window breaks ncurses).
+  (3) pty's child = the argv override (the calcstar runs).
+- THE NESTED BYTE-LEVEL VERIFY (the user's German-keyboard keys
+  through two pty layers): the Ctrl-^ = 1E, the DEL key =
+  1B 5B 33 7E (the raw ESC [ 3 ~ - the ULTRIX-untranslatable
+  sequence), the arrows = 1B 4F 42 (the application mode - the
+  cursor-mode \E[B is wrong for this terminal), the ^ = 5E, the
+  TAB = 09.
+- THE 0x1E BINDING (the user's tool CONFIRMED the key delivers
+  immediately on the German keyboard): cs.c's case 94 -> case 94 +
+  case 30 (0x1E) for the TEXT/NUMERIC toggle in BOTH contexts (the
+  idle flip + the in-entry pending toggle). THE MANUAL'S ^
+  CONVENTION: the CONTROL key (the cursor movement is ^S/^E/^X/^D/
+  ^Z) - 6.4's data toggle = the CONTROL-^, our old binding (the
+  literal caret) was the misread; BOTH are bound now. The German-
+  keyboard rationale (the user's dump-tool findings): the Zirkumflex
+  key is a DEAD KEY - the first press latches at the IM (the
+  terminal shows the pending ^; NOTHING delivered), the second
+  delivers 0x5E (the pending ^ removed), the focus switch CANCELS
+  the latch (the pattern replays) - the app toggles on every SECOND
+  press; the control-^ fires EVERY press.
+- APP-LEVEL VERIFY (the calcstar through pty through the nested
+  driver): the Ctrl-^ flips the type immediately (the text/numeric
+  round trip), the DEL through the tool deletes the cell.

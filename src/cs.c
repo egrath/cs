@@ -505,7 +505,18 @@ void run_session(void)
             else
                 entry_begin('"');
             break;
-        case 94:                       /* '^' TEXT/NUMERIC DATA TOGLE (manual 6.4) */
+        case 94: case 30:              /* '^' TEXT/NUMERIC DATA TOGLE
+                                          (manual 6.4): the LITERAL
+                                          caret (94) and CONTROL-^ (30
+                                          = 0x1E) - the manuals' ^
+                                          convention is the CONTROL
+                                          key (the cursor movement is
+                                          ^S/^E/^X/^D/^Z), and the
+                                          control-^ fires immediately on
+                                          the German keyboard (the
+                                          literal ^ is a DEAD KEY there:
+                                          the first press latches at the
+                                          IM, the second delivers 0x5E) */
             if (g_editstate == EDIT_EDITING) {
                 g_entry_num = !g_entry_num;   /* pending toggle, live on
                                                  the type line */
