@@ -2293,12 +2293,11 @@ Two user issues, one crash class and one misleading string:
   auto-detected on ULTRIX).
 - help.c's draw_page casts the const pages to char* (ULTRIX's
   waddstr predates const).
-- FLAGGED RISK: curs_set is in neither the header nor possibly the
-  library — the call already falls back on ERR; if the ULTRIX link
-  fails on the symbol, wrap the two calls in #ifdef. The ULTRIX
-  build itself is verified by the user on that machine
-  (syntax-checked here against a cursesX.h stub — the stub caught
-  nodelay missing from the list and the const-cast).
+- FLAGGED RISK (CLOSED): curs_set — the user VERIFIED THE ULTRIX
+  BUILD (2026-11-22: "the ULTRIX changes build cleanly and work as
+  expected") — the symbol exists there; no #ifdef needed. The
+  syntax check here used a cursesX.h stub (it caught nodelay
+  missing from the list and the const-cast).
 
 - **THE DEL KEY ON ULTRIX (user report 2026-11-23)**: the ULTRIX
   terminfo lacks kdch1, so the DEL key's escape sequence (ESC [ 3 ~)
@@ -2334,7 +2333,17 @@ Two user issues, one crash class and one misleading string:
 | `src/eval.c` | `cs_recalc_*` (manual-only), commit path incl. `?` calculator, comments |
 | `src/screen.c` | layout, menu/status rows, `place_cursor`, prompts/messages |
 | `src/command.c` | `;`-commands,	goto, format (0..12), delete dependency check |
-| `src/fileio.c` | CSD4 save/load/merge (origin-anchored), password dialogs |
+| `src/fileio.c` | CSD5 save/load/merge (version-in-the-magic, origin-anchored), CSV save/load, password dialogs, `cs_savename` |
 | `src/print.c` | reports to .TXT (typed name, or `.TXT` auto-extension), PRINTER = `CALCSTAR.PRN` spool, `>name` = `.DTA` records, display; page breaks |
 | `src/help.c` | help pages |
-| `src/main.c` | key loop (arrows, `@` refs, errpend), CLI arg load, `--test` |
+| `src/cs.c` | key loop (arrows, `@` refs, errpend, the context-sensitive DEL), entry engine, `;` menu dispatch, CLI arg load (CSD + CSV dispatch), `--test`, `--genbf` |
+
+Build trees and tools: `Makefile` (OUTDIR-parameterized; `make gcc`
+builds with gcc-14 into build.gcc), `Makefile.wcc` (the OpenWatcom
+DOS target, build.dos), `Makefile.mingw` (the mingw-w64 Windows
+target, build.mingw), `tools/buildno.sh` (the portable build
+counter), `tools/pty.c` + `tools/hec.c` (the user's pty
+verification tools), `docs/functions.txt` (the function reference -
+UPDATE WITH EVERY NEW FUNCTION), `tests/` (the battery: the frame
+harness, the idle gate + reference, the pty driver, the renderer +
+selftest, precision_ref).

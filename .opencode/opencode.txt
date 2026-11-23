@@ -2586,3 +2586,36 @@ PREVIOUS BATCH (5 items, verified):
   DOS build 0 warnings/errors; the mingw build rc=0 zero warnings
   (PE32+ verified); the idle gate MATCH; the maxres 2,703,360 = the
   baseline.
+
+## THE STATE AT PICKUP (2026-11-23, the documentation pass)
+- THE USER VERIFIED: the ULTRIX build clean and working; the Windows
+  (mingw-w64) target adopted; the DOS and gcc-14 gates standing.
+- THE FIVE COMPILERS BUILD ZERO-WARNING: cc/clang (make), gcc-14
+  (make gcc), mingw-w64 (make -f Makefile.mingw), wcc386 (wmake),
+  and ULTRIX's gcc (the user's machine). The four build trees:
+  build/, build.gcc/, build.mingw/, build.dos/ (each gitignored,
+  each clean removes its own or all via make clean for the first
+  two).
+- THE DOCUMENTATION AUDIT (the fixes): the README gained the CSV
+  section, the four-compiler build targets, the Ctrl-^ and the
+  context-sensitive DEL in the keys table, the .csv dispatch note;
+  the AGENTS source map was STALE (src/main.c + CSD4 rows - the
+  rename's map edit had silently failed on the whitespace) - fixed
+  (src/cs.c, CSD5 + the CSV, the build trees and tools paragraph).
+- EVERYTHING ELSE VERIFIED CURRENT: AGENTS.md (the batches through
+  the mingw gate), opencode.txt (this file), docs/functions.txt
+  (the rule: update with every new function), tests/ (the battery),
+  Makefile.wcc/mingw.
+- THE PICKUP PATH: read AGENTS.md first (the rule), then this file's
+  tail. The standing battery: make clean && make; make gcc; make -f
+  Makefile.mingw; . ~/opt/openwatcom/env.txt && wmake -f
+  Makefile.wcc; the maxres (/usr/bin/time -l ./build/calcstar
+  --test, the baseline 2,703,360 +-80KB); the idle gate
+  (tests/idle_gate.py); the frame harness
+  (tests/frame_harness.py /private/tmp/cs_ref - the refdir
+  EXPLICITLY, the default is stale).
+- THE OPEN ITEMS: none known. The user's active interests: the
+  multi-platform verification (the DOS/Windows/ULTRIX binaries run
+  on their machines), the German-keyboard ergonomics (the
+  control-^, the dead-key findings), the performance table (the
+  brainf run on the period hardware).

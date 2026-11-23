@@ -1216,12 +1216,22 @@ version string lives in `CS_VERSION` (cs.h).  The license text is
 ```
 make            # cc -std=c89 -pedantic -Wall ... -lcurses -lm
                 # -> per-file objects and the executable land in build/
-make clean      # removes build/
+make gcc        # the same sources with gcc-14 into build.gcc/ + its
+                # --test run (a second-compiler warning gate)
+make clean      # removes build/ and build.gcc/
 make test       # evaluator + save/load self test (./build/calcstar --test)
 ./build/calcstar
 ./build/calcstar NAME load NAME.csd at startup (also accepts NAME.csd /
-                      NAME.CSD typed with an extension)
+                      NAME.CSD typed with an extension, and NAME.csv -
+                      the CSV path)
 ```
+
+Cross-compile targets, both zero-warning gates like the default
+build: `make -f Makefile.mingw` (Windows, mingw-w64 + PDCurses,
+`build.mingw/calcstar.exe`) and the OpenWatcom DOS build (see
+"Cross compiling with OpenWatcom on Macintosh for MS-DOS" below).
+ULTRIX builds from the same tree with the plain `make` there (the
+Makefile detects ULTRIX and switches to gcc with `-DULTRIX`).
 
 `--test` runs the self-test suite (manual examples: `140%E4`, `120%18.53333`,
 `SUM(L4>L11)` = 2247.04, regression `REGR/SLOPE/PROJ/DEPD`, conditionals,
@@ -1237,7 +1247,8 @@ fields take up to 256 characters (paths included).
 Save-file naming: a bare name gets the lowercase `.csd` appended
 (`pt01 -> pt01.csd`); a typed `.csd`/`.CSD`/`.Csd` tail is kept exactly as
 entered and never doubled (`pt02.csd` saves `pt02.csd`, not
-`pt02.csd.csd`). Load, Merge and the existing-file password probe use the
+`pt02.csd.csd`). A typed `.csv` tail takes the CSV path (see "CSV
+import/export"). Load, Merge and the existing-file password probe use the
 same rule. In the `;S` dialog the `P)artial or A)all` question must be
 answered: any other key re-prompts (originally - pressing RETURN does
 nothing), ESC cancels.
@@ -1355,8 +1366,12 @@ column/row headers move up and the whole layout still fits 24 lines.
 | arrows      | same movement (cursor keys on terminals that send them) |
 | `^Z`       | column A, next row                                |
 | RETURN     | commit entry, cursor stays (move right when idle) |
-| DEL        | delete the current entry (like `;D E`; the ASCII DEL
-              key keeps its backspace role while editing) |
+| DEL        | context-sensitive: while entering, aborts the entry
+              like ESC (the formula beneath is never touched by
+              accident); at idle, delete the current entry (like
+              `;D E`). In the dialogs, the field's backspace.
+              The ASCII DEL key keeps its backspace role while
+              editing |
 | TAB        | Goto  (`Goto> coord`)                             |
 | `;`        | command menu (see below)                          |
 
@@ -1366,6 +1381,11 @@ Coordinates accept **upper or lower case** everywhere they are typed —
 | `=`        | Lock: `R)ow C)ol B)oth` — pin rows/cols; rows show `label*` |
 | `^B`       | Data toggle (formula/value view)                  |
 | ESC        | cancel entry / hide prompts                       |
+| `^`        | the type toggle (manual 6.4): while entering, the
+              pending numeric/text toggle; at idle, the cell's
+              committed type flips immediately. Also CONTROL-^
+              (0x1E, the manual's `^X` convention) — the reliable
+              key on layouts where `^` is a dead key (QWERTZ) |
 | `"`        | toggle text/numeric entry mode                    |
 | `@`        | insert the coordinate of the cell the cursor is on |
 | digits `0-9` `+` `-` `(` `.` | start a numeric entry (formula) |
@@ -1501,6 +1521,28 @@ can no longer load "successfully" with silently emptied cells.
 
 Password: stored as typed and prompted for on load; re-saving over a
 password-protected file asks to verify the password first.
+
+## CSV import/export
+
+A filename with a `.csv` extension (any case) in the `;S`/`;L`/`;M`
+dialogs takes the CSV path; everything else is the CSD format. The
+name is used as typed (no extension is appended).
+
+Export: plain 7-bit ASCII. Numerics are written with **17
+significant digits** — the precision an IEEE-754 double (every other
+spreadsheet) can hold — truncated, trailing zeros trimmed, plain
+decimal in [1e-4, 1e17) and scientific outside. Text is written as
+typed, quoted (with the internal quotes doubled) when it carries a
+comma or a quote. Empty cells are empty fields, trimmed to the used
+range. Records are CRLF-separated.
+
+Import: a UTF-8 BOM is skipped, bytes > 127 are dropped, and a field
+is a number only when the whole field parses as a pure numeric
+literal (`123 pages` stays text). Text commits with no formula
+evaluation; nothing is recalculated. The load anchors at the
+requested corner; `;L` replaces, `;M` overlays. An over-tall or
+over-wide file refuses with `READ ERROR`, an over-budget one with
+`MEMORY IS TOO LOW` — the sheet is untouched.
 
 ## Deviations from the original
 
