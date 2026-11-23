@@ -1,0 +1,33 @@
+#
+# this is the makefile for cross compiling CalcStar from UNIX for Windows
+#
+
+OUTDIR  = build.mingw
+PDCURSES= /Users/egon/opt/pdcurses.mingw
+
+CC      = x86_64-w64-mingw32-gcc
+CFLAGS  = -std=c89 -pedantic -Wall -Wextra -pedantic-errors -I$(OUTDIR) -I$(PDCURSES)
+LDFLAGS = 
+OUTDIR  = build.mingw
+
+OBJS = $(OUTDIR)/num.o $(OUTDIR)/cells.o $(OUTDIR)/parser.o $(OUTDIR)/eval.o \
+      $(OUTDIR)/screen.o $(OUTDIR)/command.o $(OUTDIR)/help.o \
+      $(OUTDIR)/fileio.o $(OUTDIR)/print.o $(OUTDIR)/cs.o
+
+SRCS = src/num.c src/cells.c src/parser.c src/eval.c src/screen.c \
+      src/command.c src/help.c src/fileio.c src/print.c src/cs.c
+
+$(OUTDIR)/calcstar: $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS) $(PDCURSES)/wincon/pdcurses.a
+
+$(OUTDIR)/%.o: src/%.c src/cs.h $(OUTDIR)/buildno.h
+	@mkdir -p $(OUTDIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUTDIR)/buildno.h: $(SRCS) tools/buildno.sh
+	@mkdir -p $(OUTDIR)
+	@sh tools/buildno.sh $(OUTDIR)/buildno.h build.count
+
+clean:
+	rm -rf build.mingw
+

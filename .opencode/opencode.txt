@@ -2562,3 +2562,27 @@ PREVIOUS BATCH (5 items, verified):
 - APP-LEVEL VERIFY (the calcstar through pty through the nested
   driver): the Ctrl-^ flips the type immediately (the text/numeric
   round trip), the DEL through the tool deletes the cell.
+
+## THE MINGW-W64 WINDOWS TARGET (user request, 2026-11-23)
+- The user installed mingw-w64 (system wide - NOTHING to source, unlike
+  OpenWatcom) and wrote Makefile.mingw: x86_64-w64-mingw32-gcc, the
+  SAME pedantic flags as the Unix build (-std=c89 -pedantic -Wall
+  -Wextra -pedantic-errors), PDCurses precompiled at
+  ~/opt/pdcurses.mingw (wincon/pdcurses.a), the binary =
+  build.mingw/calcstar.exe (PE32+ x86-64).
+- THE STANDING BATCH STEP: make -f Makefile.mingw - zero warnings
+  required, like the DOS gate. The four build trees are independent
+  (build, build.gcc, build.mingw, build.dos); the mingw clean removes
+  only build.mingw. The buildno counter: each tree regenerates its
+  header when missing (one bump per tree per full regeneration) - the
+  no-op builds never bump.
+- THE FIRST PASS CAUGHT THREE WARNINGS clang/gcc-14 DON'T: the
+  -Wformat-overflow on the --test's sprintf(t, "%d", ...) into
+  char t[8] (the int can theoretically be 11 chars; the values are
+  1..511, at most 3) - the same class as the dflt[8] -> dflt[16]
+  fix; the buffers widen to 16. ALL FOUR COMPILERS now build
+  zero-warning (cc/clang, gcc-14, wcc386, mingw-w64).
+- GATES: cc rc=0 zero warnings + --test all pass; gcc-14 rc=0; the
+  DOS build 0 warnings/errors; the mingw build rc=0 zero warnings
+  (PE32+ verified); the idle gate MATCH; the maxres 2,703,360 = the
+  baseline.

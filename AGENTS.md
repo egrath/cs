@@ -702,6 +702,19 @@ Batch workflow (do all steps before reporting done):
    platform warnings clang/gcc do not (e.g. Watcom's unsigned time_t,
    its constant-fold W201) — investigate each one and either fix the
    code or document it as a platform note; never just accept it.
+5c2. **The Windows build** — `make -f Makefile.mingw` — zero errors
+   and zero warnings required (x86_64-w64-mingw32-gcc, the same
+   pedantic flags as the Unix build; PDCurses precompiled at
+   ~/opt/pdcurses.mingw, `PDCURSES` in Makefile.mingw; the binary is
+   a PE32+ `build.mingw/calcstar.exe`). The mingw-w64 gcc surfaces
+   the same -Wformat-overflow class clang misses (the int-to-buffer
+   sprintf widths — the first pass caught three `char t[8]` %d
+   sites in the --test seeds; the buffers widen to 16). The four
+   build trees are independent (build, build.gcc, build.mingw,
+   build.dos); `make -f Makefile.mingw clean` removes only
+   build.mingw. The buildno counter bumps once per FULL tree
+   regeneration (each tree's header regenerates when its own is
+   missing) — the no-op builds never bump.
 5d. **The maxres check** (see THE MAXRES CHECK above): `/usr/bin/time -l
    ./build/calcstar --test` — compare against the recorded baseline
    (macOS only; skipped with a note elsewhere).

@@ -766,7 +766,7 @@ static void run_tests(void)
 
     /* regression: y = 2x + 1 over x=1..5 (exact rational result) */
     for (i = 0; i < 5; i++) {
-        char t[8];
+        char t[16];
         sprintf(t, "%d", i + 1);
         setv(0, i, t);
         sprintf(t, "%d", 2 * (i + 1) + 1);
@@ -793,7 +793,7 @@ static void run_tests(void)
     cke("SLOPE() after failure", "SLOPE()", 9);
     /* a valid REGR re-establishes */
     for (i = 0; i < 5; i++) {
-        char t[8];
+        char t[16];
         sprintf(t, "%d", i + 1);
         setv(0, i, t);
         sprintf(t, "%d", 2 * (i + 1) + 1);
@@ -815,7 +815,7 @@ static void run_tests(void)
      * unreachable in practice; the dead arrays are simply gone) */
     cs_clear_all();
     for (i = 0; i < 255; i++) {
-        char t[8];
+        char t[16];
         sprintf(t, "%d", i + 1);
         setv(0, i, t);
         sprintf(t, "%d", 2 * (i + 1) + 1);
