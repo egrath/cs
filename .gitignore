@@ -27,3 +27,5 @@ CALCSTAR.PRN
 /build.gcc/
 /pty
 /hec
+tools/pty
+tools/hec
