@@ -443,9 +443,20 @@ void run_session(void)
         case 27:                       /* ESC */
             /* the DEL key on the terminfo-poor systems arrives as
              * ESC [ 3 ~ (the ULTRIX report, 2026-11-23): the scan
-             * consumes it and the entry is deleted; anything else
-             * ungets back and the ESC acts as before */
+             * consumes it.  THE DEL IS CONTEXT-SENSITIVE (the
+             * user's design, 2026-11-23): during an entry it ABORTS
+             * like ESC - the backspace reading would let a user
+             * delete down to an empty field and have the NEXT DEL
+             * silently delete the formula cell beneath; at idle it
+             * is the ";D E" entry delete.  Anything else ungets back
+             * and the ESC acts as before. */
             if (cs_del_scan()) {
+                if (g_editstate == EDIT_EDITING) {
+                    edit_clear();
+                    cs_prompt_hide();
+                    cs_touch(CS_D_CURSOR | CS_D_STATUS);
+                    break;
+                }
                 cs_free_cell_at(curCol, curRow);
                 cs_recount_entries();
                 cs_mark_sheet_change();
@@ -463,11 +474,22 @@ void run_session(void)
             }
             break;
 #ifdef KEY_DC
-        case KEY_DC:                   /* the keypad DEL: ";D E" */
-            /* the DEL key: delete the current entry (the user's
-             * request, 2026-11-16): the manual's entry delete, no
-             * dependency check, no reference shifts.  The ASCII DEL
-             * (127) stays backspace above. */
+        case KEY_DC:                   /* the keypad DEL */
+            /* the DEL key: CONTEXT-SENSITIVE (the user's design,
+             * 2026-11-23, the same rule as the ESC [ 3 ~ scan
+             * above): during an entry it ABORTS like ESC (the
+             * backspace reading would transition the user into the
+             * ";D E" cell-delete once the field runs empty - the
+             * formula beneath gets deleted by accident); at idle it
+             * is the ";D E" entry delete: the manual's entry delete,
+             * no dependency check, no reference shifts.  The ASCII
+             * DEL (127) stays backspace above. */
+            if (g_editstate == EDIT_EDITING) {
+                edit_clear();
+                cs_prompt_hide();
+                cs_touch(CS_D_CURSOR | CS_D_STATUS);
+                break;
+            }
             cs_free_cell_at(curCol, curRow);
             cs_recount_entries();
             cs_mark_sheet_change();

@@ -2490,3 +2490,36 @@ PREVIOUS BATCH (5 items, verified):
   (the debug-only rule) and must be RECREATED from the session
   memory recipes when needed. pd.py (the working driver) and
   render3.py (the renderer) were recreated this session.
+
+## THE STUCK-ENTRY REGRESSION + THE CONTEXT-SENSITIVE DEL (2026-11-23)
+- THE USER'S REPORTS: the idle ';' no longer opened the command
+  menu, and the "3+3?" calculator stopped working - while the ';'
+  inside an entry still showed in the edit field. THE SINGLE ROOT:
+  the edit state STUCK at EDIT_EDITING - the DEL fix's
+  consumed-sequence branch SKIPPED edit_clear(), so the first DEL
+  pressed during an entry (a natural reflex while typing) left the
+  state editing forever; every ';' then appended and the '?' kept
+  evaluating a stale buffer. The pre-fix ULTRIX behavior cleared
+  the state because the ESC case ran (the leak "worked" that way).
+- THE SEMANTICS (the user's design, with the sharp reasoning): the
+  DEL IS CONTEXT-SENSITIVE - during an entry it ABORTS like ESC
+  (edit_clear + cs_prompt_hide); at idle it is the ";D E" entry
+  delete. THE REASON NOT TO MAKE THE DEL THE BACKSPACE-LEFT IN AN
+  ENTRY: a user deleting down to an empty field would flip the
+  state idle, and the NEXT DEL would silently delete the FORMULA
+  CELL beneath the entry - an accidental data-loss transition; the
+  abort reading eliminates the transition entirely. The PROMPT
+  fields KEEP the DEL = backspace-left (no trap: a prompt has no
+  cell-delete to fall through to; that is what makes DEL work in
+  the ;S/;L fields on ULTRIX).
+- APPLIED AT BOTH DEL PATHS: the cs_del_scan consumption (case 27)
+  AND the curses-translated KEY_DC case - the identical semantics.
+- VERIFIED (the working driver, the RENDERED frames - the probe's
+  first run had the line indices off by one: the type line is
+  index 20, the contents 21, the edit 22, the message 23, the
+  first grid row 7!): the entry in progress -> the DEL aborts ->
+  the ';' opens the menu; the formula cell + the replacement entry
+  -> the DEL aborts with the formula UNTOUCHED -> the idle DEL
+  deletes the cell (A1's 2.00 intact, the marks around the empty
+  C1). Gates: --test, the idle gate, gcc-14, the DOS build, the
+  maxres - all green.
