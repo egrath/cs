@@ -2643,3 +2643,14 @@ PREVIOUS BATCH (5 items, verified):
   in place (the flagged-choice line reversed with the date), and
   the notes carried the whole history (the swapped reads, the A7
   example, the dash count).
+
+## THE STATE AT PICKUP (2026-11-23, the second pass)
+- SINCE the first state entry: the ;W fidelity batch (the text-only
+  heading rule) + the README's ;W description added (the Commands
+  section - the What command's display rule documented).
+- ALL FIVE COMPILERS ZERO-WARNING (cc, gcc-14, mingw-w64, wcc386,
+  ULTRIX's gcc on the user's machine), the standing battery green,
+  the maxres inside the baseline's noise, the git clean/synced at
+  be9ded0+.
+- The pickup path is unchanged: AGENTS.md first, then this file's
+  tail; the standing battery per the AGENTS workflow (steps 1-7).

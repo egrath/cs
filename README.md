@@ -1405,6 +1405,10 @@ E Edge    L Load      Q Quit      G/TAB Goto
 - `;R` recalculates: the worksheet is **not** recalculated automatically when
   an entry is committed (dependent cells keep their old values, just like
   the original). `;R` prompts `Recalculate - A)ll or E)ntry`.
+- `;W` What shows `row, column = <rowTitle>,<colTitle>`: the row title is the
+  cell in column A of the cursor's row, the column title the cell in row 1 of
+  the cursor's column. Only **text** cells appear as titles (as typed); a
+  numeric or empty heading cell shows `---` — faithful to the original.
 - Cycles are not a hang: a formula that references itself (e.g. `+B2` entered
   in B2) evaluates against the current stored values and — if that fails —
   displays `Error 0-> +B2  hit space` on the status row. The application
