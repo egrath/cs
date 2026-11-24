@@ -154,10 +154,16 @@ follow the original. Read this file before changing anything.
   content-based (shown even when the heading row/column is on-screen;
   the earlier "visibility" reading was wrong — the user's A7 example
   decided it).  The two reads were SWAPPED before ("= A1,-" for an
-  empty A7).  Content: text as typed, numbers in their column's
-  display format (numeric headings are a flagged choice), input
-  formulas as "In!", and "---" when the heading cell is empty (three
-  dashes, flagged — the "at least" note used one).
+  empty A7).  **THE CONTENT RULE — BACK TO FIDELITY (user decision,
+  2026-11-23)**: ONLY a text cell shows its contents as typed; a
+  numeric cell (any value, any error), an empty or allocated one
+  shows the manual's "---" (three dashes).  The former "numbers in
+  their column's display format" and the "In!" input-formula token
+  were flagged extensions and are REVERSED here — flagged again per
+  the standing policy: flagged when we deviate, flagged when we
+  return.  A formula whose result is a string STILL shows the string
+  (our derived type is text-valued everywhere — flagged choice, the
+  original had no such cell type).
 - **Per-cell notation: (auto) / (dec) / (sci)** (user-extended
   2026-11, not in the manuals): `;F` gains `N)otation (%s)` showing the
   cell's state in small letters; N cycles `auto → dec → sci → auto`.

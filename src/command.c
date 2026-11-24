@@ -1066,10 +1066,14 @@ static void recalc_cmd(void)
 }
 
 /* ======================= What / Lock / misc ======================== */
-/* the heading content of one cell as the What line shows it (flagged
- * extension 2026-11): text as typed, numbers in the display format of
- * their column, input formulas as "In!" (the window's token), and the
- * manual's "---" when there is no heading at that coordinate */
+/* the heading content of one cell as the What line shows it.  THE
+ * FAITHFUL RULE (user decision 2026-11-23, returning to the paragon):
+ * ONLY a text cell shows its contents as typed - a numeric cell (any
+ * value, any error) shows the manual's "---", as does an empty or
+ * allocated one.  The former "numbers in the display format of their
+ * column" behavior was a flagged extension and is REVERSED here (a
+ * formula whose result is a string still shows the string - our
+ * derived type is text-valued everywhere, flagged choice). */
 static void what_heading(const Cell *c, int col, char *out, int outn)
 {
     out[0] = '\0';
@@ -1079,23 +1083,13 @@ static void what_heading(const Cell *c, int col, char *out, int outn)
         out[outn - 1] = '\0';
         return;
     }
-    if (c->type == CE_NUM) {
-        char buf[64];
-        int prec;
-        if (cs_is_inputf(c)) { strcpy(out, "In!"); return; }
-        /* a string result is the value (the derived type) */
-        if (c->strres) {
-            strncpy(out, c->strres, outn - 1);
-            out[outn - 1] = '\0';
-            return;
-        }
-        prec = (c->prec >= 0) ? c->prec : colp[col];
-        cs_fmt_num(&c->val, 20, prec, c->iserr, c->notation, buf,
-                    (int) sizeof(buf));
-        strncpy(out, buf, outn - 1);
+    if (c->type == CE_NUM && !c->iserr && c->strres) {
+        /* a string result is text-valued (the derived type) */
+        strncpy(out, c->strres, outn - 1);
         out[outn - 1] = '\0';
         return;
     }
+    (void) col;
     strcpy(out, "---");
 }
 

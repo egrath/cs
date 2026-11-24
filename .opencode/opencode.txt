@@ -2619,3 +2619,27 @@ PREVIOUS BATCH (5 items, verified):
   on their machines), the German-keyboard ergonomics (the
   control-^, the dead-key findings), the performance table (the
   brainf run on the period hardware).
+
+## THE ;W HEADING RULE — BACK TO FIDELITY (user decision, 2026-11-23)
+- The user's decision: the ;W line shows a heading ONLY when the
+  cell is a TEXT cell; everything else (numeric, empty, allocated,
+  error) shows the manual's "---". Option A (the faithful rule)
+  over the flagged extension (the numeric display-format titles) -
+  "this feature is rarely used, but when it is, it should behave
+  like our paragon".
+- what_heading (command.c): the CE_TEXT branch keeps the contents;
+  the CE_NUM branch is GONE (the In! token too) - the numerics fall
+  to ---. The derived-string cells (CE_NUM + strres, non-error)
+  STILL show the string (our derived type is text-valued
+  everywhere - flagged choice, the original had no such cell).
+- VERIFIED (the pty, the rendered frames): ---,Hello (the user's
+  scenario); RowTitle,ColTitle (the all-text, IN THE CURSOR'S ROW -
+  my first probe was wrong: the row title reads the cursor's row,
+  so the text must be in THAT row); ---,--- (the all-numeric);
+  ---,--- (the empty column); str,Hello (the derived string);
+  ---,--- (the error cell). The standing battery green (the cc
+  build, --test, the idle gate, gcc-14, the DOS build, the maxres).
+- THE DOCUMENTATION RULE PAID OFF: the AGENTS ;W note was updated
+  in place (the flagged-choice line reversed with the date), and
+  the notes carried the whole history (the swapped reads, the A7
+  example, the dash count).
