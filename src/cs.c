@@ -3090,17 +3090,18 @@ static void run_tests(void)
         cke("CHR 128", "CHR(128)", -1);
         cke("CHR 65.5", "CHR(65.5)", -1);
         cke("CHR 0", "CHR(0)", -1);
-        /* the pass cap (raised to 10000, user decision 2026-11-13,
-         * for long-running state machines like the brainfuck
-         * interpreter) - a never-settling counter runs exactly this
+        /* the pass cap (raised to 1000000, user decision
+         * 2026-11-26: enough even for very long-running programs -
+         * the ESC remains the safety valve, the poll fires between
+         * every pass) - a never-settling counter runs exactly this
          * many passes */
         cs_clear_all();
         setv(0, 0, "0");                        /* A1 = 0: the SET source */
         cs_commit_entry(0, 0, "1:SET(A1,VAL(A1)+1);RECALC();0:0");
         cs_recalc_all();
-        if (cs_recalc_last_passes != 10000)
+        if (cs_recalc_last_passes != 1000000)
             { printf("FAIL pass cap (%d)\n", cs_recalc_last_passes); fails++; }
-        else printf("ok   the pass cap: 10000 passes\n");
+        else printf("ok   the pass cap: 1000000 passes\n");
         /* the formula SURVIVES the self-targeting SET (2026-11-13) */
         if (!tread(0, 0)->cont ||
             strcmp(tread(0, 0)->cont, "1:SET(A1,VAL(A1)+1);RECALC();0:0"))

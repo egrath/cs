@@ -2654,3 +2654,24 @@ PREVIOUS BATCH (5 items, verified):
   be9ded0+.
 - The pickup path is unchanged: AGENTS.md first, then this file's
   tail; the standing battery per the AGENTS workflow (steps 1-7).
+
+## THE PASS CAP 1000000 (user decision, 2026-11-26)
+- The configurable-limit discussion (the "Limit ? 10000" prompt) was
+  SUPERSEDED by the user's simpler decision: raise CS_MAX_PASSES
+  10000 -> 1000000. The rationale: enough for very long-running
+  programs; the ESC is the safety valve (the poll fires between
+  every pass - a runaway iteration is always interruptible; the
+  "Calculating ... (pass N)" line shows the runaway live).
+- The int pass counter and the %d message hold 1000000 on all the
+  compilers (the 32-bit ints incl. Watcom's -mf flat model).
+- The --test pin (the never-settling counter "1:SET(A1,VAL(A1)+1);
+  RECALC();0:0") updated to 1000000 - it now doubles as the
+  cap-performance probe: a million passes HEADLESS in ~6s (the
+  M1). The interactive cost: the per-pass paints make the
+  interactive million-pass run slower (the 386DX-33's per-pass
+  ~0.125s => the cap would be ~35 hours there - the ESC is the
+  user's control).
+- The README's two 10000-pass mentions updated to 1000000.
+- GATES: all four compilers zero-warning, --test all pass (the pin
+  included), the idle gate MATCH, the renderer selftest FAILS: 0,
+  the maxres 2,719,744 (the noise range).

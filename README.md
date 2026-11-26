@@ -703,7 +703,8 @@ selected branch executes):
 
 `RECALC()` requests recalculation passes; the drivers (entry commit,
 `;R`) iterate whole-sheet passes until nothing changes, the
-10000-pass limit (raised for long state machines), or ESC.  The
+1000000-pass limit (raised for very long-running state
+machines; ESC interrupts at every pass), or ESC.  The
 change detection is honest: an SET that writes the *same* value does
 not keep the iteration alive, so an always-true SET branch like the
 first example settles immediately under `;R A`.  Two formulas
@@ -1032,7 +1033,7 @@ walks pc to the end and stops via the halt cell); `.` needs the tape
 byte in 32..127 (`CHR`'s domain); `,` needs enough input characters
 in column T (running out stalls the machine with an error cell);
 the tape is 250 rows deep and the output column is 255 rows — a
-long-running loop can hit the 10000-pass recalculation cap, which
+long-running loop can hit the 1000000-pass recalculation cap, which
 shows `Recalculation limit reached` and leaves the machine's state
 intact for another `;R A`.
 

@@ -20,8 +20,13 @@ void cs_mark_sheet_change(void)
     cs_sheet_changed = 1;
 }
 
-/* the safeguard limits and the interruption message (flagged strings) */
-#define CS_MAX_PASSES 10000
+/* the safeguard limit and the interruption message (flagged strings).
+ * 1000 (the original) -> 10000 (2026-11-13, the long state machines)
+ * -> 1000000 (2026-11-26, the user's decision: enough even for very
+ * long-running programs; the ESC remains the safety valve - the poll
+ * fires between every pass, so a runaway iteration is always
+ * interruptible). */
+#define CS_MAX_PASSES 1000000
 
 /* re-evaluate a single numeric cell (input-formula cells excluded) */
 /* error-cell queue: filled by the last Recalculate, in the same order

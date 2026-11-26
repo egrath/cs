@@ -2353,3 +2353,16 @@ verification tools), `docs/functions.txt` (the function reference -
 UPDATE WITH EVERY NEW FUNCTION), `tests/` (the battery: the frame
 harness, the idle gate + reference, the pty driver, the renderer +
 selftest, precision_ref).
+
+- **THE PASS CAP RAISED TO 1000000 (user decision, 2026-11-26)**:
+  CS_MAX_PASSES 10000 -> 1000000 (the history: 1000 -> 10000
+  2026-11-13 -> 1000000). The rationale: enough even for very
+  long-running programs, and the ESC remains the safety valve - the
+  poll fires between every pass, so a runaway iteration is always
+  interruptible (the "no-limit" idea was superseded by this: a
+  generous cap + the interruptible loop beats an unbounded one).
+  The int pass counter and the %d pass message hold 1000000 on all
+  the targets (the 32-bit ints on every compiler incl. Watcom's
+  -mf). The README's two 10000-pass mentions updated; the --test
+  pin (the never-settling counter) runs 1000000 passes headless in
+  ~6s - the pin now doubles as the cap-performance probe.
