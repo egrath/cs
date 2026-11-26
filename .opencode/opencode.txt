@@ -2724,3 +2724,32 @@ PREVIOUS BATCH (5 items, verified):
   and pushed (the first batch through the branch rule).  The README
   mandel chapter is now the full treatment (BASIC source, layout,
   the 12 formulas verbatim, the pass walkthrough, running recipe).
+
+## THE DOC AUDIT (2026-11-26, straight to master per the branch rule)
+- The user asked "is everything up to date documentation wise" — the
+  audit found three gaps, all fixed: (1) AGENTS.md's source-map
+  src/cs.c line now names the example builders
+  (bf_build, fractal_build/fd_mach) and both genprobes;
+  (2) the maxres --test baseline block updated 2,703,360 ->
+  2,801,664 (the mandel fixtures; the old number stays as history in
+  the mandel record); (3) the README build comment dropped the
+  long-removed -lm (LDLIBS = -lcurses only).
+- NEW BASELINE LINE: the mandel example loaded + ;R A to halt
+  interactive maxres = 2,293,760 bytes (measured via a pty +
+  /usr/bin/time; the probe recipe: pump ;R A, wait for 2s of output
+  silence (the settle), then ;Q + Y at "verify Y/N - " for a CLEAN
+  exit - killing the app SIGTERM style leaves /usr/bin/time's report
+  unwritten or the wait blocked; the quit flow is the reliable exit).
+- docs/functions.txt re-verified complete: all 96 parser fn-chain
+  names documented.
+- TESTMODE SPLIT: DEFERRED to the bucket list (the user's decision).
+  The settled design, for a future pickup: guard run_tests + helpers
+  + fixture builders (bf_build/fractal_build/fd_mach/fd_ref) + the
+  --genbf/--genfractal genprobes + the test-only exports
+  (cs_last_msg, cs_dep_check_range) under #ifdef TESTMODE; default
+  targets stay production; `make test` variants build SEPARATE trees
+  (build.test/build.gcc.test/build.mingw.test + a DOS compile-only
+  variant); EVERY batch must still compile the TESTMODE variant
+  zero-warning under clang + gcc-14 (and the DOS gate) so the
+  guarded code cannot rot.  Win: ~80-120 KB of text off every
+  binary, most meaningfully the DOS4GW .exe.

@@ -1340,7 +1340,7 @@ version string lives in `CS_VERSION` (cs.h).  The license text is
 ## Build & run
 
 ```
-make            # cc -std=c89 -pedantic -Wall ... -lcurses -lm
+make            # cc -std=c89 -pedantic -Wall ... -lcurses
                 # -> per-file objects and the executable land in build/
 make gcc        # the same sources with gcc-14 into build.gcc/ + its
                 # --test run (a second-compiler warning gate)

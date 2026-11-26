@@ -487,9 +487,12 @@ Batch workflow (do all steps before reporting done):
   platform"), never approximated.  The baselines are
   MACHINE-SPECIFIC and live here (macOS arm64, 2026-11-17):
   - `--test` (the worst-case fixtures: the 4000-cell seeds, the CSV
-    batteries): **2,703,360** bytes — reproducible
+    batteries): **2,801,664** bytes — reproducible (raised from
+    2,703,360 by the mandel fixtures, 2026-11-26)
   - the idle interactive pty session: **1,720,320** bytes
   - the brainf example loaded + `;R A` to halt: **1,998,848** bytes
+  - the mandel example loaded + `;R A` to halt (the full grid built):
+    **2,293,760** bytes (2026-11-26)
   The interactive runs are probed via the pty driver with
   `/usr/bin/time -l -o FILE` (the -o keeps the report out of the pty
   stream).  A batch whose maxres jumps beyond a reasonable margin
@@ -2347,7 +2350,7 @@ Two user issues, one crash class and one misleading string:
 | `src/fileio.c` | CSD5 save/load/merge (version-in-the-magic, origin-anchored), CSV save/load, password dialogs, `cs_savename` |
 | `src/print.c` | reports to .TXT (typed name, or `.TXT` auto-extension), PRINTER = `CALCSTAR.PRN` spool, `>name` = `.DTA` records, display; page breaks |
 | `src/help.c` | help pages |
-| `src/cs.c` | key loop (arrows, `@` refs, errpend, the context-sensitive DEL), entry engine, `;` menu dispatch, CLI arg load (CSD + CSV dispatch), `--test`, `--genbf` |
+| `src/cs.c` | key loop (arrows, `@` refs, errpend, the context-sensitive DEL), entry engine, `;` menu dispatch, CLI arg load (CSD + CSV dispatch), `--test`, the example builders (`bf_build`, `fractal_build`/`fd_mach`) with the `--genbf`/`--genfractal` genprobes |
 
 Build trees and tools: `Makefile` (OUTDIR-parameterized; `make gcc`
 builds with gcc-14 into build.gcc), `Makefile.wcc` (the OpenWatcom
