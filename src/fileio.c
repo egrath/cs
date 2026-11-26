@@ -532,8 +532,14 @@ int cs_load(const char *name, int c0, int r0, int merge)
         /* the RANGES are enforced (the user's memory-safety report,
          * 2026-11-16): a corrupt width (0..255 raw) fed every
          * downstream render buffer - the manual's Format-command
-         * range 3..63 clamps, the precision caps at CS_MAX_P */
-        colw[c] = (a < 3) ? 3 : ((a > CS_MAX_W) ? CS_MAX_W : a);
+         * range 3..63 clamps, the precision caps at CS_MAX_P.
+         * 2026-11-26 (the mandel batch, flagged): the LOWER bound
+         * relaxed to 1 - the fractal example ships width-1 columns
+         * so its character grid shows compactly; the render paths
+         * are width-safe down to 1 (the text clip, the (dec) head
+         * rule, the !n! token all bound to the width).  The
+         * interactive width command still enforces 3..63. */
+        colw[c] = (a < 1) ? 1 : ((a > CS_MAX_W) ? CS_MAX_W : a);
         colp[c] = (b < 0) ? 0 : ((b > CS_MAX_P) ? CS_MAX_P : b);
     }
     pwlen = fgetc(f);

@@ -728,6 +728,11 @@ Batch workflow (do all steps before reporting done):
    the definition of done (see Read first, item 4).
 7. **Commit the finished work to git with a meaningful message**
    (batch-level: what changed and why), **then push to `master`**.
+   **THE BRANCH RULE (user, 2026-11-26) supersedes the push**: a
+   SOURCE-CODE-CHANGING batch commits to a NEW BRANCH and is NOT
+   pushed — the user tests the branch build, and only on their OK is
+   the branch merged to `master` and pushed to GitHub.  Documentation-only
+   changes may go straight to `master`.
    Check `git status --short` first so only intended files land in the
    commit; scratch fixtures (t_*.csd, pty files) must never be committed.
 
@@ -2366,3 +2371,66 @@ selftest, precision_ref).
   -mf). The README's two 10000-pass mentions updated; the --test
   pin (the never-settling counter) runs 1000000 passes headless in
   ~6s - the pin now doubles as the cap-performance probe.
+
+## THE MANDELBROT FRACTAL (user request 2026-11-26, branch "mandel")
+
+The user's 1982 BASIC program (an escape-time Mandelbrot over a
+71x25 character grid) implemented as a formula state machine and
+shipped as `examples/mandel.csd` — the brainf pattern (the pristine
+machine; load + `;R A` runs it).
+
+- **The machinery**: 12 formula cells in row 29, columns B..M
+  (`fd_mach[]` + `fractal_build()` in cs.c).  State in row 28: A28 X,
+  B28 Y, C28/D28 the complex pair A/B, E28 I, F28 mode (0=init-c,
+  1=init-z, 2=run, 3=halt), G28/H28 the constants C1/C2, I28 T,
+  J28 M (=A^2+B^2), K28 the advance flag.  C1=(X-35)*0.0458,
+  C2=(Y-12)*0.08333; the escape char is CHR(48+I+7*(I>9)) (the
+  BASIC's I=I+7 offset: 0-9 then A-F), 16 iterations without escape
+  write CHR(32).  The output: one character per cell, rows 1..25 x
+  columns A..BW, via SET(REF(VAL(A28)+1,VAL(B28)+1),...) — grid
+  coordinates as DATA, the REF policy exactly right.
+- **THE MODE-CHAIN LESSON (the one bug found)**: the chain fires DOWN
+  the row within one pass (B29 sets mode 1, C29 sees it and sets
+  mode 2, the run formulas iterate the same pass — init + the first
+  iteration share a pass).  The FIRST version never reset the mode
+  for the next point: after a point completed, mode stayed 2 and
+  every pass iterated the stale A/B once more, escaping at I=0
+  forever (1776 passes, all "0", A growing double-exponentially to
+  9.9E+826).  FIX: the advance pass (M29) sets mode
+  (Y=25)*3 — 0 for the next point, 3 to halt.  11511 passes.
+- **THE BASIC'S ITERATION STARTS AT z0 = c** (lines 50-60 seed A=C1,
+  B=C2 BEFORE the FOR I loop) — not z0 = 0; the reference matches.
+- **THE EXACT REFERENCE**: the full 71x25 raster is pinned in --test
+  against a 40-digit truncated-decimal Python computation (the
+  engine's own discipline) — the truncated 30-digit engine agreed
+  with the 40-digit reference on all 1775 escape decisions.  (The
+  BASIC's binary floats could differ at razor-thin boundaries; our
+  exact BCD is the more honest machine.)  Pins: the exact pass count
+  11511, the halt state, all 1775 cells CE_TEXT with 1-char content,
+  all 25 rows verbatim, plus the PRISTINE ROUND TRIP: rebuild, bake
+  widths, save All-mode, load, run — the grid reproduces (the
+  shipped file's exact recipe).
+- **THE LOADER WIDTH RELAXATION (flagged deviation)**: the CSD loader
+  accepts column widths 1..63 (was: clamped to 3..63).  The width
+  COMMAND still enforces 3..63; a narrower width in a FILE is legal —
+  `examples/mandel.csd` ships width-1 columns so the raster shows
+  compactly (71 columns x 2 chars = ~142 columns of terminal).  The
+  render paths are width-safe down to 1 (the text clip, the (dec)
+  head rule, the !n! token all bound to the width).  The --test
+  round-trip pin covers it.
+- **--genfractal** (cs.c, the --genbf pattern): builds the pristine
+  machine, bakes colw[0..70] = 1, saves examples/mandel.csd All-mode.
+  Re-run after any storage-layout change.
+- **The BASIC's trailing "took: n seconds"** is not reproducible (no
+  clock in the formula engine) — the one documented omission.
+- **Timing**: 11511 passes ~1 s headless per run in --test (--test
+  total 9.2 s); interactive with the live per-pass repaints ~8.7 s on
+  the M1 (446 KB of pty traffic, ~39 B/pass).  On the 386DX-33
+  budget minutes; ESC interrupts at every pass and `;R A` resumes
+  from the exact interrupted state (pty-verified end to end).
+- VERIFIED: --test all pass; the idle gate MATCH; the renderer
+  selftest clean; all four compilers zero-warning; maxres --test
+  2,801,664 (+98 KB over the 2,703,360 baseline — the new ~1800-cell
+  fixture, in scope); the pty shows the full grid (170-wide
+  terminal), the ESC interrupt, and the resume completing rows
+  7..25.  docs/functions.txt unchanged (no new functions).

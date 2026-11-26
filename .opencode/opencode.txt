@@ -2675,3 +2675,44 @@ PREVIOUS BATCH (5 items, verified):
 - GATES: all four compilers zero-warning, --test all pass (the pin
   included), the idle gate MATCH, the renderer selftest FAILS: 0,
   the maxres 2,719,744 (the noise range).
+
+## THE MANDELBROT FRACTAL + THE BRANCH RULE (2026-11-26, branch "mandel")
+
+- **THE BRANCH RULE (user, 2026-11-26 — WRITE EVERYWHERE, IT BINDS ALL
+  FUTURE BATCHES)**: source-code-changing modifications are built on
+  a NEW BRANCH and are NOT pushed to GitHub.  The user tests the
+  branch build; only on their OK do we merge to master and push.
+  Documentation-only changes may go straight to master.  AGENTS.md's
+  workflow step 7 carries the rule.  THIS batch (mandel) is the first
+  under it: committed on the branch, unpushed, awaiting the user's
+  test of examples/mandel.csd.
+- The fractal: the user's 1982 BASIC escape-time program as a
+  12-formula state machine (fd_mach[] + fractal_build() in cs.c, the
+  brainf pattern).  State row 28 (A28 X, B28 Y, C28/D28 A/B, E28 I,
+  F28 mode 0=init-c/1=init-z/2=run/3=halt, G28/H28 C1/C2, I28 T,
+  J28 M, K28 advance flag), machinery row 29 B..M.  Output: one char
+  per cell, rows 1..25 x columns A..BW, via
+  SET(REF(VAL(A28)+1,VAL(B28)+1),CHR(48+I+7*(I>9))) (interior = CHR(32)).
+- THE BUG CLASS: the mode chain fires DOWN the row within one pass;
+  the first version never reset the mode after a point (mode stayed
+  2, every pass iterated stale A/B, escaped at I=0 forever — 1776
+  passes, all "0", A -> 9.9E+826).  The advance pass sets mode (Y=25)*3.
+- THE REFERENCE: exact 40-digit truncated-decimal Python
+  (/tmp/mandel/ref2.py — wiped between sessions; the pinned grid
+  lives in src/cs.c as fd_ref[25]).  11511 passes; all 1775 decisions
+  match the truncated 30-digit engine.  THE BASIC SEEDS z0 = c
+  (A=C1,B=C2 before the loop) — not z0 = 0.
+- THE LOADER WIDTH RELAXATION (flagged): fileio.c accepts widths
+  1..63 (was 3..63); the width COMMAND unchanged.  mandel.csd bakes
+  colw[0..70]=1 (71 cols x 2 chars ~ 142 terminal columns).
+- --genfractal regenerates examples/mandel.csd (pristine, All-mode).
+- Timing: 11511 passes ~1s headless, ~8.7s interactive (M1, live
+  per-pass repaints, ~39 B/pass = 446 KB).  ESC interrupts; ;R A
+  resumes from the exact state (pty-verified).
+- PTY GOTTCHA (mine): after an interrupt or a completed run, a stray
+  SPACE keystroke STARTS A TEXT ENTRY (idle space = data) — the next
+  ';' then types INTO the entry.  Probe scripts must not send
+  trailing spaces; the app was right.
+- GATES: --test all pass (9.2s), the idle gate MATCH, the renderer
+  selftest clean, four compilers zero-warning, maxres --test
+  2,801,664 (+98 KB, the new ~1800-cell fixture, in scope).

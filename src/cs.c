@@ -690,6 +690,72 @@ static void bf_build(const char *prog, const char *inp)
         }
 }
 
+/* the Mandelbrot fractal machinery (user request 2026-11-26): the
+ * BASIC program's escape-time iteration over a 71x25 grid (X = -35..
+ * 35 -> C1 = X*0.0458, Y = -12..12 -> C2 = Y*0.08333, 16 iterations,
+ * the escape count printed as 0-9 then A-F via the +7 offset, the
+ * interior as a space).  One pass = one iteration step; 12 formula
+ * cells in row 29, columns B..M, evaluated left to right - the
+ * brainfuck pattern.  State in row 28: A28 X, B28 Y, C28 A, D28 B,
+ * E28 I, F28 mode (0=init-c 1=init-z 2=run 3=halt), G28 C1, H28 C2,
+ * I28 T, J28 M (=A^2+B^2), K28 the advance flag.  The output: one
+ * character per cell, rows 1..25 x columns A..BW, written through
+ * SET(REF(VAL(A28)+1,VAL(B28)+1),...) - the grid coordinates are
+ * DATA, so the REF policy (never renumbered) is exactly right.
+ * The BASIC's "took: n seconds" line is not reproducible (no clock
+ * in the formula engine) - the one documented omission.
+ * The mode chain fires DOWN the row within one pass (B29 sets mode 1,
+ * C29 sees it and sets mode 2, D29.. run the first iteration), so
+ * init and the first iteration share a pass. */
+static const char *fd_mach[12] = {
+    /* B29: init-c (mode 0): C1, C2 from X, Y; mode -> 1 */
+    "+(VAL(F28)=0):SET(G28,(VAL(A28)-35)*0.0458);SET(H28,(VAL(B28)-12)*0.08333);SET(F28,1);0:0",
+    /* C29: init-z (mode 1): A = C1, B = C2, I = 0, flag = 0; mode -> 2 */
+    "+(VAL(F28)=1):SET(C28,VAL(G28));SET(D28,VAL(H28));SET(E28,0);SET(K28,0);SET(F28,2);0:0",
+    /* D29: T = A^2 - B^2 + C1 (the old A, B) */
+    "+(VAL(F28)=2):SET(I28,VAL(C28)*VAL(C28)-VAL(D28)*VAL(D28)+VAL(G28));0:0",
+    /* E29: B = 2AB + C2 (the old A, the old B) */
+    "+(VAL(F28)=2):SET(D28,2*VAL(C28)*VAL(D28)+VAL(H28));0:0",
+    /* F29: A = T */
+    "+(VAL(F28)=2):SET(C28,VAL(I28));0:0",
+    /* G29: M = A^2 + B^2 (the NEW A, B) */
+    "+(VAL(F28)=2):SET(J28,VAL(C28)*VAL(C28)+VAL(D28)*VAL(D28));0:0",
+    /* H29: escape write: 48+I, +7 above 9 (the BASIC's I=I+7) */
+    "+(VAL(F28)=2)*(VAL(J28)>4):SET(REF(VAL(A28)+1,VAL(B28)+1),CHR(48+VAL(E28)+7*(VAL(E28)>9)));SET(K28,1);0:0",
+    /* I29: interior write: 16 iterations without escape -> space */
+    "+(VAL(F28)=2)*(VAL(J28)<=4)*(VAL(E28)=15):SET(REF(VAL(A28)+1,VAL(B28)+1),CHR(32));SET(K28,1);0:0",
+    /* J29: continue: I = I+1, the advance flag stays 0 */
+    "+(VAL(F28)=2)*(VAL(J28)<=4)*(VAL(E28)<15):SET(E28,VAL(E28)+1);SET(K28,0);0:0",
+    /* K29: X advance (the flag gates it): X+1, wrapping 70 -> 0 */
+    "+(VAL(F28)=2)*(VAL(K28)=1):SET(A28,(VAL(A28)+1)*(VAL(A28)<70));0:0",
+    /* L29: Y advance at the wrap (the fresh X is 0) */
+    "+(VAL(F28)=2)*(VAL(K28)=1)*(VAL(A28)=0):SET(B28,VAL(B28)+1);0:0",
+    /* M29: the advance resets the mode: 0 = the next point's init-c
+     * fires on the next pass; 3 = halt after the last row's wrap (the
+     * fresh Y is 25 - L29 already ran) */
+    "+(VAL(F28)=2)*(VAL(K28)=1):SET(F28,(VAL(B28)=25)*3);0:0"
+};
+
+/* build the fractal sheet: the pristine state machine (load + ;R A
+ * runs it) */
+static void fractal_build(void)
+{
+    int i;
+    cs_clear_all();
+    setv(0, 27, "0");                    /* A28 X */
+    setv(1, 27, "0");                    /* B28 Y */
+    setv(2, 27, "0");                    /* C28 A */
+    setv(3, 27, "0");                    /* D28 B */
+    setv(4, 27, "0");                    /* E28 I */
+    setv(5, 27, "0");                    /* F28 mode */
+    setv(6, 27, "0");                    /* G28 C1 */
+    setv(7, 27, "0");                    /* H28 C2 */
+    setv(8, 27, "0");                    /* I28 T */
+    setv(9, 27, "0");                    /* J28 M */
+    setv(10, 27, "0");                   /* K28 advance flag */
+    for (i = 0; i < 12; i++) cs_commit_entry(1 + i, 28, fd_mach[i]);
+}
+
 /* the tests' allocation helper: alloc or die (the budget is never
  * reached by the test sheets) */
 /* window-scroll check: 1 on failure (added to `fails` by the caller) */
@@ -3184,6 +3250,115 @@ static void run_tests(void)
         }
         cs_clear_all();
         {
+        static const char *fd_ref[25] = {
+    "00011111111111111111122222233347E7AB32222211110000000000000000000000000",
+    "01111111111111111122222222333557BF7543322221111100000000000000000000000",
+    "11111111111111112222222233445C      64333222211111000000000000000000000",
+    "11111111111111222222233444556C      65443333221111110000000000000000000",
+    "1111111111112222233346 D978 BCF    DF9 6556F422111111000000000000000000",
+    "11111111122223333334469                 D   632211111100000000000000000",
+    "111111222333333334457DB                    8533211111110000000000000000",
+    "1122234B744444455556A                      9653221111111000000000000000",
+    "22233347BAA7AB776679                         A3221111111000000000000000",
+    "233334567        9A                         A53222111111100000000000000",
+    "33346679                                    943222111111100000000000000",
+    "45568  F                                   B543222111111100000000000000",
+    "                                          86433222111111100000000000000",
+    "45568  F                                   B543222111111100000000000000",
+    "33346679                                    943222111111100000000000000",
+    "233334567        9A                         A53222111111100000000000000",
+    "22233347BAA7AB776679                         A3221111111000000000000000",
+    "1122234B744444455556A                      9653221111111000000000000000",
+    "111111222333333334457DB                    8533211111110000000000000000",
+    "11111111122223333334469                 D   632211111100000000000000000",
+    "1111111111112222233346 D978 BCF    DF9 6556F422111111000000000000000000",
+    "11111111111111222222233444556C      65443333221111110000000000000000000",
+    "11111111111111112222222233445C      64333222211111000000000000000000000",
+    "01111111111111111122222222333557BF7543322221111100000000000000000000000",
+    "00011111111111111111122222233347E7AB32222211110000000000000000000000000",
+        };
+
+        /* THE MANDELBROT FRACTAL (user request 2026-11-26): the BASIC
+         * program's escape-time iteration as a formula state machine
+         * (12 formulas in row 29 - the brainf pattern).  The exact
+         * grid reference above was computed with 40-digit truncated
+         * decimal arithmetic (the engine's discipline); the whole
+         * 71x25 raster is pinned. */
+        fractal_build();
+        cs_recalc_all();
+        {
+            int rr, cc, bad = 0, npop = 0;
+            char line[72];
+            if (cs_recalc_last_passes != 11511)
+                { printf("FAIL fractal passes (%d)\\n",
+                         cs_recalc_last_passes); fails++; }
+            if (tread(5, 27)->val.nd[0] != 3)
+                { printf("FAIL fractal halt (mode cell)\n"); fails++; bad = 1; }
+            for (rr = 0; rr < 25 && !bad; rr++) {
+                for (cc = 0; cc < 71; cc++) {
+                    Cell *gc = tread(cc, rr);
+                    if (!gc->cont || gc->type != CE_TEXT ||
+                        (int) strlen(gc->cont) != 1) {
+                        printf("FAIL fractal cell (%d,%d)\n", cc, rr);
+                        fails++; bad = 1; break;
+                    }
+                    npop++;
+                    line[cc] = gc->cont[0];
+                }
+                line[71] = '\0';
+                if (!bad && strcmp(line, fd_ref[rr])) {
+                    printf("FAIL fractal row %d\nwant %s\ngot  %s\n",
+                           rr + 1, fd_ref[rr], line);
+                    fails++; bad = 1;
+                }
+            }
+            if (!bad && npop != 1775)
+                { printf("FAIL fractal pop %d\n", npop); fails++; }
+            else if (!bad)
+                printf("ok   fractal: the full 71x25 grid matches "
+                       "(%d passes, halted)\n", cs_recalc_last_passes);
+            /* the pristine round trip (the shipped file's exact
+             * recipe): rebuild, bake the width-1 columns, save
+             * All-mode, load, run - the grid must reproduce */
+            fractal_build();
+            for (cc = 0; cc < 71; cc++) colw[cc] = 1;
+            if (!cs_save("t_mandel", 0, 0, CS_MAXCOL - 1,
+                         CS_MAXROW - 1, "")) {
+                printf("FAIL fractal save\n"); fails++;
+            }
+            cs_clear_all();
+            colw[0] = 9;        /* the load must set it back to 1 */
+            if (!cs_load("t_mandel", 0, 0, 0)) {
+                printf("FAIL fractal load\n"); fails++;
+            } else {
+                if (colw[0] != 1 || colw[70] != 1 || colw[71] != CS_DEF_W)
+                    { printf("FAIL fractal widths (%d %d %d)\n",
+                             colw[0], colw[70], colw[71]); fails++; }
+                cs_recalc_all();
+                if (cs_recalc_last_passes != 11511)
+                    { printf("FAIL fractal rereun passes (%d)\n",
+                             cs_recalc_last_passes); fails++; }
+                for (rr = 0; rr < 25 && !bad; rr++) {
+                    for (cc = 0; cc < 71; cc++) {
+                        Cell *gc = tread(cc, rr);
+                        if (!gc->cont || gc->type != CE_TEXT)
+                            { printf("FAIL rereun cell (%d,%d)\n",
+                                     cc, rr); fails++; bad = 1; break; }
+                        line[cc] = gc->cont[0];
+                    }
+                    line[71] = '\0';
+                    if (!bad && strcmp(line, fd_ref[rr]))
+                        { printf("FAIL rereun row %d\n", rr + 1);
+                          fails++; bad = 1; }
+                }
+                if (!bad)
+                    printf("ok   the loaded mandel.csd reruns the "
+                           "grid (widths baked)\n");
+            }
+        }
+        }
+        cs_clear_all();
+        {
             Csn r;
             char *sf = NULL;
             char gg[48];
@@ -4630,6 +4805,24 @@ int main(int argc, char **argv)
             return 1;
         }
         printf("genbf: examples/brainf.csd written\n");
+        return 0;
+    }
+    /* the fractal generator (2026-11-26): builds the Mandelbrot
+     * machinery and saves examples/mandel.csd All-mode in the PRISTINE
+     * state (load + ;R A runs the machine - the brainf parallel).
+     * The 71 output columns A..BW are baked to WIDTH 1 so the grid
+     * shows as a compact character raster (the loader accepts 1..63 -
+     * see fileio.c; the interactive width command stays 3..63). */
+    if (argc > 1 && strcmp(argv[1], "--genfractal") == 0) {
+        cs_headless = 1;
+        fractal_build();
+        for (i = 0; i < 71; i++) colw[i] = 1;
+        if (!cs_save("examples/mandel.csd", 0, 0,
+                     CS_MAXCOL - 1, CS_MAXROW - 1, NULL)) {
+            printf("genfractal: save failed\n");
+            return 1;
+        }
+        printf("genfractal: examples/mandel.csd written\n");
         return 0;
     }
     /* optional file argument: load at startup.  The name is used as
