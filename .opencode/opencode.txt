@@ -2716,3 +2716,11 @@ PREVIOUS BATCH (5 items, verified):
 - GATES: --test all pass (9.2s), the idle gate MATCH, the renderer
   selftest clean, four compilers zero-warning, maxres --test
   2,801,664 (+98 KB, the new ~1800-cell fixture, in scope).
+- USER DECISIONS 2026-11-26: the faithful width minimum stays — the
+  ;F command keeps 3..63 ("Width must be 3 - 63"), narrow widths are
+  a FILE-only property through the loader's 1..63 acceptance (a
+  widened mandel column can't be hand-narrowed; --genfractal
+  regenerates).  The user tested the branch OK -> merged to master
+  and pushed (the first batch through the branch rule).  The README
+  mandel chapter is now the full treatment (BASIC source, layout,
+  the 12 formulas verbatim, the pass walkthrough, running recipe).

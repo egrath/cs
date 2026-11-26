@@ -2434,3 +2434,13 @@ machine; load + `;R A` runs it).
   fixture, in scope); the pty shows the full grid (170-wide
   terminal), the ESC interrupt, and the resume completing rows
   7..25.  docs/functions.txt unchanged (no new functions).
+- **THE USER'S DECISIONS (2026-11-26, tested OK)**: the interactive
+  width command KEEPS the faithful `3 - 63` minimum (the user asked;
+  the discussion settled it — narrow widths exist ONLY in generated
+  files via the loader's 1..63 acceptance; a widened mandel column
+  cannot be hand-set back to 1, re-run --genfractal instead).  The
+  README's mandel chapter now documents the example in full (the
+  BASIC source, the sheet layout, all 12 formulas verbatim, the pass
+  walkthrough, the running recipe) — the brainf chapter's treatment.
+  The branch merged to master and pushed on the user's OK (the first
+  batch through the branch rule).

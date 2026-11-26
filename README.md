@@ -1107,47 +1107,114 @@ The BASIC program
 205 PRINT CHR$(48+I);       210/220/230 NEXT / PRINT / NEXT
 ```
 
-becomes a 12-formula state machine — one pass = one iteration step of
-one point.  State sits in row 28 (`A28` X, `B28` Y, `C28`/`D28` the
-complex pair A/B, `E28` the iteration counter I, `F28` the mode
-0=init-c / 1=init-z / 2=run / 3=halt, `G28`/`H28` the constants
-C1/C2, `I28` the T scratch, `J28` the A²+B² helper, `K28` the
-advance flag); the formulas run left to right in row 29, columns
-B..M, exactly like the brainfuck machinery.  The mode chain fires
-DOWN the row within one pass (init-c sets mode 1, init-z sees it and
-sets mode 2, the run formulas iterate immediately), so init and the
-first iteration share a pass.  The advance pass resets the mode to 0
-— the next point's init fires on the next pass — and to 3 (halt)
-after the last row's wrap.
+draws an escape-time picture of the Mandelbrot set: for every point
+c of a 71×25 grid (real −1.603..1.603 in steps of 0.0458, imaginary
+−0.99996..0.99996 in steps of 0.08333) it iterates z = z² + c
+starting from z₀ = c (the BASIC seeds `A=C1, B=C2` BEFORE the loop)
+and counts how many of the 16 iterations it takes until |z|² > 4.
+The count prints as a digit: `0`–`9` for counts 0–9, `A`–`F` for
+10–15 (`CHR$(48+I)` with the BASIC's `I=I+7` offset above 9); a
+point that survives all 16 iterations never escapes — it is (very
+nearly) inside the set and prints a space.  Here it becomes a
+12-formula state machine — **one pass = one iteration step of one
+point** — and the spreadsheet holds the picture: one character per
+cell, rows 1..25 × columns A..BW.
 
-The output is one character per cell: rows 1..25 × columns A..BW,
-written through `SET(REF(VAL(A28)+1,VAL(B28)+1),CHR(...))` — the
-grid coordinates are DATA, so the REF policy (references are never
-renumbered) is exactly right.  Escape counts print as `0`–`9` then
-`A`–`F` (`CHR(48+I+7*(I>9))`, the BASIC's `I=I+7` offset); a point
-that survives 16 iterations prints a space.  The 71 output columns
-are baked to width 1 in the shipped file so the raster shows
-compactly (the loader accepts widths 1..63 — see the file-format
-section; the interactive width command still enforces 3..63).  The
-BASIC's trailing `took: n seconds` line is the one omission — there
-is no clock in the formula engine.
+### Sheet layout
 
-A ready-made sheet ships in `examples/mandel.csd` (the PRISTINE
-machine, like brainf) — load it and recalculate:
+```text
+row 1..25   A1..BW25    the picture: one character per cell,
+                        written by the machine (empty until you run it)
+row 28      A28 X       the current point's x offset (0..70)
+            B28 Y       the current point's y offset (0..24)
+            C28 A       the real part of z
+            D28 B       the imaginary part of z
+            E28 I       the iteration counter (0..15)
+            F28 mode    0 init-c, 1 init-z, 2 run, 3 halted
+            G28 C1      the point's real constant (X-35)*0.0458
+            H28 C2      the point's imaginary constant (Y-12)*0.08333
+            I28 T       the z² scratch (the BASIC's T)
+            J28 M       the magnitude helper A²+B²
+            K28 adv     the advance flag (1 = this pass finished a point)
+row 29      B29..M29    the machinery (12 formulas, below)
+```
+
+The 71 output columns are baked to width 1 in the shipped file so
+the raster shows compactly.  (Widths below 3 can only come from a
+FILE — the interactive width command keeps the manual's `3 - 63`
+range; the loader accepts 1..63, a flagged deviation documented in
+the file-format section.)  The full grid spans ~142 terminal
+columns; a 170-wide terminal shows it whole, an 80-wide one shows
+the left half (scroll with TAB/`@`).
+
+### The machinery (row 29, columns B..M)
+
+Every formula starts with `+` (numeric entry) and is evaluated left
+to right once per pass.  The state cells are addressed absolutely —
+nothing here is ever copied.
+
+```text
+B29  +(VAL(F28)=0):SET(G28,(VAL(A28)-35)*0.0458);SET(H28,(VAL(B28)-12)*0.08333);SET(F28,1);0:0
+C29  +(VAL(F28)=1):SET(C28,VAL(G28));SET(D28,VAL(H28));SET(E28,0);SET(K28,0);SET(F28,2);0:0
+D29  +(VAL(F28)=2):SET(I28,VAL(C28)*VAL(C28)-VAL(D28)*VAL(D28)+VAL(G28));0:0
+E29  +(VAL(F28)=2):SET(D28,2*VAL(C28)*VAL(D28)+VAL(H28));0:0
+F29  +(VAL(F28)=2):SET(C28,VAL(I28));0:0
+G29  +(VAL(F28)=2):SET(J28,VAL(C28)*VAL(C28)+VAL(D28)*VAL(D28));0:0
+H29  +(VAL(F28)=2)*(VAL(J28)>4):SET(REF(VAL(A28)+1,VAL(B28)+1),CHR(48+VAL(E28)+7*(VAL(E28)>9)));SET(K28,1);0:0
+I29  +(VAL(F28)=2)*(VAL(J28)<=4)*(VAL(E28)=15):SET(REF(VAL(A28)+1,VAL(B28)+1),CHR(32));SET(K28,1);0:0
+J29  +(VAL(F28)=2)*(VAL(J28)<=4)*(VAL(E28)<15):SET(E28,VAL(E28)+1);SET(K28,0);0:0
+K29  +(VAL(F28)=2)*(VAL(K28)=1):SET(A28,(VAL(A28)+1)*(VAL(A28)<70));0:0
+L29  +(VAL(F28)=2)*(VAL(K28)=1)*(VAL(A28)=0):SET(B28,VAL(B28)+1);0:0
+M29  +(VAL(F28)=2)*(VAL(K28)=1):SET(F28,(VAL(B28)=25)*3);0:0
+```
+
+How a pass works:
+
+- **B29 (init-c)** computes the current point's constants C1/C2 from
+  X/Y and hands over to mode 1.  **C29 (init-z)** seeds the
+  iteration: A = C1, B = C2, I = 0 — the BASIC's z₀ = c — and hands
+  over to mode 2.  The chain fires DOWN the row within the same
+  pass: a point's first pass is simultaneously its init and its
+  first iteration.
+- **D29–G29 are one BASIC loop body** in the mandatory order:
+  T = A²−B²+C1, then B = 2AB+C2 (both from the OLD A and B), then
+  A = T, then M = A²+B² from the NEW pair.  (Reorder them and the
+  iteration is a different map.)
+- **H29** is the escape write: M > 4 → the escape character
+  `CHR(48+I+7*(I>9))` lands in the grid cell `REF(X+1, Y+1)` (the
+  grid coordinates are DATA — REF references are never renumbered by
+  the structure, which is exactly what a raster wants).  **I29** is
+  the interior write: I reached 15 without ever escaping → a space.
+  **J29** is the continue step: I = I+1, no advance.
+- **K29–M29 are the advance**, gated on the flag K28 that only the
+  two writes set: X moves right and wraps 70 → 0; L29 bumps Y at the
+  wrap (the fresh X is 0); **M29 resets the mode — 0 for the next
+  point (its init fires on the next pass), 3 = halt after the last
+  row's wrap (Y reached 25)**.  At halt every condition goes false
+  and `;R A` settles by itself.
+
+The machine is deterministic: 11511 passes exactly, and the full
+71×25 raster is pinned in `--test` against an exact 40-digit
+truncated-decimal reference computation (the engine's own
+discipline — the truncated 30-digit engine agreed with the reference
+on all 1775 escape decisions; the BASIC's binary floats could differ
+at razor-thin boundaries, our exact BCD is the more honest machine).
+
+### Running it
 
 ```text
 ./build/calcstar examples/mandel.csd      ;R A
 ```
 
-The run is 11511 recalculation passes (~10 s on a Macintosh M1 with
-the live per-pass repaints; the grid builds row by row as you
-watch).  On period hardware budget minutes — ESC interrupts at every
-pass, and another `;R A` resumes from the exact interrupted state.
-The machine is deterministic: the full 71×25 raster is pinned in
-`--test` against an exact 40-digit truncated-decimal reference
-computation (the engine's own discipline; the BASIC's binary floats
-could differ from our exact BCD at razor-thin boundaries, the
-reference here is the more honest one).  Regenerate the file with
+The shipped file is the PRISTINE machine (like brainf) — the grid is
+empty until the first `;R A` fills it, row by row, while you watch.
+~10 s on a Macintosh M1 with the live per-pass repaints; budget
+minutes on period hardware — **ESC interrupts at every pass**, and
+another `;R A` resumes from the exact interrupted state.  The
+BASIC's trailing `took: n seconds` line is the one omission (no
+clock in the formula engine).  To build the sheet by hand instead,
+seed row 28 with zeros, type the 12 formulas into row 29, and run
+`;R A`.  Regenerate the shipped file with
 `./build/calcstar --genfractal` after any storage-layout change.
 
 ## Cookbook: today's features, worked examples
